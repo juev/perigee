@@ -76,10 +76,21 @@ Java_org_evsyukov_perigee_engine_NativeEngine_init(
     }
 }
 
+JNIEXPORT jobjectArray JNICALL
+Java_org_evsyukov_perigee_engine_NativeEngine_fontFaces(JNIEnv* env, jobject) {
+    lString32Collection faces;
+    fontMan->getFaceList(faces);
+    jobjectArray out = env->NewObjectArray(faces.length(), env->FindClass("java/lang/String"), nullptr);
+    for (int i = 0; i < faces.length(); i++) {
+        jstring face = toJava(env, faces[i]);
+        env->SetObjectArrayElement(out, i, face);
+        env->DeleteLocalRef(face);
+    }
+    return out;
+}
+
 JNIEXPORT jlong JNICALL
-Java_org_evsyukov_perigee_engine_NativeEngine_open(
-        JNIEnv* env, jobject, jstring path, jstring cssFile, jstring fontFace, jint fontSize,
-        jint width, jint height) {
+Java_org_evsyukov_perigee_engine_NativeEngine_create(JNIEnv*, jobject, jint width, jint height) {
     auto* view = new LVDocView(-1, true);  // bitsPerPixel=-1, noDefaultDocument=true
     view->setViewMode(DVM_PAGES, -1);
     view->Resize(width, height);
@@ -90,30 +101,66 @@ Java_org_evsyukov_perigee_engine_NativeEngine_open(
     // xpointers exchanged with bookOrbit are only comparable under the same pair.
     props->setInt(PROP_REQUESTED_DOM_VERSION, gDOMVersionCurrent);
     props->setInt(PROP_RENDER_BLOCK_RENDERING_FLAGS, BLOCK_RENDERING_FULL_FEATURED);
-    props->setString(PROP_FONT_FACE, toStd(env, fontFace).c_str());
     props->setInt(PROP_FONT_HINTING, 2);
     props->setInt(PROP_FONT_KERNING, 3);  // HarfBuzz shaping
     props->setInt(PROP_TEXTLANG_EMBEDDED_LANGS_ENABLED, 1);
-    props->setInt(PROP_TEXTLANG_HYPHENATION_ENABLED, 1);
+    view->propsApply(props);
+    return reinterpret_cast<jlong>(view);
+}
+
+JNIEXPORT void JNICALL
+Java_org_evsyukov_perigee_engine_NativeEngine_applySettings(
+        JNIEnv* env, jobject, jlong handle, jstring cssFile, jstring extraCss, jstring fontFace,
+        jint fontSize, jint lineSpacingPercent, jint marginHorizontal, jint marginVertical,
+        jboolean hyphenation, jboolean twoPages, jint renderDpi) {
+    LVDocView* view = viewOf(handle);
+    // A new layout moves page boundaries; the reader stays where they were.
+    const bool loaded = view->getDocument() != nullptr;
+    ldomXPointer position = loaded ? view->getBookmark() : ldomXPointer();
+
+    CRPropRef props = LVCreatePropsContainer();
+    props->setString(PROP_FONT_FACE, toStd(env, fontFace).c_str());
+    props->setInt(PROP_INTERLINE_SPACE, lineSpacingPercent);
+    props->setInt(PROP_TEXTLANG_HYPHENATION_ENABLED, hyphenation ? 1 : 0);
+    props->setInt(PROP_FLOATING_PUNCTUATION, 1);
+    props->setInt(PROP_LANDSCAPE_PAGES, twoPages ? 2 : 1);
+    props->setInt(PROP_RENDER_DPI, renderDpi);
     view->propsApply(props);
     view->setFontSize(fontSize);
+    view->setPageMargins(lvRect(marginHorizontal, marginVertical, marginHorizontal, marginVertical));
+    view->setVisiblePageCount(twoPages ? 2 : 1, false);
 
     lString8 css;
     LVLoadStylesheetFile(Utf8ToUnicode(toStd(env, cssFile).c_str()), css);
+    css << "\r\n" << lString8(toStd(env, extraCss).c_str());
     view->setStyleSheet(css, false);
 
-    if (!view->LoadDocument(toStd(env, path).c_str(), false) || !view->getDocument()) {
-        delete view;
-        return 0;
+    if (loaded) {
+        view->Render();
+        if (!position.isNull()) view->goToBookmark(position);
+    }
+}
+
+JNIEXPORT jboolean JNICALL
+Java_org_evsyukov_perigee_engine_NativeEngine_load(JNIEnv* env, jobject, jlong handle, jstring path) {
+    LVDocView* view = viewOf(handle);
+    if (!view->LoadDocument(toStd(env, path).c_str(), false) || !view->getDocument()) return JNI_FALSE;
+    // Hyphenation and line breaking follow the book's language unless a
+    // fragment declares its own.
+    lString32 language = view->getLanguage();
+    if (!language.empty()) {
+        CRPropRef props = LVCreatePropsContainer();
+        props->setString(PROP_TEXTLANG_MAIN_LANG, UnicodeToUtf8(language).c_str());
+        view->propsApply(props);
     }
     view->Render();
-    return reinterpret_cast<jlong>(view);
+    return JNI_TRUE;
 }
 
 JNIEXPORT void JNICALL
 Java_org_evsyukov_perigee_engine_NativeEngine_close(JNIEnv*, jobject, jlong handle) {
     LVDocView* view = viewOf(handle);
-    view->close();
+    if (view->getDocument()) view->close();
     delete view;
 }
 

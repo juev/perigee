@@ -1,4 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Perigee</string>
+    <string name="open_book">Open a book</string>
+    <string name="cannot_open">This file cannot be opened.</string>
+    <string name="close_book">Close</string>
+    <string name="page_of">%1$d / %2$d</string>
+    <string name="setting_font">Font</string>
+    <string name="setting_font_size">Size: %1$d</string>
+    <string name="setting_line_spacing">Line spacing: %1$d%%</string>
+    <string name="setting_margins">Margins: %1$d</string>
+    <string name="setting_hyphenation">Hyphenation</string>
+    <string name="setting_justify">Justify</string>
+    <string name="setting_two_pages">Two pages</string>
 </resources>

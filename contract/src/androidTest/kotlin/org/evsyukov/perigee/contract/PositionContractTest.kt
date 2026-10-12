@@ -139,7 +139,7 @@ class PositionContractTest(private val title: String) {
         assertEquals("the converted range selects the same text in the engine", text, doc.textBetween(gotPos0, gotPos1))
     }
 
-    private fun open() = EngineDocument.open(context, file, 720, 1280, fontSize = 28)
+    private fun open() = EngineDocument.open(context, file, 720, 1280)
 
     /** A 25-character range starting at the top of some page in the second half of the book. */
     private fun pickRange(doc: EngineDocument): Triple<String, String, String> {

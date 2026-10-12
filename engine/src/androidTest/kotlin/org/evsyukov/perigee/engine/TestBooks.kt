@@ -77,6 +77,31 @@ $body
         return file
     }
 
+    /** Long words in a narrow column: the layout depends on Russian hyphenation. */
+    fun russianFb2(dir: File): File {
+        val sentence = "Железнодорожное сообщение восстанавливалось чрезвычайно медленно, " +
+            "путешественники переговаривались вполголоса, разглядывая достопримечательности " +
+            "провинциального городка и размышляя о непредвиденных обстоятельствах, " +
+            "задержавших отправление пассажирского поезда. "
+        val body = (1..40).joinToString("\n") { "<p>${sentence.repeat(2)}</p>" }
+        return File(dir, "russian.fb2").apply {
+            writeText(
+                """<?xml version="1.0" encoding="UTF-8"?>
+<FictionBook xmlns="http://www.gribuser.ru/xml/fictionbook/2.0">
+<description><title-info>
+  <author><first-name>Тест</first-name><last-name>Автор</last-name></author>
+  <book-title>Контрольная страница</book-title><lang>ru</lang>
+</title-info></description>
+<body>
+<section><title><p>Глава первая</p></title>
+$body
+</section>
+</body>
+</FictionBook>""",
+            )
+        }
+    }
+
     fun fb2(dir: File): File {
         val sections = (1..CHAPTERS).joinToString("\n") { c ->
             val body = (1..PARAGRAPHS).joinToString("\n") { "<p>${paragraph(c, it)}</p>" }

@@ -35,7 +35,7 @@ class ServerLimitsContractTest {
         server.download(book.fileId, file)
         val hash = BookOrbitServer.partialMd5(file)
 
-        EngineDocument.open(context, file, 720, 1280, fontSize = 28).use { doc ->
+        EngineDocument.open(context, file, 720, 1280).use { doc ->
             doc.goToPage(doc.pageCount / 2)
             val sent = doc.xpointer()
             val push = server.koreader(

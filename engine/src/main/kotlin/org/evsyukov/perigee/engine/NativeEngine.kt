@@ -12,8 +12,19 @@ internal object NativeEngine {
 
     external fun init(hyphDir: String, cacheDir: String, cacheBytes: Long, fontFiles: Array<String>)
 
-    /** Returns 0 when the file cannot be opened. */
-    external fun open(path: String, cssFile: String, fontFace: String, fontSize: Int, width: Int, height: Int): Long
+    external fun fontFaces(): Array<String>
+
+    /** Creates an empty view; load a book into it after applySettings. */
+    external fun create(width: Int, height: Int): Long
+
+    external fun applySettings(
+        handle: Long, cssFile: String, extraCss: String, fontFace: String, fontSize: Int,
+        lineSpacingPercent: Int, marginHorizontal: Int, marginVertical: Int,
+        hyphenation: Boolean, twoPages: Boolean, renderDpi: Int,
+    )
+
+    /** Returns false when the file cannot be opened. */
+    external fun load(handle: Long, path: String): Boolean
 
     external fun close(handle: Long)
     external fun pageCount(handle: Long): Int

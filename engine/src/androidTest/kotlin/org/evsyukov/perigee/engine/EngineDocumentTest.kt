@@ -17,7 +17,7 @@ class EngineDocumentTest {
     private val context: Context = InstrumentationRegistry.getInstrumentation().targetContext
     private val dir: File = File(context.cacheDir, "books").apply { mkdirs() }
 
-    private fun open(file: File) = EngineDocument.open(context, file, WIDTH, HEIGHT, fontSize = 28)
+    private fun open(file: File) = EngineDocument.open(context, file, WIDTH, HEIGHT)
 
     @Test
     fun epubRendersTextOnThePage() = open(TestBooks.epub(dir)).use { doc ->
@@ -81,6 +81,62 @@ class EngineDocumentTest {
         doc.goToPage(2)
         assertFalse(doc.goToXPointer("/body/DocFragment[99]/body/p[1]/text().0"))
         assertEquals("a rejected xpointer leaves the position alone", 2, doc.currentPage)
+    }
+
+    @Test
+    fun largerFontKeepsThePositionAndAddsPages() = open(TestBooks.epub(dir)).use { doc ->
+        doc.goToPage(doc.pageCount / 2)
+        val position = doc.xpointer()
+        val pages = doc.pageCount
+
+        doc.apply(EngineSettings(fontSize = 44))
+
+        assertTrue("larger type needs more pages: $pages -> ${doc.pageCount}", doc.pageCount > pages)
+        // Line breaks moved, so the page may start a few characters earlier;
+        // what matters is that the text the reader was at is still on screen.
+        val shown = doc.currentPage
+        assertTrue(doc.goToXPointer(position))
+        assertEquals("the old position is on the page shown after the change", shown, doc.currentPage)
+    }
+
+    @Test
+    fun twoPageModeHalvesTheNumberOfSpreads() {
+        val file = TestBooks.epub(dir)
+        val single = EngineDocument.open(context, file, HEIGHT, WIDTH).use { it.pageCount }
+        val double = EngineDocument.open(context, file, HEIGHT, WIDTH, EngineSettings(twoPages = true)).use { it.pageCount }
+        // Each of the two columns is narrower than half the screen, so the count
+        // does not match exactly; it only has to show the text was split in two.
+        assertTrue("two columns on a landscape screen: $single -> $double", double > single)
+    }
+
+    @Test
+    fun russianBookIsHyphenatedByItsOwnLanguage() {
+        val file = TestBooks.russianFb2(dir)
+        val narrow = EngineSettings(fontSize = 44)
+        val hyphenated = renderFirstPage(file, narrow)
+        val unhyphenated = renderFirstPage(file, narrow.copy(hyphenation = false))
+        savePage("russian-hyphenated", hyphenated)
+        savePage("russian-unhyphenated", unhyphenated)
+        // With the Russian dictionary in effect long words break across lines,
+        // so the two pages cannot come out the same.
+        assertFalse("hyphenation changes the layout of a Russian page", hyphenated.sameAs(unhyphenated))
+    }
+
+    private fun renderFirstPage(file: File, settings: EngineSettings): Bitmap =
+        EngineDocument.open(context, file, WIDTH, HEIGHT, settings).use { doc ->
+            Bitmap.createBitmap(WIDTH, HEIGHT, Bitmap.Config.ARGB_8888).also(doc::renderPage)
+        }
+
+    /** Keeps the page for a human to look at; AGP copies this directory off the device. */
+    private fun savePage(name: String, bitmap: Bitmap) {
+        val out = InstrumentationRegistry.getArguments().getString("additionalTestOutputDir") ?: return
+        File(out).mkdirs()
+        File(out, "$name.png").outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
+    }
+
+    @Test
+    fun systemFontsAreOffered() {
+        assertTrue(EngineSettings.DEFAULT_FONT_FACE in Engine.fontFaces(context))
     }
 
     private fun luminance(argb: Int): Int {

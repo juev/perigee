@@ -32,6 +32,12 @@ object Engine {
         return dir
     }
 
+    /** Font families available for books. */
+    fun fontFaces(context: Context): List<String> {
+        init(context)
+        return NativeEngine.fontFaces().sorted()
+    }
+
     internal fun stylesheetFor(file: File): File {
         val dir = checkNotNull(dataDir) { "Engine.init was not called" }
         val name = when (file.extension.lowercase()) {

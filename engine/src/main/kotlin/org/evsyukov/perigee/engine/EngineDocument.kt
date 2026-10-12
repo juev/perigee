@@ -8,7 +8,11 @@ import java.io.File
  * An open book. Not thread-safe: use it from one thread at a time.
  * Positions are crengine xpointers, the same form KOReader exchanges with bookOrbit.
  */
-class EngineDocument private constructor(private var handle: Long) : AutoCloseable {
+class EngineDocument private constructor(
+    private var handle: Long,
+    private val stylesheet: File,
+    private val renderDpi: Int,
+) : AutoCloseable {
 
     val pageCount: Int get() = NativeEngine.pageCount(checked())
 
@@ -22,6 +26,13 @@ class EngineDocument private constructor(private var handle: Long) : AutoCloseab
 
     /** Returns false when the xpointer does not resolve in this book. */
     fun goToXPointer(xpointer: String): Boolean = NativeEngine.goToXPointer(checked(), xpointer)
+
+    /** Re-lays the book out; the reading position is kept. */
+    fun apply(settings: EngineSettings) = NativeEngine.applySettings(
+        checked(), stylesheet.path, settings.extraCss, settings.fontFace, settings.fontSize,
+        settings.lineSpacingPercent, settings.marginHorizontal, settings.marginVertical,
+        settings.hyphenation, settings.twoPages, renderDpi,
+    )
 
     /** Text between two xpointers, or null when either does not resolve in this book. */
     fun textBetween(start: String, end: String): String? = NativeEngine.textBetween(checked(), start, end)
@@ -45,22 +56,23 @@ class EngineDocument private constructor(private var handle: Long) : AutoCloseab
     }
 
     companion object {
-        const val DEFAULT_FONT_FACE = "Noto Serif"
-
         fun open(
             context: Context,
             file: File,
             width: Int,
             height: Int,
-            fontSize: Int,
-            fontFace: String = DEFAULT_FONT_FACE,
+            settings: EngineSettings = EngineSettings(),
         ): EngineDocument {
             Engine.init(context)
-            val handle = NativeEngine.open(
-                file.path, Engine.stylesheetFor(file).path, fontFace, fontSize, width, height,
-            )
-            require(handle != 0L) { "cannot open ${file.name}" }
-            return EngineDocument(handle)
+            // CSS lengths are laid out as on the web: one CSS px is one dp.
+            val renderDpi = context.resources.displayMetrics.densityDpi * 96 / 160
+            val document = EngineDocument(NativeEngine.create(width, height), Engine.stylesheetFor(file), renderDpi)
+            document.apply(settings)
+            if (!NativeEngine.load(document.handle, file.path)) {
+                document.close()
+                throw IllegalArgumentException("cannot open ${file.name}")
+            }
+            return document
         }
     }
 }
