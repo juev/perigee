@@ -21,5 +21,9 @@ internal object NativeEngine {
     external fun goToPage(handle: Long, page: Int): Boolean
     external fun xpointer(handle: Long): String
     external fun goToXPointer(handle: Long, xpointer: String): Boolean
+    external fun textBetween(handle: Long, start: String, end: String): String?
+
+    /** Position in the book in 1/10000 units. */
+    external fun positionPermyriad(handle: Long): Int
     external fun renderPage(handle: Long, bitmap: Bitmap)
 }

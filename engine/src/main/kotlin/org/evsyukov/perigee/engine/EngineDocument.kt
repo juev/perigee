@@ -23,6 +23,12 @@ class EngineDocument private constructor(private var handle: Long) : AutoCloseab
     /** Returns false when the xpointer does not resolve in this book. */
     fun goToXPointer(xpointer: String): Boolean = NativeEngine.goToXPointer(checked(), xpointer)
 
+    /** Text between two xpointers, or null when either does not resolve in this book. */
+    fun textBetween(start: String, end: String): String? = NativeEngine.textBetween(checked(), start, end)
+
+    /** How far the current page is into the book, 0..1. */
+    val progress: Float get() = NativeEngine.positionPermyriad(checked()) / 10000f
+
     /** Draws the current page; the bitmap size becomes the page size. */
     fun renderPage(bitmap: Bitmap) = NativeEngine.renderPage(checked(), bitmap)
 

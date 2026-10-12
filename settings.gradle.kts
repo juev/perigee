@@ -13,4 +13,4 @@ dependencyResolutionManagement {
     }
 }
 rootProject.name = "Perigee"
-include(":app", ":engine")
+include(":app", ":engine", ":contract")

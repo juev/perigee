@@ -1,0 +1,49 @@
+# Throwaway bookOrbit server for contract tests. Every secret below is a
+# fixed test value: the stack holds generated books only and listens on localhost.
+name: perigee-contract
+
+services:
+  app:
+    image: ghcr.io/bookorbit/bookorbit:${BOOKORBIT_VERSION:-3.3.0}
+    init: true
+    ports:
+      - "127.0.0.1:${BOOKORBIT_PORT:-3070}:3000"
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_USER: bookorbit
+      POSTGRES_PASSWORD: contract-test
+      POSTGRES_DB: bookorbit
+      JWT_SECRET: contract-test-jwt-secret-0123456789abcdef
+      SETUP_BOOTSTRAP_TOKEN: contract-test-setup-token
+      APP_URL: http://localhost:${BOOKORBIT_PORT:-3070}
+      TZ: UTC
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./.work/books:/books
+      - app-data:/data
+    tmpfs:
+      - /tmp
+
+  postgres:
+    image: pgvector/pgvector:pg18
+    environment:
+      POSTGRES_USER: bookorbit
+      POSTGRES_PASSWORD: contract-test
+      POSTGRES_DB: bookorbit
+      PGDATA: /var/lib/postgresql/data/pgdata
+    volumes:
+      - pg-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U bookorbit -d bookorbit"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+volumes:
+  app-data:
+  pg-data:

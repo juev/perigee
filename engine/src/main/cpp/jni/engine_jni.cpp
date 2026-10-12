@@ -146,6 +146,22 @@ Java_org_evsyukov_perigee_engine_NativeEngine_goToXPointer(JNIEnv* env, jobject,
     return JNI_TRUE;
 }
 
+JNIEXPORT jstring JNICALL
+Java_org_evsyukov_perigee_engine_NativeEngine_textBetween(
+        JNIEnv* env, jobject, jlong handle, jstring start, jstring end) {
+    ldomDocument* doc = viewOf(handle)->getDocument();
+    ldomXPointer from = doc->createXPointer(Utf8ToUnicode(toStd(env, start).c_str()));
+    ldomXPointer to = doc->createXPointer(Utf8ToUnicode(toStd(env, end).c_str()));
+    if (from.isNull() || to.isNull()) return nullptr;
+    ldomXRange range(from, to);
+    return toJava(env, range.getRangeText());
+}
+
+JNIEXPORT jint JNICALL
+Java_org_evsyukov_perigee_engine_NativeEngine_positionPermyriad(JNIEnv*, jobject, jlong handle) {
+    return viewOf(handle)->getPosPercent();
+}
+
 JNIEXPORT void JNICALL
 Java_org_evsyukov_perigee_engine_NativeEngine_renderPage(JNIEnv* env, jobject, jlong handle, jobject bitmap) {
     AndroidBitmapInfo info;
