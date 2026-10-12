@@ -11,5 +11,5 @@
     <string name="setting_margins">Margins: %1$d</string>
     <string name="setting_hyphenation">Hyphenation</string>
     <string name="setting_justify">Justify</string>
-    <string name="setting_two_pages">Two pages</string>
+    <string name="setting_two_pages">Two pages in landscape</string>
 </resources>

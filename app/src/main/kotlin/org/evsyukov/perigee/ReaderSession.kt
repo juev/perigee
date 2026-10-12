@@ -10,7 +10,7 @@ import org.evsyukov.perigee.engine.EngineDocument
 import org.evsyukov.perigee.engine.EngineSettings
 
 /** What the screen shows after each engine call. */
-data class PageState(val bitmap: Bitmap, val page: Int, val pageCount: Int)
+data class PageState(val bitmap: Bitmap, val page: Int, val pageCount: Int, val xpointer: String)
 
 /**
  * One open book. Every engine call of every session runs on the single engine
@@ -35,7 +35,7 @@ class ReaderSession private constructor(private val document: EngineDocument) {
         // A fresh bitmap per page: Compose may still be drawing the previous one.
         val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
         document.renderPage(bitmap)
-        return PageState(bitmap, document.currentPage, document.pageCount)
+        return PageState(bitmap, document.currentPage, document.pageCount, document.xpointer())
     }
 
     companion object {
@@ -44,7 +44,15 @@ class ReaderSession private constructor(private val document: EngineDocument) {
         // session while the next one is already loading.
         private val engineThread = Executors.newSingleThreadExecutor { Thread(it, "crengine") }.asCoroutineDispatcher()
 
-        suspend fun open(context: Context, file: File, width: Int, height: Int, settings: EngineSettings) =
-            ReaderSession(withContext(engineThread) { EngineDocument.open(context, file, width, height, settings) })
+        /** Opens the book at [xpointer] when it is given and still resolves. */
+        suspend fun open(
+            context: Context, file: File, width: Int, height: Int, settings: EngineSettings, xpointer: String? = null,
+        ) = ReaderSession(
+            withContext(engineThread) {
+                EngineDocument.open(context, file, width, height, settings).also { document ->
+                    if (xpointer != null) document.goToXPointer(xpointer)
+                }
+            },
+        )
     }
 }

@@ -1,18 +1,23 @@
 package org.evsyukov.perigee
 
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.LocalActivity
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.displayCutout
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.DropdownMenu
@@ -30,15 +35,21 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.listSaver
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import java.io.File
 import kotlin.math.roundToInt
 import kotlinx.coroutines.GlobalScope
@@ -56,27 +67,34 @@ fun ReaderScreen(file: File, onClose: () -> Unit) {
     val context = LocalContext.current
     val density = LocalDensity.current
     val scope = rememberCoroutineScope()
-    var settings by remember {
+    // Settings and the position survive a rotation, which recreates the screen.
+    var settings by rememberSaveable(stateSaver = SettingsSaver) {
         mutableStateOf(
             with(density) {
                 EngineSettings(fontSize = 18.dp.roundToPx(), marginHorizontal = 20.dp.roundToPx(), marginVertical = 28.dp.roundToPx())
             },
         )
     }
+    var position by rememberSaveable { mutableStateOf<String?>(null) }
     var session by remember { mutableStateOf<ReaderSession?>(null) }
     var page by remember { mutableStateOf<PageState?>(null) }
     var failed by remember { mutableStateOf(false) }
     var showSettings by remember { mutableStateOf(false) }
 
     BackHandler(onBack = onClose)
+    HideSystemBars()
 
-    BoxWithConstraints(Modifier.fillMaxSize()) {
+    // The page keeps clear of the camera cutout; the strip beside it stays page-coloured.
+    BoxWithConstraints(Modifier.fillMaxSize().background(Color.White).windowInsetsPadding(WindowInsets.displayCutout)) {
         val width = constraints.maxWidth
         val height = constraints.maxHeight
+        // Two pages side by side only make sense on a screen wider than it is tall.
+        fun laidOut(chosen: EngineSettings) = chosen.copy(twoPages = chosen.twoPages && width > height)
 
         LaunchedEffect(file) {
             try {
-                session = ReaderSession.open(context, file, width, height, settings).also { page = it.render(width, height) }
+                session = ReaderSession.open(context, file, width, height, laidOut(settings), position)
+                    .also { page = it.render(width, height) }
             } catch (e: IllegalArgumentException) {
                 failed = true
             }
@@ -93,6 +111,7 @@ fun ReaderScreen(file: File, onClose: () -> Unit) {
         }
 
         val shown = page
+        LaunchedEffect(shown) { shown?.let { position = it.xpointer } }
         when {
             failed -> Column(Modifier.align(Alignment.Center), horizontalAlignment = Alignment.CenterHorizontally) {
                 Text(stringResource(R.string.cannot_open))
@@ -103,8 +122,8 @@ fun ReaderScreen(file: File, onClose: () -> Unit) {
                 contentDescription = null,
                 modifier = Modifier
                     .fillMaxSize()
-                    .pointerInput(settings.twoPages) {
-                        val step = if (settings.twoPages) 2 else 1
+                    .pointerInput(laidOut(settings).twoPages) {
+                        val step = if (laidOut(settings).twoPages) 2 else 1
                         detectTapGestures { tap ->
                             val open = session ?: return@detectTapGestures
                             when {
@@ -125,7 +144,7 @@ fun ReaderScreen(file: File, onClose: () -> Unit) {
                     position = stringResource(R.string.page_of, shown.page + 1, shown.pageCount),
                     onChange = { changed ->
                         settings = changed
-                        session?.let { open -> scope.launch { page = open.apply(changed, width, height) } }
+                        session?.let { open -> scope.launch { page = open.apply(laidOut(changed), width, height) } }
                     },
                     onClose = onClose,
                 )
@@ -133,6 +152,31 @@ fun ReaderScreen(file: File, onClose: () -> Unit) {
         }
     }
 }
+
+/** Hides the status and navigation bars while a book is on screen; a swipe from the edge shows them briefly. */
+@Composable
+private fun HideSystemBars() {
+    val window = LocalActivity.current?.window ?: return
+    DisposableEffect(window) {
+        val controller = WindowCompat.getInsetsController(window, window.decorView)
+        controller.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+        controller.hide(WindowInsetsCompat.Type.systemBars())
+        onDispose { controller.show(WindowInsetsCompat.Type.systemBars()) }
+    }
+}
+
+private val SettingsSaver = listSaver<EngineSettings, Any>(
+    save = {
+        listOf(it.fontFace, it.fontSize, it.lineSpacingPercent, it.marginHorizontal, it.marginVertical, it.hyphenation, it.justify, it.twoPages)
+    },
+    restore = {
+        EngineSettings(
+            fontFace = it[0] as String, fontSize = it[1] as Int, lineSpacingPercent = it[2] as Int,
+            marginHorizontal = it[3] as Int, marginVertical = it[4] as Int,
+            hyphenation = it[5] as Boolean, justify = it[6] as Boolean, twoPages = it[7] as Boolean,
+        )
+    },
+)
 
 @Composable
 private fun SettingsPanel(
