@@ -134,11 +134,6 @@ class EngineDocumentTest {
         File(out, "$name.png").outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
     }
 
-    @Test
-    fun systemFontsAreOffered() {
-        assertTrue(EngineSettings.DEFAULT_FONT_FACE in Engine.fontFaces(context))
-    }
-
     private fun luminance(argb: Int): Int {
         val r = (argb shr 16) and 0xFF
         val g = (argb shr 8) and 0xFF
@@ -149,6 +144,6 @@ class EngineDocumentTest {
     private companion object {
         const val WIDTH = 720
         const val HEIGHT = 1280
-        const val CHAPTERS = 3
+        const val CHAPTERS = TestBooks.CHAPTERS
     }
 }

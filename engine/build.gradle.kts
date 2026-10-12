@@ -71,6 +71,7 @@ androidComponents {
 }
 
 dependencies {
+    api("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
     androidTestImplementation("androidx.test.ext:junit:1.2.1")
     androidTestImplementation("androidx.test:runner:1.6.2")
 }

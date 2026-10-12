@@ -1,0 +1,199 @@
+package org.evsyukov.perigee.engine
+
+import android.content.Context
+import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.platform.app.InstrumentationRegistry
+import java.io.File
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotSame
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertSame
+import org.junit.Assert.assertTrue
+import org.junit.Test
+import org.junit.runner.RunWith
+
+@RunWith(AndroidJUnit4::class)
+class BookReaderTest {
+    private val context: Context = InstrumentationRegistry.getInstrumentation().targetContext
+    private val dir: File = File(context.cacheDir, "books").apply { mkdirs() }
+
+    private suspend fun open(
+        settings: EngineSettings = EngineSettings(),
+        width: Int = WIDTH,
+        height: Int = HEIGHT,
+        xpointer: String? = null,
+    ) = BookReader.open(context, TestBooks.epub(dir), width, height, settings, xpointer, DENSITY)
+
+    private fun reading(block: suspend (BookReader) -> Unit) = runBlocking(Dispatchers.Default) {
+        val reader = open()
+        try {
+            block(reader)
+        } finally {
+            reader.close()
+        }
+    }
+
+    @Test
+    fun turningMovesOneScreenAndStopsAtTheEndsOfTheBook() = reading { reader ->
+        val first = reader.current()
+        assertEquals(0, first.index)
+        assertEquals("no page before the first", 0, reader.turn(-1).index)
+        assertEquals(1, reader.turn(1).index)
+        assertEquals(4, reader.turn(3).index)
+
+        val last = reader.goToPage(first.pageCount - 1)
+        assertEquals(first.pageCount - 1, last.index)
+        assertEquals("no page after the last", last.index, reader.turn(1).index)
+        assertTrue("progress grows through the book", last.progress > first.progress)
+    }
+
+    @Test
+    fun pageHasTheSizeAskedFor() = reading { reader ->
+        val page = reader.current()
+        assertEquals(WIDTH, page.bitmap.width)
+        assertEquals(HEIGHT, page.bitmap.height)
+    }
+
+    @Test
+    fun pagesNextToTheOneShownAreDrawnAhead() = reading { reader ->
+        reader.goToPage(5)
+        // Drawing ahead is queued behind the call that asked for the page.
+        assertEquals(setOf(4, 5, 6), reader.cachedPages())
+
+        val next = reader.turn(1)
+        assertEquals(setOf(5, 6, 7), reader.cachedPages())
+        assertSame("coming back shows the page already drawn", next, reader.turn(1).let { reader.turn(-1) })
+    }
+
+    @Test
+    fun drawingAheadLeavesTheReaderWhereTheyWere() = reading { reader ->
+        val shown = reader.goToPage(5)
+        reader.cachedPages()
+        assertEquals(5, reader.read { it.currentPage })
+        assertEquals(shown.xpointer, reader.read { it.xpointer() })
+    }
+
+    @Test
+    fun newSettingsRedrawThePageAndKeepThePlace() = reading { reader ->
+        val before = reader.goToPage(reader.current().pageCount / 2)
+        val after = reader.apply(EngineSettings(fontSize = 44))
+
+        assertNotSame(before, after)
+        assertTrue("larger type needs more pages", after.pageCount > before.pageCount)
+        assertEquals(
+            "the text the reader was at is on the page shown",
+            after.index,
+            reader.read { it.pageOf(before.xpointer) },
+        )
+    }
+
+    @Test
+    fun resizingLaysTheBookOutForTheNewPage() = reading { reader ->
+        val portrait = reader.current()
+        val landscape = reader.resize(HEIGHT, WIDTH)
+        assertEquals(HEIGHT, landscape.bitmap.width)
+        assertEquals(WIDTH, landscape.bitmap.height)
+        assertSame("the same size again changes nothing", landscape, reader.resize(HEIGHT, WIDTH))
+        assertTrue(portrait.pageCount != landscape.pageCount)
+    }
+
+    @Test
+    fun highlightsAppearOnThePageShown() = reading { reader ->
+        val plain = reader.current()
+        val hit = reader.read { it.search("lazy dog").first() }
+        assertEquals("the phrase is on the first page", 0, hit.page)
+
+        val marked = reader.setHighlights(listOf(Highlight(hit.range.start, hit.range.end, 0xFFFF00)))
+        assertFalse(plain.bitmap.sameAs(marked.bitmap))
+        assertTrue("taking them away restores the page", plain.bitmap.sameAs(reader.setHighlights(emptyList()).bitmap))
+    }
+
+    @Test
+    fun unknownPositionLeavesTheReaderInPlace() = reading { reader ->
+        val shown = reader.goToPage(3)
+        assertNull(reader.goTo("/body/DocFragment[99]/body/p[1]/text().0"))
+        assertEquals(shown.index, reader.current().index)
+    }
+
+    @Test
+    fun bookReopensAtASavedPosition() = runBlocking(Dispatchers.Default) {
+        val first = open()
+        val saved = first.goToPage(7)
+        first.close()
+
+        val second = open(xpointer = saved.xpointer)
+        assertEquals(7, second.current().index)
+        second.close()
+    }
+
+    @Test
+    fun withTwoPagesAScreenIsTwoPages() = runBlocking(Dispatchers.Default) {
+        val reader = open(EngineSettings(twoPages = true), width = HEIGHT, height = WIDTH)
+        assertEquals(0, reader.current().index)
+        assertEquals(2, reader.turn(1).index)
+        assertEquals("an odd page is shown as the right one of its pair", 4, reader.goToPage(5).index)
+        assertEquals(setOf(2, 4, 6), reader.cachedPages())
+        reader.close()
+    }
+
+    @Test
+    fun unreadableFileIsRejected() = runBlocking(Dispatchers.Default) {
+        val missing = File(dir, "no-such-book.epub")
+        val failure = runCatching { BookReader.open(context, missing, WIDTH, HEIGHT) }.exceptionOrNull()
+        assertTrue("got $failure", failure is IllegalArgumentException)
+    }
+
+    @Test
+    fun callAfterClosingIsCancelledNotFailed() = runBlocking(Dispatchers.Default) {
+        val reader = open()
+        reader.current()
+        reader.close()
+        reader.close()
+        val failure = runCatching { reader.turn(1) }.exceptionOrNull()
+        assertTrue("got $failure", failure is CancellationException)
+    }
+
+    @Test
+    fun callsFromManyThreadsAreServedOneAtATime() = reading { reader ->
+        val pages = coroutineScope {
+            (1..40).map { n ->
+                async { if (n % 2 == 0) reader.turn(1) else reader.read { it.search("quick", maxHits = 3).size } }
+            }.awaitAll()
+        }
+        assertEquals("every search ran to the end", 20, pages.count { it == 3 })
+        assertEquals("every turn was counted", 20, reader.current().index)
+    }
+
+    /**
+     * A rotation closes the reader of the old screen while the new screen is
+     * already opening the same book. Overlapping the two used to corrupt the
+     * engine's allocator and kill the process.
+     */
+    @Test
+    fun closingOneReaderWhileOpeningAnotherIsSafe() = runBlocking(Dispatchers.Default) {
+        var current = open()
+        repeat(30) {
+            val closing = current
+            val closed = launch { closing.close() }
+            val opened = async { open(width = HEIGHT, height = WIDTH) }
+            current = opened.await()
+            closed.join()
+            assertTrue(current.current().pageCount > 1)
+        }
+        current.close()
+    }
+
+    private companion object {
+        const val WIDTH = 720
+        const val HEIGHT = 1280
+        const val DENSITY = 320
+    }
+}

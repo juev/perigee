@@ -36,6 +36,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.listSaver
@@ -59,8 +60,11 @@ import java.io.File
 import kotlin.math.roundToInt
 import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.launch
+import org.evsyukov.perigee.engine.BookReader
 import org.evsyukov.perigee.engine.Engine
 import org.evsyukov.perigee.engine.EngineSettings
+import org.evsyukov.perigee.engine.Page
+import org.evsyukov.perigee.engine.TextAlign
 
 /**
  * A book on the whole screen. Tap the right or left third to turn the page,
@@ -81,8 +85,8 @@ fun ReaderScreen(file: File, onClose: () -> Unit) {
         )
     }
     var position by rememberSaveable { mutableStateOf<String?>(null) }
-    var session by remember { mutableStateOf<ReaderSession?>(null) }
-    var page by remember { mutableStateOf<PageState?>(null) }
+    var session by remember { mutableStateOf<BookReader?>(null) }
+    var page by remember { mutableStateOf<Page?>(null) }
     var failed by remember { mutableStateOf(false) }
     var showSettings by remember { mutableStateOf(false) }
 
@@ -97,7 +101,7 @@ fun ReaderScreen(file: File, onClose: () -> Unit) {
     BoxWithConstraints(
         Modifier
             .fillMaxSize()
-            .background(Color.White)
+            .background(Color(0xFF000000 or settings.colors.background.toLong()))
             .padding(start = sideInset, end = sideInset, top = cutout.calculateTopPadding(), bottom = cutout.calculateBottomPadding())
             .clipToBounds(),
     ) {
@@ -118,15 +122,15 @@ fun ReaderScreen(file: File, onClose: () -> Unit) {
 
         LaunchedEffect(file) {
             try {
-                session = ReaderSession.open(context, file, pageWidth(settings), height, laidOut(settings), position)
-                    .also { page = it.render(pageWidth(settings), height) }
+                session = BookReader.open(context, file, pageWidth(settings), height, laidOut(settings), position)
+                    .also { page = it.current() }
             } catch (e: IllegalArgumentException) {
                 failed = true
             }
         }
         // Rotation and window resizing re-lay the book out at the new size.
         LaunchedEffect(width, height) {
-            session?.let { page = it.render(pageWidth(settings), height) }
+            session?.let { page = it.resize(pageWidth(settings), height) }
         }
         DisposableEffect(file) {
             onDispose {
@@ -149,14 +153,12 @@ fun ReaderScreen(file: File, onClose: () -> Unit) {
                     .fillMaxHeight()
                     .wrapContentWidth(unbounded = true)
                     .requiredWidth(with(density) { shown.bitmap.width.toDp() })
-                    .pointerInput(twoUp(settings)) {
-                        val step = if (twoUp(settings)) 2 else 1
-                        val pageWidth = pageWidth(settings)
+                    .pointerInput(Unit) {
                         detectTapGestures { tap ->
                             val open = session ?: return@detectTapGestures
                             when {
-                                tap.x < size.width / 3 -> scope.launch { page = open.turn(-step, pageWidth, height) }
-                                tap.x > size.width * 2 / 3 -> scope.launch { page = open.turn(step, pageWidth, height) }
+                                tap.x < size.width / 3 -> scope.launch { page = open.turn(-1) }
+                                tap.x > size.width * 2 / 3 -> scope.launch { page = open.turn(1) }
                                 else -> showSettings = true
                             }
                         }
@@ -168,8 +170,8 @@ fun ReaderScreen(file: File, onClose: () -> Unit) {
             ModalBottomSheet(onDismissRequest = { showSettings = false }) {
                 SettingsPanel(
                     settings = settings,
-                    fontFaces = remember { Engine.fontFaces(context) },
-                    position = stringResource(R.string.page_of, shown.page + 1, shown.pageCount),
+                    fontFaces = produceState(emptyList<String>()) { value = Engine.fontFaces(context) }.value,
+                    position = stringResource(R.string.page_of, shown.index + 1, shown.pageCount),
                     onChange = { changed ->
                         settings = changed
                         session?.let { open -> scope.launch { page = open.apply(laidOut(changed), pageWidth(changed), height) } }
@@ -195,13 +197,16 @@ private fun HideSystemBars() {
 
 private val SettingsSaver = listSaver<EngineSettings, Any>(
     save = {
-        listOf(it.fontFace, it.fontSize, it.lineSpacingPercent, it.marginHorizontal, it.marginVertical, it.hyphenation, it.justify, it.twoPages)
+        listOf(
+            it.fontFace, it.fontSize, it.lineSpacingPercent, it.marginHorizontal, it.marginVertical,
+            it.hyphenation, it.textAlign.name, it.twoPages,
+        )
     },
     restore = {
         EngineSettings(
             fontFace = it[0] as String, fontSize = it[1] as Int, lineSpacingPercent = it[2] as Int,
             marginHorizontal = it[3] as Int, marginVertical = it[4] as Int,
-            hyphenation = it[5] as Boolean, justify = it[6] as Boolean, twoPages = it[7] as Boolean,
+            hyphenation = it[5] as Boolean, textAlign = TextAlign.valueOf(it[6] as String), twoPages = it[7] as Boolean,
         )
     },
 )
@@ -258,7 +263,9 @@ private fun SettingsPanel(
         }
 
         SettingSwitch(R.string.setting_hyphenation, settings.hyphenation) { onChange(settings.copy(hyphenation = it)) }
-        SettingSwitch(R.string.setting_justify, settings.justify) { onChange(settings.copy(justify = it)) }
+        SettingSwitch(R.string.setting_justify, settings.textAlign == TextAlign.Justify) {
+            onChange(settings.copy(textAlign = if (it) TextAlign.Justify else TextAlign.Left))
+        }
         SettingSwitch(R.string.setting_two_pages, settings.twoPages) { onChange(settings.copy(twoPages = it)) }
     }
 }

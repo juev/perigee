@@ -6,6 +6,7 @@
 #include <android/bitmap.h>
 
 #include <string>
+#include <vector>
 
 #include "hyphman.h"
 #include "lvdocview.h"
@@ -53,6 +54,65 @@ void throwState(JNIEnv* env, const char* message) {
     env->ThrowNew(env->FindClass("java/lang/IllegalStateException"), message);
 }
 
+lString32 toCre(JNIEnv* env, jstring s) {
+    return Utf8ToUnicode(toStd(env, s).c_str());
+}
+
+jobjectArray toJava(JNIEnv* env, const std::vector<lString32>& strings) {
+    jobjectArray out = env->NewObjectArray(
+            static_cast<jsize>(strings.size()), env->FindClass("java/lang/String"), nullptr);
+    for (size_t i = 0; i < strings.size(); i++) {
+        jstring item = toJava(env, strings[i]);
+        env->SetObjectArrayElement(out, static_cast<jsize>(i), item);
+        env->DeleteLocalRef(item);
+    }
+    return out;
+}
+
+/// Range between two xpointers in document order; null when either does not resolve.
+bool rangeOf(JNIEnv* env, LVDocView* view, jstring start, jstring end, ldomXRange& range) {
+    ldomDocument* doc = view->getDocument();
+    ldomXPointer from = doc->createXPointer(toCre(env, start));
+    ldomXPointer to = doc->createXPointer(toCre(env, end));
+    if (from.isNull() || to.isNull()) return false;
+    range = ldomXRange(from, to);
+    range.sort();
+    return true;
+}
+
+void collectToc(LVTocItem* parent, std::vector<lString32>& out) {
+    for (int i = 0; i < parent->getChildCount(); i++) {
+        LVTocItem* item = parent->getChild(i);
+        out.push_back(item->getName());
+        // The path is there even when the item came from the cache and its
+        // xpointer has not been rebuilt yet.
+        out.push_back(item->getPath());
+        out.push_back(lString32::itoa(item->getLevel()));
+        out.push_back(lString32::itoa(item->getPage()));
+        collectToc(item, out);
+    }
+}
+
+/// Up to `words` words next to a search hit, within its paragraph.
+lString32 contextBefore(const ldomXPointerEx& hitStart, int words) {
+    ldomXPointerEx from = hitStart;
+    for (int i = 0; i < words; i++) {
+        if (!from.prevVisibleWordStart(true)) break;
+    }
+    return ldomXRange(from, hitStart).getRangeText();
+}
+
+lString32 contextAfter(const ldomXPointerEx& hitEnd, int words) {
+    ldomXPointerEx to = hitEnd;
+    for (int i = 0; i < words; i++) {
+        ldomXPointerEx next = to;
+        // At the end of the book the walk lands on the root node; stop before it.
+        if (!next.nextVisibleWordEnd(true) || next.getNode()->isRoot()) break;
+        to = next;
+    }
+    return ldomXRange(hitEnd, to).getRangeText();
+}
+
 }  // namespace
 
 extern "C" {
@@ -64,10 +124,14 @@ Java_org_evsyukov_perigee_engine_NativeEngine_domVersion(JNIEnv*, jobject) {
 
 JNIEXPORT void JNICALL
 Java_org_evsyukov_perigee_engine_NativeEngine_init(
-        JNIEnv* env, jobject, jstring hyphDir, jstring cacheDir, jlong cacheBytes, jobjectArray fontFiles) {
+        JNIEnv* env, jobject, jstring hyphDir, jstring cacheDir, jlong cacheBytes) {
     InitFontManager(lString8());
     HyphMan::initDictionaries(Utf8ToUnicode(toStd(env, hyphDir).c_str()));
     ldomDocCache::init(Utf8ToUnicode(toStd(env, cacheDir).c_str()), static_cast<lvsize_t>(cacheBytes));
+}
+
+JNIEXPORT void JNICALL
+Java_org_evsyukov_perigee_engine_NativeEngine_registerFonts(JNIEnv* env, jobject, jobjectArray fontFiles) {
     const jsize count = env->GetArrayLength(fontFiles);
     for (jsize i = 0; i < count; i++) {
         auto file = static_cast<jstring>(env->GetObjectArrayElement(fontFiles, i));
@@ -105,6 +169,9 @@ Java_org_evsyukov_perigee_engine_NativeEngine_create(JNIEnv*, jobject, jint widt
     props->setInt(PROP_FONT_HINTING, 2);
     props->setInt(PROP_FONT_KERNING, 3);  // HarfBuzz shaping
     props->setInt(PROP_TEXTLANG_EMBEDDED_LANGS_ENABLED, 1);
+    // A justified line may shrink its spaces to three quarters at most. The
+    // engine's own floor of one half lets words run together before it hyphenates.
+    props->setInt(PROP_FORMAT_MIN_SPACE_CONDENSING_PERCENT, 75);
     view->propsApply(props);
     return reinterpret_cast<jlong>(view);
 }
@@ -112,8 +179,9 @@ Java_org_evsyukov_perigee_engine_NativeEngine_create(JNIEnv*, jobject, jint widt
 JNIEXPORT void JNICALL
 Java_org_evsyukov_perigee_engine_NativeEngine_applySettings(
         JNIEnv* env, jobject, jlong handle, jstring cssFile, jstring extraCss, jstring fontFace,
-        jint fontSize, jint lineSpacingPercent, jint marginHorizontal, jint marginVertical,
-        jboolean hyphenation, jboolean twoPages, jint renderDpi) {
+        jint fontSize, jint fontWeight, jint lineSpacingPercent, jint marginHorizontal, jint marginVertical,
+        jboolean hyphenation, jboolean footnotes, jboolean twoPages, jint textColor, jint backgroundColor,
+        jint renderDpi) {
     LVDocView* view = viewOf(handle);
     // A new layout moves page boundaries; the reader stays where they were.
     const bool loaded = view->getDocument() != nullptr;
@@ -121,13 +189,17 @@ Java_org_evsyukov_perigee_engine_NativeEngine_applySettings(
 
     CRPropRef props = LVCreatePropsContainer();
     props->setString(PROP_FONT_FACE, toStd(env, fontFace).c_str());
+    props->setInt(PROP_FONT_BASE_WEIGHT, fontWeight);
     props->setInt(PROP_INTERLINE_SPACE, lineSpacingPercent);
+    props->setInt(PROP_FOOTNOTES, footnotes ? 1 : 0);
     props->setInt(PROP_TEXTLANG_HYPHENATION_ENABLED, hyphenation ? 1 : 0);
     props->setInt(PROP_FLOATING_PUNCTUATION, 1);
     props->setInt(PROP_LANDSCAPE_PAGES, twoPages ? 2 : 1);
     props->setInt(PROP_RENDER_DPI, renderDpi);
     view->propsApply(props);
     view->setFontSize(fontSize);
+    view->setTextColor(static_cast<lUInt32>(textColor) & 0xFFFFFF);
+    view->setBackgroundColor(static_cast<lUInt32>(backgroundColor) & 0xFFFFFF);
     view->setPageMargins(lvRect(marginHorizontal, marginVertical, marginHorizontal, marginVertical));
     view->setVisiblePageCount(twoPages ? 2 : 1, false);
 
@@ -208,6 +280,120 @@ Java_org_evsyukov_perigee_engine_NativeEngine_textBetween(
 JNIEXPORT jint JNICALL
 Java_org_evsyukov_perigee_engine_NativeEngine_positionPermyriad(JNIEnv*, jobject, jlong handle) {
     return viewOf(handle)->getPosPercent();
+}
+
+JNIEXPORT jint JNICALL
+Java_org_evsyukov_perigee_engine_NativeEngine_pageOf(JNIEnv* env, jobject, jlong handle, jstring xpointer) {
+    LVDocView* view = viewOf(handle);
+    ldomXPointer xp = view->getDocument()->createXPointer(toCre(env, xpointer));
+    return xp.isNull() ? -1 : view->getBookmarkPage(xp);
+}
+
+JNIEXPORT jstring JNICALL
+Java_org_evsyukov_perigee_engine_NativeEngine_xpointerOfPage(JNIEnv* env, jobject, jlong handle, jint page) {
+    LVDocView* view = viewOf(handle);
+    if (page < 0 || page >= view->getPageCount()) return nullptr;
+    return toJava(env, view->getPageBookmark(page).toString());
+}
+
+JNIEXPORT jobjectArray JNICALL
+Java_org_evsyukov_perigee_engine_NativeEngine_toc(JNIEnv* env, jobject, jlong handle) {
+    std::vector<lString32> out;
+    LVTocItem* root = viewOf(handle)->getToc();
+    if (root) collectToc(root, out);
+    return toJava(env, out);
+}
+
+JNIEXPORT jobjectArray JNICALL
+Java_org_evsyukov_perigee_engine_NativeEngine_selectText(
+        JNIEnv* env, jobject, jlong handle, jint x0, jint y0, jint x1, jint y1) {
+    LVDocView* view = viewOf(handle);
+    ldomXPointer from = view->getNodeByPoint(lvPoint(x0, y0), false, true);
+    ldomXPointer to = view->getNodeByPoint(lvPoint(x1, y1), false, true);
+    if (from.isNull() || to.isNull()) return nullptr;
+    ldomXRange range(from, to);
+    range.sort();
+    // An xpointer names the glyph it stands before, so the end of a selection
+    // is the glyph after the last one taken.
+    if (range.getEnd().getChar() != 0) range.getEnd().setOffset(range.getEnd().getOffset() + 1);
+    // A touch lands inside a word; the selection takes the word whole.
+    if (range.getStart().isVisibleWordChar() && !range.getStart().isVisibleWordStart()) {
+        range.getStart().prevVisibleWordStart(true);
+    }
+    if (range.getEnd().isVisibleWordChar() && !range.getEnd().isVisibleWordStart()) {
+        range.getEnd().nextVisibleWordEnd(true);
+    }
+    if (range.isNull()) return nullptr;
+    lString32 text = range.getRangeText();
+    if (text.empty()) return nullptr;
+    return toJava(env, {range.getStart().toString(), range.getEnd().toString(), text});
+}
+
+JNIEXPORT jintArray JNICALL
+Java_org_evsyukov_perigee_engine_NativeEngine_rangeRects(
+        JNIEnv* env, jobject, jlong handle, jstring start, jstring end) {
+    LVDocView* view = viewOf(handle);
+    std::vector<jint> out;
+    ldomXRange range;
+    if (rangeOf(env, view, start, end, range)) {
+        LVArray<lvRect> rects;
+        range.getSegmentRects(rects);
+        for (int i = 0; i < rects.length(); i++) {
+            if (rects[i].isEmpty()) continue;
+            // One rect is one text line, and a line never straddles two pages:
+            // it is on the page shown with both corners or not at all.
+            lvPoint topLeft = rects[i].topLeft();
+            lvPoint bottomRight = rects[i].bottomRight();
+            if (!view->docToWindowPoint(topLeft) || !view->docToWindowPoint(bottomRight, true)) continue;
+            out.insert(out.end(), {topLeft.x, topLeft.y, bottomRight.x, bottomRight.y});
+        }
+    }
+    jintArray result = env->NewIntArray(static_cast<jsize>(out.size()));
+    env->SetIntArrayRegion(result, 0, static_cast<jsize>(out.size()), out.data());
+    return result;
+}
+
+JNIEXPORT jobjectArray JNICALL
+Java_org_evsyukov_perigee_engine_NativeEngine_search(
+        JNIEnv* env, jobject, jlong handle, jstring pattern, jboolean caseInsensitive, jint maxHits,
+        jint contextWords) {
+    LVDocView* view = viewOf(handle);
+    std::vector<lString32> out;
+    lString32 needle = toCre(env, pattern);
+    if (needle.empty()) return toJava(env, out);
+    // A phrase is found even when the book splits it with markup, writes it
+    // with typographic spaces and apostrophes, or with soft hyphens inside.
+    const lUInt32 flags = LDOM_FIND_TEXT_MATCH_ACROSS_TEXT_NODES | LDOM_FIND_TEXT_NORMALIZE_CANONICAL |
+                          LDOM_FIND_TEXT_IGNORE_FORMAT_CONTROL_CHARS | LDOM_FIND_TEXT_FOLD_SPACES |
+                          LDOM_FIND_TEXT_FOLD_APOSTROPHES;
+    ldomXRangeList hits;
+    view->getDocument()->findText(needle, caseInsensitive, false, -1, -1, hits, maxHits, -1, -1, false, flags);
+    for (int i = 0; i < hits.length(); i++) {
+        ldomXRange* hit = hits[i];
+        out.push_back(hit->getStart().toString());
+        out.push_back(hit->getEnd().toString());
+        out.push_back(contextBefore(hit->getStart(), contextWords));
+        out.push_back(hit->getRangeText());
+        out.push_back(contextAfter(hit->getEnd(), contextWords));
+        out.push_back(lString32::itoa(view->getBookmarkPage(hit->getStart())));
+    }
+    return toJava(env, out);
+}
+
+JNIEXPORT jobjectArray JNICALL
+Java_org_evsyukov_perigee_engine_NativeEngine_linkAt(JNIEnv* env, jobject, jlong handle, jint x, jint y) {
+    LVDocView* view = viewOf(handle);
+    ldomXPointer at = view->getNodeByPoint(lvPoint(x, y), true);
+    if (at.isNull()) return nullptr;
+    ldomXPointer anchor;
+    lString32 href = at.getHRef(anchor);
+    if (href.empty()) return nullptr;
+    lString32 target;
+    if (href[0] == '#' && href.length() > 1) {
+        ldomNode* node = view->getDocument()->getElementById(href.c_str() + 1);
+        if (node) target = ldomXPointer(node, 0).toString();
+    }
+    return toJava(env, {href, anchor.isNull() ? lString32() : anchor.toString(), target});
 }
 
 JNIEXPORT void JNICALL
