@@ -56,7 +56,8 @@ A highlight created through the JWT API at that CFI comes back to the device as 
 5. **A repeated `POST books/:id/annotations` creates a duplicate.** There is no idempotency key on the JWT annotation endpoint. Device highlights go through the exchange endpoint, which is keyed.
 6. **`POST koreader/plugin/sweeps` with a plugin version below 1.4.0 switches off self-update for the user's real KOReader plugin.** After a sweep with `pluginVersion: 0.1.0`, `GET koreader/plugin/version` without identity headers returned `pluginVersion: unknown` instead of `1.5.5`. Perigee must not call `sweeps` with its own version.
 7. **Highlight colour sent as a name is not preserved.** A web highlight created with `color: blue` came down as `yellow`. Not investigated further.
-8. **`fileHash` is absent from `GET books/:id` on 3.3.0.** It exists on `main` only. Until it ships, a local file is matched through `POST koreader/plugin/match-check`.
+8. **Whitespace at the ends of a highlight is dropped.** A range ending on a space (`.40 … .65`) was stored as `/7:40 … /7:64` and came back as `.40 … .64`. Trim a selection before sending it, or the device and the server disagree by one character.
+9. **`fileHash` is absent from `GET books/:id` on 3.3.0.** It exists on `main` only. Until it ships, a local file is matched through `POST koreader/plugin/match-check`.
 
 ## FB2
 
