@@ -13,11 +13,14 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.displayCutout
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.requiredWidth
+import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.DropdownMenu
@@ -40,6 +43,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.input.pointer.pointerInput
@@ -94,24 +98,35 @@ fun ReaderScreen(file: File, onClose: () -> Unit) {
         Modifier
             .fillMaxSize()
             .background(Color.White)
-            .padding(start = sideInset, end = sideInset, top = cutout.calculateTopPadding(), bottom = cutout.calculateBottomPadding()),
+            .padding(start = sideInset, end = sideInset, top = cutout.calculateTopPadding(), bottom = cutout.calculateBottomPadding())
+            .clipToBounds(),
     ) {
         val width = constraints.maxWidth
         val height = constraints.maxHeight
         // Two pages side by side only make sense on a screen wider than it is tall.
-        fun laidOut(chosen: EngineSettings) = chosen.copy(twoPages = chosen.twoPages && width > height)
+        fun twoUp(chosen: EngineSettings) = chosen.twoPages && width > height
+        // The engine makes the gap between two pages as wide as one side margin, which
+        // reads as too tight. The page is therefore laid out with doubled side margins
+        // on a canvas wider than the screen, and the surplus is cropped off both edges:
+        // the gap doubles while the outer margins stay as chosen.
+        fun overdraw(chosen: EngineSettings) = if (twoUp(chosen)) chosen.marginHorizontal else 0
+        fun pageWidth(chosen: EngineSettings) = width + 2 * overdraw(chosen)
+        fun laidOut(chosen: EngineSettings) = chosen.copy(
+            twoPages = twoUp(chosen),
+            marginHorizontal = chosen.marginHorizontal + overdraw(chosen),
+        )
 
         LaunchedEffect(file) {
             try {
-                session = ReaderSession.open(context, file, width, height, laidOut(settings), position)
-                    .also { page = it.render(width, height) }
+                session = ReaderSession.open(context, file, pageWidth(settings), height, laidOut(settings), position)
+                    .also { page = it.render(pageWidth(settings), height) }
             } catch (e: IllegalArgumentException) {
                 failed = true
             }
         }
         // Rotation and window resizing re-lay the book out at the new size.
         LaunchedEffect(width, height) {
-            session?.let { page = it.render(width, height) }
+            session?.let { page = it.render(pageWidth(settings), height) }
         }
         DisposableEffect(file) {
             onDispose {
@@ -131,14 +146,17 @@ fun ReaderScreen(file: File, onClose: () -> Unit) {
                 bitmap = shown.bitmap.asImageBitmap(),
                 contentDescription = null,
                 modifier = Modifier
-                    .fillMaxSize()
-                    .pointerInput(laidOut(settings).twoPages) {
-                        val step = if (laidOut(settings).twoPages) 2 else 1
+                    .fillMaxHeight()
+                    .wrapContentWidth(unbounded = true)
+                    .requiredWidth(with(density) { shown.bitmap.width.toDp() })
+                    .pointerInput(twoUp(settings)) {
+                        val step = if (twoUp(settings)) 2 else 1
+                        val pageWidth = pageWidth(settings)
                         detectTapGestures { tap ->
                             val open = session ?: return@detectTapGestures
                             when {
-                                tap.x < size.width / 3 -> scope.launch { page = open.turn(-step, width, height) }
-                                tap.x > size.width * 2 / 3 -> scope.launch { page = open.turn(step, width, height) }
+                                tap.x < size.width / 3 -> scope.launch { page = open.turn(-step, pageWidth, height) }
+                                tap.x > size.width * 2 / 3 -> scope.launch { page = open.turn(step, pageWidth, height) }
                                 else -> showSettings = true
                             }
                         }
@@ -154,7 +172,7 @@ fun ReaderScreen(file: File, onClose: () -> Unit) {
                     position = stringResource(R.string.page_of, shown.page + 1, shown.pageCount),
                     onChange = { changed ->
                         settings = changed
-                        session?.let { open -> scope.launch { page = open.apply(laidOut(changed), width, height) } }
+                        session?.let { open -> scope.launch { page = open.apply(laidOut(changed), pageWidth(changed), height) } }
                     },
                     onClose = onClose,
                 )
