@@ -5,14 +5,14 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import org.evsyukov.perigee.engine.NativeEngine
+import org.evsyukov.perigee.engine.Engine
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
             MaterialTheme {
-                Text("crengine DOM ${NativeEngine.domVersion()}")
+                Text("crengine DOM ${Engine.domVersion}")
             }
         }
     }

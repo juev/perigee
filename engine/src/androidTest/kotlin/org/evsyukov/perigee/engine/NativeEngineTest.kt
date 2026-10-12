@@ -11,6 +11,6 @@ class NativeEngineTest {
     fun reportsKoreaderDomVersion() {
         // The bookOrbit position converter assumes the DOM KOReader builds;
         // a different version here means xpointers stop matching the server.
-        assertEquals(20260812, NativeEngine.domVersion())
+        assertEquals(20260812, Engine.domVersion)
     }
 }
