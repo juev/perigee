@@ -1,5 +1,6 @@
-// JNI surface of the engine module. crengine is not thread-safe: callers
-// (EngineDocument.kt) confine every call to one thread at a time.
+// JNI surface of the engine module. crengine is not thread-safe and keeps
+// process-wide state (string allocator, font manager, document cache), so
+// callers serialize every call, across all documents.
 
 #include <jni.h>
 #include <android/bitmap.h>

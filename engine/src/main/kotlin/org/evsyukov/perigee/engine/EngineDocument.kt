@@ -5,7 +5,8 @@ import android.graphics.Bitmap
 import java.io.File
 
 /**
- * An open book. Not thread-safe: use it from one thread at a time.
+ * An open book. The engine is not thread-safe and shares state between books:
+ * all calls into this module, for every open document, must be serialized.
  * Positions are crengine xpointers, the same form KOReader exchanges with bookOrbit.
  */
 class EngineDocument private constructor(
