@@ -11,13 +11,13 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.displayCutout
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.DropdownMenu
@@ -45,6 +45,7 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.core.view.WindowCompat
@@ -84,8 +85,17 @@ fun ReaderScreen(file: File, onClose: () -> Unit) {
     BackHandler(onBack = onClose)
     HideSystemBars()
 
-    // The page keeps clear of the camera cutout; the strip beside it stays page-coloured.
-    BoxWithConstraints(Modifier.fillMaxSize().background(Color.White).windowInsetsPadding(WindowInsets.displayCutout)) {
+    // The page keeps clear of the camera cutout, and by the same amount on the
+    // opposite side, so the text stays centred; the strips stay page-coloured.
+    val cutout = WindowInsets.displayCutout.asPaddingValues()
+    val direction = LocalLayoutDirection.current
+    val sideInset = maxOf(cutout.calculateLeftPadding(direction), cutout.calculateRightPadding(direction))
+    BoxWithConstraints(
+        Modifier
+            .fillMaxSize()
+            .background(Color.White)
+            .padding(start = sideInset, end = sideInset, top = cutout.calculateTopPadding(), bottom = cutout.calculateBottomPadding()),
+    ) {
         val width = constraints.maxWidth
         val height = constraints.maxHeight
         // Two pages side by side only make sense on a screen wider than it is tall.
