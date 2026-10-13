@@ -114,7 +114,8 @@ class LibraryScreenTest {
     /** A menu is a window of its own: the Back key closes it, the activity's own way back does not reach it. */
     private fun closeMenu() {
         InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(android.view.KeyEvent.KEYCODE_BACK)
-        rule.waitForIdle()
+        // The window takes a moment to go; the next menu must not be opened beside it.
+        rule.waitUntil(TIMEOUT) { rule.onAllNodes(isPopup()).fetchSemanticsNodes().isEmpty() }
     }
 
     private fun sendFromMenu(title: String) {
