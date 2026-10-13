@@ -34,6 +34,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.requiredWidth
 import androidx.compose.foundation.layout.wrapContentWidth
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -69,10 +70,13 @@ import androidx.core.net.toUri
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import java.io.File
 import kotlin.math.abs
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.evsyukov.perigee.R
 import org.evsyukov.perigee.data.PageTurn
@@ -132,6 +136,7 @@ fun ReaderScreen(file: File, onClose: () -> Unit, viewModel: ReaderViewModel = v
         }
     }
     HideSystemBars()
+    LifecycleEventEffect(Lifecycle.Event.ON_STOP) { viewModel.saveCache() }
     ScreenBrightness(prefs.brightness)
     VolumeKeys(prefs.volumeKeysTurnPages && panel == Panel.None) { forward -> viewModel.turn(if (forward) 1 else -1) }
 
@@ -150,6 +155,9 @@ fun ReaderScreen(file: File, onClose: () -> Unit, viewModel: ReaderViewModel = v
         val densityDpi = LocalConfiguration.current.densityDpi
         LaunchedEffect(viewModel, area, density.density) {
             if (area != IntSize.Zero) {
+                // The area settles over a few frames, as the cutout inset arrives or a
+                // rotation finishes. Laying a book out takes seconds: wait for the last size.
+                delay(VIEWPORT_SETTLE_MILLIS)
                 viewModel.setViewport(
                     Viewport(area.width, area.height, density.density, densityDpi),
                 )
@@ -263,6 +271,9 @@ fun ReaderScreen(file: File, onClose: () -> Unit, viewModel: ReaderViewModel = v
             }
         }
 
+        if (state.busy) {
+            CircularProgressIndicator(Modifier.align(Alignment.Center).testTag("busy"), color = ink.copy(alpha = 0.5f))
+        }
         AnimatedVisibility(panel == Panel.Menu && state.page != null, enter = fadeIn(), exit = fadeOut()) {
             ReaderMenu(
                 state = state,
@@ -415,6 +426,7 @@ private fun openLink(activity: Activity?, url: String) {
 }
 
 private val SWIPE = 48.dp
+private const val VIEWPORT_SETTLE_MILLIS = 100L
 private const val EDGE_SHARE = 0.15f
 private const val MIN_BRIGHTNESS = 0.01f
 private const val TURN_MILLIS = 180

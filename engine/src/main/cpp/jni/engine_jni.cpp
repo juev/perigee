@@ -172,6 +172,9 @@ Java_org_evsyukov_perigee_engine_NativeEngine_create(JNIEnv*, jobject, jint widt
     // A justified line may shrink its spaces to three quarters at most. The
     // engine's own floor of one half lets words run together before it hyphenates.
     props->setInt(PROP_FORMAT_MIN_SPACE_CONDENSING_PERCENT, 75);
+    // Books from 30 KB up are worth caching: parsing and laying out a novel
+    // takes seconds, reading it back from the cache does not.
+    props->setInt(PROP_MIN_FILE_SIZE_TO_CACHE, 30000);
     view->propsApply(props);
     return reinterpret_cast<jlong>(view);
 }
@@ -228,6 +231,12 @@ Java_org_evsyukov_perigee_engine_NativeEngine_load(JNIEnv* env, jobject, jlong h
     }
     view->Render();
     return JNI_TRUE;
+}
+
+JNIEXPORT void JNICALL
+Java_org_evsyukov_perigee_engine_NativeEngine_saveCache(JNIEnv*, jobject, jlong handle) {
+    LVDocView* view = viewOf(handle);
+    if (view->getDocument()) view->updateCache();
 }
 
 JNIEXPORT void JNICALL

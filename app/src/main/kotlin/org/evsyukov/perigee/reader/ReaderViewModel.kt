@@ -64,6 +64,8 @@ sealed interface TapResult {
 data class ReaderState(
     val book: Book? = null,
     val failed: Boolean = false,
+    /** The book is being opened or laid out again; touches wait for nothing and are dropped. */
+    val busy: Boolean = false,
     val page: Page? = null,
     /** Which way the page shown was reached, for the turn animation: 1 forward, -1 back, 0 a jump. */
     val turned: Int = 0,
@@ -105,6 +107,7 @@ class ReaderViewModel(application: Application) : AndroidViewModel(application) 
     private val layout = Mutex()
     private val history = ArrayDeque<String>()
     private var searching: Job? = null
+    private var turnsWaiting = 0
 
     // A finger moves faster than the engine answers: only its latest place matters.
     private data class SelectRequest(val x: Int, val y: Int, val extend: Boolean)
@@ -161,13 +164,27 @@ class ReaderViewModel(application: Application) : AndroidViewModel(application) 
         viewModelScope.launch { sync() }
     }
 
+    /** The app is going to the background: a good moment to keep the laid out book for next time. */
+    fun saveCache() = act { open -> open.saveCache() }
+
     fun updatePrefs(change: (ReaderPrefs) -> ReaderPrefs) {
         viewModelScope.launch { preferences.update(change) }
     }
 
     /** One screen forward or back. */
-    fun turn(screens: Int) = act { open ->
-        show(open.turn(screens), turned = screens.coerceIn(-1, 1))
+    fun turn(screens: Int) {
+        // Touches made while the book is laid out, or faster than pages come,
+        // must not pile up and then fire all at once.
+        val open = reader ?: return
+        if (_state.value.busy || turnsWaiting >= MAX_TURNS_WAITING) return
+        turnsWaiting++
+        viewModelScope.launch {
+            try {
+                show(open.turn(screens), turned = screens.coerceIn(-1, 1))
+            } finally {
+                turnsWaiting--
+            }
+        }
     }
 
     /** Jumps to a place, remembering where the reader came from. */
@@ -201,7 +218,8 @@ class ReaderViewModel(application: Application) : AndroidViewModel(application) 
     suspend fun tap(x: Int, y: Int): TapResult = withContext(Dispatchers.Main.immediate) { sortOut(x, y) }
 
     private suspend fun sortOut(x: Int, y: Int): TapResult {
-        val open = reader ?: return TapResult.Nothing
+        val open = reader ?: return TapResult.Handled
+        if (_state.value.busy) return TapResult.Handled
         val current = _state.value
         if (current.selection != null || current.quoteTouch != null) {
             _state.update { it.copy(selection = null, quoteTouch = null) }
@@ -315,10 +333,15 @@ class ReaderViewModel(application: Application) : AndroidViewModel(application) 
         val file = file ?: return
         val viewport = viewport ?: return
         val open = reader
-        if (open == null) openBook(file, viewport) else relayOut(open, viewport)
+        try {
+            if (open == null) openBook(file, viewport) else relayOut(open, viewport)
+        } finally {
+            _state.update { it.copy(busy = false) }
+        }
     }
 
     private suspend fun openBook(file: File, viewport: Viewport) {
+        _state.update { it.copy(busy = true) }
         try {
             val prefs = preferences.prefs.first().also { _prefs.value = it }
             val target = laidOut(prefs, viewport)
@@ -344,6 +367,7 @@ class ReaderViewModel(application: Application) : AndroidViewModel(application) 
         val target = laidOut(_prefs.value, viewport)
         // Most preferences are about controls and leave the pages as they are.
         if (target == applied) return
+        _state.update { it.copy(busy = true) }
         val (width, height, settings) = target
         val page = open.apply(settings, width, height)
         applied = target
@@ -399,6 +423,9 @@ class ReaderViewModel(application: Application) : AndroidViewModel(application) 
 
     companion object {
         private const val BOOKMARK_TEXT_LENGTH = 120
+
+        // One turn in flight and one behind it: enough for a quick double tap.
+        private const val MAX_TURNS_WAITING = 2
 
         /** Two pages side by side only make sense on a screen wider than it is tall. */
         fun twoUp(prefs: ReaderPrefs, viewport: Viewport) =

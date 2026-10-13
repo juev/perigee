@@ -129,6 +129,13 @@ class EngineDocument private constructor(
         }
     }
 
+    /**
+     * Keeps the parsed and laid out book in the engine's cache, so the next
+     * opening with the same settings skips both steps. The engine also does
+     * this on [close], but an app is rarely closed: it is put away and killed.
+     */
+    fun saveCache() = NativeEngine.saveCache(checked())
+
     override fun close() {
         if (handle != 0L) {
             NativeEngine.close(handle)

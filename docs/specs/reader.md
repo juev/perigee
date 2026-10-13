@@ -101,6 +101,14 @@ Such a note is shown under a rule at the bottom of the page whose text links to 
 
 The position stored is `BookReader.position`: the top of the page the reader last went to. A layout change shows the page that position falls on without moving it, so turning the screen and back returns to the very same page.
 
+### Opening and laying out
+
+Laying a novel out takes seconds on a phone, so the screen does it as rarely as it can:
+
+- The page area settles over a few frames, as the cutout inset arrives or a rotation finishes. The screen waits for the last size before it asks for a layout.
+- While a book is being opened or laid out again a progress ring is shown and touches are dropped. At most two page turns wait for the engine; a third touch in the meantime is dropped. Touches never pile up to fire all at once.
+- When the app goes to the background the engine writes the parsed and laid out book to its cache. The next opening with the same settings reads it back instead of doing the work again.
+
 ### Touches
 
 A touch is sorted out in this order:
@@ -127,7 +135,7 @@ A thin line at the bottom edge of the page shows the position in the book, with 
 
 In ReadEra's order: turn pages, colour scheme, font, font size, boldness, line spacing, alignment, hyphenation, paragraph spacing, paragraph indent, page margins; then two pages in landscape, the turn scheme and the gesture options. Sizes are stored in dp.
 
-Differences from ReadEra, all open to change: the schemes are Day, Night and Sepia only; margins are a switch between wide and narrow, as in ReadEra, with widths chosen here; font size is in dp, not ReadEra's units.
+Differences from ReadEra, all open to change: the schemes are Day, Night and Sepia only; margins are a switch between wide (24 dp) and narrow (8 dp), narrow by default, with widths chosen here; font size is in dp, not ReadEra's units.
 
 ## Tests
 

@@ -110,6 +110,9 @@ class BookReader private constructor(
         relaidOut()
     }
 
+    /** Keeps the book as laid out now in the engine's cache, for a quick next opening. */
+    suspend fun saveCache(): Unit = onEngine { document.saveCache() }
+
     /** Anything else the document can tell: contents, search, what is under a touch. */
     suspend fun <T> read(block: (EngineDocument) -> T): T = onEngine { block(document) }
 

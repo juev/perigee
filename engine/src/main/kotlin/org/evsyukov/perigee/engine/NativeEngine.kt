@@ -30,6 +30,9 @@ internal object NativeEngine {
     /** Returns false when the file cannot be opened. */
     external fun load(handle: Long, path: String): Boolean
 
+    /** Writes the parsed and laid out book to the engine's cache; small files are skipped. */
+    external fun saveCache(handle: Long)
+
     external fun close(handle: Long)
     external fun pageCount(handle: Long): Int
     external fun currentPage(handle: Long): Int

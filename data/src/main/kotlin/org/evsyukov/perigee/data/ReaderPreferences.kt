@@ -49,7 +49,7 @@ data class ReaderPrefs(
     val paragraphSpacingPercent: Int = 20,
     val paragraphIndent: Boolean = true,
     /** Wide margins around the text; off leaves a narrow strip. */
-    val pageMargins: Boolean = true,
+    val pageMargins: Boolean = false,
     val twoPagesInLandscape: Boolean = true,
     val volumeKeysTurnPages: Boolean = true,
     val brightnessGesture: Boolean = false,

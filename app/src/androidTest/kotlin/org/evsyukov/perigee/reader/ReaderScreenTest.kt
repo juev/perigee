@@ -1,5 +1,6 @@
 package org.evsyukov.perigee.reader
 
+import android.graphics.Color
 import androidx.activity.ComponentActivity
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.Box
@@ -87,7 +88,7 @@ class ReaderScreenTest {
     private fun waitForPage(index: Int) = rule.waitUntil(TIMEOUT) { shownPage() == index }
 
     private fun waitForBook() {
-        rule.waitUntil(TIMEOUT) { model().state.value.page != null }
+        rule.waitUntil(TIMEOUT) { model().state.value.let { it.page != null && !it.busy } }
         rule.waitForIdle()
     }
 
@@ -96,6 +97,13 @@ class ReaderScreenTest {
 
     private fun tapPage(x: Float, y: Float) =
         rule.onNodeWithTag("page").performTouchInput { click(Offset(width * x, height * y)) }
+
+    /** Turns forward by touch, one page at a time: touches faster than pages come are dropped. */
+    private fun turnForward(times: Int, shown: () -> Int? = ::shownPage) = repeat(times) {
+        val before = shown()!!
+        tapPage(0.9f, 0.5f)
+        rule.waitUntil(TIMEOUT) { shown() == before + 1 }
+    }
 
     private fun openMenu() {
         tapPage(0.5f, 0.5f)
@@ -152,9 +160,7 @@ class ReaderScreenTest {
     fun rotationKeepsTheBookOpenAtItsPlace() {
         show()
         waitForBook()
-        tapPage(0.9f, 0.5f)
-        tapPage(0.9f, 0.5f)
-        waitForPage(2)
+        turnForward(2)
         val position = model().state.value.page!!.xpointer
 
         rule.activityRule.scenario.recreate()
@@ -172,8 +178,7 @@ class ReaderScreenTest {
             MaterialTheme { Box(Modifier.padding(bottom = inset)) { ReaderScreen(book, onClose = {}) } }
         }
         waitForBook()
-        repeat(3) { tapPage(0.9f, 0.5f) }
-        waitForPage(3)
+        turnForward(3)
         val height = model().state.value.page!!.bitmap.height
 
         // As a split screen or a keyboard would: the area shrinks and comes back.
@@ -197,8 +202,7 @@ class ReaderScreenTest {
         rule.setContent { MaterialTheme { ReaderScreen(book, onClose = {}, viewModel = viewModel(key = key)) } }
         fun keyed() = ViewModelProvider(activity)[key, ReaderViewModel::class.java]
         rule.waitUntil(TIMEOUT) { keyed().state.value.page != null }
-        repeat(3) { tapPage(0.9f, 0.5f) }
-        rule.waitUntil(TIMEOUT) { keyed().state.value.page?.index == 3 }
+        turnForward(3) { keyed().state.value.page?.index }
         val left = keyed().state.value.page!!.xpointer
         // The position is written to the library right after the page is shown.
         rule.waitUntil(TIMEOUT) { runBlocking { Library.get(activity).lastOpened() }?.xpointer == left }
@@ -293,6 +297,9 @@ class ReaderScreenTest {
         waitForBook()
         tapPage(0.05f, 0.03f)
         rule.waitUntil(TIMEOUT) { model().prefs.value.colorScheme == ColorScheme.Night }
+        // The page is redrawn in the new colours; touches made meanwhile are dropped.
+        rule.waitUntil(TIMEOUT) { model().state.value.page!!.bitmap.getPixel(2, 2) == Color.BLACK }
+        waitForBook()
         tapPage(0.05f, 0.03f)
         rule.waitUntil(TIMEOUT) { model().prefs.value.colorScheme == ColorScheme.Day }
         assertEquals(0, shownPage())
