@@ -523,13 +523,18 @@ class ReaderViewModel(application: Application) : AndroidViewModel(application) 
         fun twoUp(prefs: ReaderPrefs, viewport: Viewport) =
             prefs.twoPagesInLandscape && viewport.width > viewport.height
 
-        // Margins in dp: at the sides, and at the top and bottom edges of the screen; narrow and wide.
+        // Margins in dp: at the sides, at the top and at the bottom of the screen; narrow and wide. They are
+        // those measured in ReadEra on a 560 dpi phone: its wide margins widen the sides (30 px to 120 px) and
+        // leave the top and bottom nearly as they were. Over seven pages its last line ended 75 to 161 px from
+        // the bottom edge; with 12 dp there the last line here ended 49 to 141 px from it.
         private const val SIDE_NARROW = 8
-        private const val SIDE_WIDE = 32
-        private const val EDGE_NARROW = 12
-        private const val EDGE_WIDE = 36
-        private const val BELOW_STRIP_NARROW = 2
-        private const val BELOW_STRIP_WIDE = 20
+        private const val SIDE_WIDE = 34
+        private const val TOP_NARROW = 12
+        private const val TOP_WIDE = 16
+        private const val BOTTOM_NARROW = 20
+        private const val BOTTOM_WIDE = 23
+        private const val BELOW_STRIP_NARROW = 1
+        private const val BELOW_STRIP_WIDE = 2
 
         /**
          * Page size and engine settings for the reader's preferences.
@@ -544,7 +549,7 @@ class ReaderViewModel(application: Application) : AndroidViewModel(application) 
             fun px(dp: Int) = (dp * viewport.density).toInt()
             val twoPages = twoUp(prefs, viewport)
             val side = px(if (prefs.pageMargins) SIDE_WIDE else SIDE_NARROW)
-            val edge = px(if (prefs.pageMargins) EDGE_WIDE else EDGE_NARROW)
+            val top = px(if (prefs.pageMargins) TOP_WIDE else TOP_NARROW)
             val overdraw = if (twoPages) side else 0
             val settings = EngineSettings(
                 fontFace = prefs.fontFace,
@@ -554,8 +559,8 @@ class ReaderViewModel(application: Application) : AndroidViewModel(application) 
                 marginHorizontal = side + overdraw,
                 // A strip left clear above the page, as under a camera cutout, is margin already: only what
                 // it falls short of is added, and a little so that the text does not sit on its very edge.
-                marginTop = maxOf(edge - viewport.clearAbove, px(if (prefs.pageMargins) BELOW_STRIP_WIDE else BELOW_STRIP_NARROW)),
-                marginBottom = edge,
+                marginTop = maxOf(top - viewport.clearAbove, px(if (prefs.pageMargins) BELOW_STRIP_WIDE else BELOW_STRIP_NARROW)),
+                marginBottom = px(if (prefs.pageMargins) BOTTOM_WIDE else BOTTOM_NARROW),
                 textAlign = when (prefs.alignment) {
                     Alignment.Justify -> TextAlign.Justify
                     Alignment.Left -> TextAlign.Left
