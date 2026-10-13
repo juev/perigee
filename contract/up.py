@@ -51,7 +51,12 @@ def wait(what, probe, seconds=180):
 
 
 def main():
-    subprocess.run([sys.executable, str(HERE / "make_corpus.py"), str(HERE / ".work" / "books")], check=True)
+    books = HERE / ".work" / "books"
+    subprocess.run([sys.executable, str(HERE / "make_corpus.py"), str(books)], check=True)
+    # The server runs as a user of its own and files uploaded books here: on
+    # Linux the mount keeps the host's owner, so the folders are opened to everyone.
+    for folder in [books, *(d for d in books.rglob("*") if d.is_dir())]:
+        folder.chmod(0o777)
     if "--reset" in sys.argv[1:]:
         subprocess.run(["docker", "compose", "down", "-v"], cwd=HERE, check=True)
     subprocess.run(["docker", "compose", "up", "-d"], cwd=HERE, check=True)

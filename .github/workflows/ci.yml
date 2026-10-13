@@ -118,7 +118,7 @@ jobs:
           profile: pixel_6
           disable-animations: true
           # The emulator reaches the server on the runner at 10.0.2.2.
-          script: ./gradlew ${{ matrix.tasks }} -Pandroid.testInstrumentationRunnerArguments.bookorbitUrl=http://10.0.2.2:3070
+          script: ./gradlew ${{ matrix.tasks }} --continue -Pandroid.testInstrumentationRunnerArguments.bookorbitUrl=http://10.0.2.2:3070
       - name: Server log
         if: failure()
         run: docker compose -f contract/docker-compose.yml logs --tail 300 app
