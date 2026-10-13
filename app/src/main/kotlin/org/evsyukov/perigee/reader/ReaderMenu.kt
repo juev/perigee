@@ -177,15 +177,17 @@ internal fun SelectionBars(state: ReaderState, viewModel: ReaderViewModel, modif
             // On a narrow screen the actions do not all fit; the row scrolls.
             Row(
                 Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 8.dp, vertical = 4.dp),
-                horizontalArrangement = Arrangement.spacedBy(2.dp),
+                horizontalArrangement = Arrangement.spacedBy(1.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
+                // Narrower than the usual 48 dp, so that nine actions fit a phone held upright.
+                val action = Modifier.size(38.dp)
                 QUOTE_COLORS.forEachIndexed { index, color ->
                     val label = stringResource(R.string.quote_color, index + 1)
                     Box(
                         Modifier
-                            .padding(4.dp)
-                            .size(26.dp)
+                            .padding(3.dp)
+                            .size(24.dp)
                             .clip(CircleShape)
                             .background(Color(0xFF000000 or color.toLong()))
                             .border(
@@ -203,23 +205,23 @@ internal fun SelectionBars(state: ReaderState, viewModel: ReaderViewModel, modif
                             .semantics { contentDescription = label },
                     )
                 }
-                IconButton(onClick = {
+                IconButton(modifier = action, onClick = {
                     noteFor = if (touched != null) NoteTarget.Existing(touched) else NoteTarget.New
                 }) { Icon(Icons.Filled.Edit, stringResource(R.string.action_note)) }
-                IconButton(onClick = {
+                IconButton(modifier = action, onClick = {
                     copy(context, text)
                     viewModel.clearSelection()
                 }) { Text("⧉", Modifier.semantics { contentDescription = copyLabel }, style = MaterialTheme.typography.titleLarge) }
-                IconButton(onClick = { share(context, text) }) { Icon(Icons.Filled.Share, stringResource(R.string.action_share)) }
-                IconButton(onClick = { processText(context, text) }) {
+                IconButton(modifier = action, onClick = { share(context, text) }) { Icon(Icons.Filled.Share, stringResource(R.string.action_share)) }
+                IconButton(modifier = action, onClick = { processText(context, text) }) {
                     Text("A文", Modifier.semantics { contentDescription = translateLabel }, style = MaterialTheme.typography.titleSmall)
                 }
                 if (touched != null) {
-                    IconButton(onClick = { viewModel.removeQuote(touched.quote) }) {
+                    IconButton(modifier = action, onClick = { viewModel.removeQuote(touched.quote) }) {
                         Icon(Icons.Filled.Delete, stringResource(R.string.action_delete))
                     }
                 } else {
-                    IconButton(onClick = { webSearch(context, text) }) {
+                    IconButton(modifier = action, onClick = { webSearch(context, text) }) {
                         Icon(Icons.Filled.Search, stringResource(R.string.action_web_search))
                     }
                 }

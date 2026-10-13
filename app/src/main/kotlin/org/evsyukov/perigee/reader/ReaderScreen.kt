@@ -195,7 +195,9 @@ fun ReaderScreen(file: File, onClose: () -> Unit, viewModel: ReaderViewModel = v
                             .testTag("page")
                             .semantics { contentDescription = pageLabel }
                             .pointerInput(offsetX) {
-                                detectTapGestures { tap ->
+                                // Holding a finger starts a selection (below) and is not a touch:
+                                // naming a long-press handler keeps it from ending as one.
+                                detectTapGestures(onLongPress = {}) { tap ->
                                     scope.launch {
                                         when (val result = viewModel.tap(tap.x.toInt() + offsetX, tap.y.toInt())) {
                                             TapResult.Handled -> Unit
