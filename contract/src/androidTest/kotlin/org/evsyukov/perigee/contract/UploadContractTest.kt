@@ -154,7 +154,8 @@ class UploadContractTest {
         val options = device.orbit.uploadOptions()
 
         assertTrue(options.allowed)
-        assertEquals("500 MB unless the administrator said otherwise", 500L * 1024 * 1024, options.maxBytes)
+        // What the server takes unless the administrator said otherwise: 500 MB in 3.3, 4 GB from 3.4 on.
+        assertTrue("got ${options.maxBytes}", options.maxBytes in listOf(500L * 1024 * 1024, 4096L * 1024 * 1024))
         assertTrue("got ${options.formats}", options.formats.containsAll(listOf("epub", "fb2", "mobi")))
         assertTrue("of what the app reads, only those three", options.formats.none { it in listOf("fb3", "txt", "rtf", "doc", "docx", "odt", "html", "chm") })
         val library = options.libraries.single()

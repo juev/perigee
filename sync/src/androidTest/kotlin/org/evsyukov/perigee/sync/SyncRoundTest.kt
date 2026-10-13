@@ -132,6 +132,26 @@ class SyncRoundTest {
     }
 
     @Test
+    fun placeTheReaderStaysAtIsSentAsLaterThanTheOneTheyTurnedDown() = runBlocking<Unit> {
+        val book = shared("stayed.fb2")
+        later()
+        library.savePosition(book.id, "/body/p[10]", 0.1f)
+        val elsewhereAt = clock / 1000 + 30
+        elsewhere(book, 0.6, "/body/DocFragment[3]/body/p[4]/text().0", secondsFromNow = 30)
+        assertEquals(1, orbit.sync().offers)
+
+        // The reader stays without reading on: the place here was reached before the other one.
+        library.settleOffer(book.id)
+        assertEquals(1, orbit.sync().placesSent)
+
+        val sent = JSONObject(puts().single().body)
+        assertEquals("/body/p[10]", sent.getString("progress"))
+        // A server that keeps the later of two places would drop it otherwise.
+        assertTrue("sent as of ${sent.getLong("timestamp")}, the other is of $elsewhereAt", sent.getLong("timestamp") > elsewhereAt)
+        assertFalse(fresh(book).placeUnsent)
+    }
+
+    @Test
     fun readerWhoGoesToThePlaceFromElsewhereSendsItBackAsTheirOwn() = runBlocking<Unit> {
         val book = shared("accepted.fb2")
         elsewhere(book, 0.6, "/body/p[60]", secondsFromNow = -10)

@@ -644,9 +644,12 @@ class BookOrbit(
         if (library.pendingOffer(book.id) != null) return SyncReport()
         val xpointer = book.xpointer
         if (!book.placeUnsent || xpointer == null) return SyncReport()
+        // The server (3.4 on) drops a place said to be older than the newest it knows. A reader who was shown a
+        // later place from elsewhere and stayed has decided for the one here: it is sent as the later of the two.
+        val at = maxOf(book.movedAt / 1000, book.remoteSeenAt + 1)
         val body = JSONObject()
             .put("document", book.id).put("percentage", book.progress.toDouble().coerceIn(0.0, 1.0)).put("progress", xpointer)
-            .put("device", deviceName).put("device_id", account.deviceId).put("timestamp", book.movedAt / 1000)
+            .put("device", deviceName).put("device_id", account.deviceId).put("timestamp", at)
         try {
             device("PUT", "/koreader/syncs/progress", body)
         } catch (e: ServerResponseException) {

@@ -110,6 +110,8 @@ Requirements R7 and R9. `BookOrbit.sync()` is one round: the reader's places, st
 
 The server orders places by whole seconds, and a later place there is "later" by the clocks of the devices that sent it: a device whose clock is wrong offers, or fails to offer, accordingly.
 
+A place is sent with the time the reader moved to it. From 3.4.0 the server drops, without saying so, a place whose time is earlier than the newest place it knows for the file (3.3.0 took it). A reader who was shown a later place from elsewhere and chose to stay has decided for the place here, so that one is sent with a time a second after the place they turned down. A place reached here before another device's later one and never offered against it — the two were the same share of the book — goes the same way.
+
 ### Status and rating
 
 - The app's statuses are the server's `unread`, `want_to_read`, `reading`, `read`. The server's others, `on_hold` and `abandoned`, have no word here: a book with one keeps the reader's own status, and it is not replaced on the server unless the reader changes the status here.
