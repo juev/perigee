@@ -19,6 +19,7 @@ internal object TestBook {
         series: String? = null,
         seriesNumber: Int = 0,
         cover: ByteArray? = null,
+        about: String? = null,
     ): File {
         val sequence = series?.let { """<sequence name="$it" number="$seriesNumber"/>""" }.orEmpty()
         val coverPage = if (cover != null) """<coverpage><image l:href="#cover.png"/></coverpage>""" else ""
@@ -39,7 +40,7 @@ internal object TestBook {
 <FictionBook xmlns="http://www.gribuser.ru/xml/fictionbook/2.0" xmlns:l="http://www.w3.org/1999/xlink">
 <description><title-info>
   <author><first-name>${author.substringBefore(' ')}</first-name><last-name>${author.substringAfter(' ')}</last-name></author>
-  <book-title>$title</book-title>$coverPage<lang>en</lang>$sequence
+  <book-title>$title</book-title>${about?.let { "<annotation><p>$it</p></annotation>" }.orEmpty()}$coverPage<lang>en</lang>$sequence
 </title-info></description>
 <body>
 $sections

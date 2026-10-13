@@ -58,9 +58,10 @@ object Engine {
         withContext(thread) {
             init(context)
             val (texts, cover) = NativeEngine.describe(file.fd, name) ?: return@withContext null
-            val (title, authors, language, series, seriesNumber) = (texts as Array<*>).map { it as String }
+            val said = (texts as Array<*>).map { it as String }
+            val (title, authors, language, series, seriesNumber) = said
             BookDescription(
-                title, authorNames(authors), language, series, seriesNumber, cover as ByteArray?,
+                title, authorNames(authors), language, series, seriesNumber, description = said[5], cover as ByteArray?,
             )
         }
 

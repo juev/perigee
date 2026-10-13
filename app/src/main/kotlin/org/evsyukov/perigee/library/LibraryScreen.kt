@@ -136,6 +136,7 @@ fun LibraryScreen(
     var searching by rememberSaveable { mutableStateOf(false) }
     var showFolders by rememberSaveable { mutableStateOf(false) }
     var collectionsOf by remember { mutableStateOf<String?>(null) }
+    var aboutOf by rememberSaveable { mutableStateOf<String?>(null) }
     var naming by remember { mutableStateOf<Naming?>(null) }
 
     val folderPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
@@ -229,6 +230,7 @@ fun LibraryScreen(
                 onStatus = model::setStatus,
                 onRating = model::setRating,
                 onCollections = { collectionsOf = it.id },
+                onAbout = { aboutOf = it.id },
             )
         }
     }
@@ -248,6 +250,18 @@ fun LibraryScreen(
                 }
             },
             onClose = { showFolders = false },
+        )
+    }
+    val about = (state.listing as? Listing.Books)?.books?.firstOrNull { it.id == aboutOf }
+    if (about != null) {
+        BookPage(
+            about, model.covers, serverLine(about, state.signedIn, state.sending[about.id]),
+            onRead = {
+                aboutOf = null
+                open(about)
+            },
+            onFavorite = { model.setFavorite(about, !about.favorite) },
+            onClose = { aboutOf = null },
         )
     }
     val shelved = (state.listing as? Listing.Books)?.books?.firstOrNull { it.id == collectionsOf }
@@ -533,6 +547,7 @@ private fun Books(
     onStatus: (Book, ReadingStatus) -> Unit,
     onRating: (Book, Int) -> Unit,
     onCollections: (Book) -> Unit,
+    onAbout: (Book) -> Unit,
 ) {
     if (state.grid) {
         val around = PaddingValues(
@@ -548,7 +563,7 @@ private fun Books(
             items(books, key = { it.id }) { book ->
                 BookCell(
                     book, covers, state.signedIn, state.sending[book.id], if (state.canSend(book)) onSend else null,
-                    onOpen, onFavorite, onStatus, onRating, onCollections,
+                    onOpen, onFavorite, onStatus, onRating, onCollections, onAbout,
                 )
             }
         }
@@ -561,7 +576,7 @@ private fun Books(
         items(books, key = { it.id }) { book ->
             BookRow(
                 book, covers, state.signedIn, state.sending[book.id], if (state.canSend(book)) onSend else null,
-                onOpen, onFavorite, onStatus, onRating, onCollections,
+                onOpen, onFavorite, onStatus, onRating, onCollections, onAbout,
             )
         }
     }
@@ -569,7 +584,7 @@ private fun Books(
 
 /** Where a book stands with the server, for a reader who is signed in to one; null when there is nothing to say. */
 @Composable
-private fun serverLine(book: Book, signedIn: Boolean, sending: Sending?): String? = when {
+internal fun serverLine(book: Book, signedIn: Boolean, sending: Sending?): String? = when {
     sending is Sending.Running -> stringResource(R.string.send_running, sending.percent)
     book.serverFileId != null -> stringResource(R.string.book_on_server)
     book.serverLikeId != null -> stringResource(R.string.book_like_on_server)
@@ -605,6 +620,7 @@ private fun BookRow(
     onStatus: (Book, ReadingStatus) -> Unit,
     onRating: (Book, Int) -> Unit,
     onCollections: (Book) -> Unit,
+    onAbout: (Book) -> Unit,
 ) {
     Row(
         Modifier.fillMaxWidth().clickable { onOpen(book) }.padding(start = 16.dp, top = 8.dp, bottom = 8.dp, end = 4.dp),
@@ -645,13 +661,13 @@ private fun BookRow(
                 Icon(Icons.Filled.FavoriteBorder, stringResource(R.string.favorite_add, book.title))
             }
         }
-        BookActions(book, onSend, onStatus, onRating, onCollections, onFavorite = null)
+        BookActions(book, onSend, onStatus, onRating, onCollections, onAbout, onFavorite = null)
     }
 }
 
 /**
- * The button of a book's menu and the menu: status, stars, collections,
- * sending to the server. [onFavorite] puts the favourite mark into the menu,
+ * The button of a book's menu and the menu: the book's own page, status,
+ * stars, collections, sending to the server. [onFavorite] puts the favourite mark into the menu,
  * for where the book has no heart of its own beside it.
  */
 @Composable
@@ -662,6 +678,7 @@ private fun BookActions(
     onStatus: (Book, ReadingStatus) -> Unit,
     onRating: (Book, Int) -> Unit,
     onCollections: (Book) -> Unit,
+    onAbout: (Book) -> Unit,
     onFavorite: ((Book) -> Unit)?,
     modifier: Modifier = Modifier,
 ) {
@@ -671,6 +688,15 @@ private fun BookActions(
             Icon(Icons.Filled.MoreVert, stringResource(R.string.book_actions, book.title))
         }
         DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            DropdownMenuItem(
+                text = { Text(stringResource(R.string.action_about_book)) },
+                leadingIcon = { Tick(false) },
+                onClick = {
+                    open = false
+                    onAbout(book)
+                },
+            )
+            HorizontalDivider()
             if (onFavorite != null) {
                 DropdownMenuItem(
                     text = { Text(stringResource(R.string.shelf_favorites)) },
@@ -749,6 +775,7 @@ private fun BookCell(
     onStatus: (Book, ReadingStatus) -> Unit,
     onRating: (Book, Int) -> Unit,
     onCollections: (Book) -> Unit,
+    onAbout: (Book) -> Unit,
 ) {
     Column(Modifier.clip(RoundedCornerShape(8.dp)).clickable { onOpen(book) }.padding(4.dp)) {
         Box {
@@ -762,7 +789,7 @@ private fun BookCell(
             // On the cover, so that the title under it has the whole width; darkened behind to be seen on any cover.
             CompositionLocalProvider(LocalContentColor provides Color.White) {
                 BookActions(
-                    book, onSend, onStatus, onRating, onCollections, onFavorite,
+                    book, onSend, onStatus, onRating, onCollections, onAbout, onFavorite,
                     Modifier.align(Alignment.TopEnd).padding(4.dp).size(32.dp).background(Color.Black.copy(alpha = 0.4f), CircleShape),
                 )
             }
@@ -800,7 +827,7 @@ private const val COVER_RATIO = 2f / 3f
 private val coverCache = LruCache<String, ImageBitmap>(96)
 
 @Composable
-private fun Cover(book: Book, covers: Covers, modifier: Modifier, titled: Boolean = false) {
+internal fun Cover(book: Book, covers: Covers, modifier: Modifier, titled: Boolean = false) {
     val picture by produceState(coverCache.get(book.id), book.id, book.hasCover) {
         if (value == null && book.hasCover) {
             value = withContext(Dispatchers.IO) {

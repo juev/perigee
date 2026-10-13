@@ -62,7 +62,7 @@ class Arrivals(
                     folder.id,
                     FoundBook(
                         book.id, placed.uri, placed.size, placed.modified, book.format, book.title, book.authors,
-                        book.language, book.series, book.seriesNumber, book.hasCover,
+                        book.language, book.series, book.seriesNumber, book.hasCover, book.description,
                     ),
                 )
                 return@withContext book.id

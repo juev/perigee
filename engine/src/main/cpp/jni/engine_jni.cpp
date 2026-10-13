@@ -334,9 +334,15 @@ Java_org_evsyukov_perigee_engine_NativeEngine_describe(JNIEnv* env, jobject, jin
         if (view.LoadDocument(stream, true) && view.getDocument()) {
             out = env->NewObjectArray(2, env->FindClass("java/lang/Object"), nullptr);
             CRPropRef doc = view.getDocProps();
+            // For FB2 the engine runs the paragraphs of the annotation together and adds the
+            // translators and the publisher's data to them: the annotation is taken as it is, a line a paragraph.
+            lString32 about = view.getDescription();
+            ldomNode* annotation =
+                    view.getDocument()->createXPointer(U"/FictionBook/description/title-info/annotation").getNode();
+            if (annotation != nullptr) about = annotation->getText(U'\n').trim();
             jobjectArray texts = toJava(env, {view.getTitle(), authorsOf(&view), view.getLanguage(),
                                               doc->getStringDef(DOC_PROP_SERIES_NAME, ""),
-                                              doc->getStringDef(DOC_PROP_SERIES_NUMBER, "")});
+                                              doc->getStringDef(DOC_PROP_SERIES_NUMBER, ""), about});
             env->SetObjectArrayElement(out, 0, texts);
             LVStreamRef cover = view.getCoverPageImageStream();
             const lvsize_t coverSize = cover.isNull() ? 0 : cover->GetSize();

@@ -51,7 +51,7 @@ internal interface ReadingDao {
     @Query("SELECT * FROM books WHERE format = :format AND uri IS NULL AND path != ''")
     suspend fun keptOfFormat(format: String): List<Book>
 
-    @Query("SELECT * FROM books WHERE uri IS NULL AND path != '' AND hasCover = 0 AND language = ''")
+    @Query("SELECT * FROM books WHERE uri IS NULL AND path != '' AND description IS NULL")
     suspend fun keptUndescribed(): List<Book>
 
     @Query("UPDATE OR IGNORE bookmarks SET bookId = :to WHERE bookId = :from")
@@ -130,7 +130,7 @@ internal interface ReadingDao {
     @Query("DELETE FROM folders WHERE id = :id")
     suspend fun deleteFolder(id: Long)
 
-    @Query("SELECT id, uri, fileSize, fileModified, format FROM books WHERE folderId = :folderId AND uri IS NOT NULL")
+    @Query("SELECT id, uri, fileSize, fileModified, format, description IS NOT NULL AS described FROM books WHERE folderId = :folderId AND uri IS NOT NULL")
     suspend fun filesIn(folderId: Long): List<KnownFile>
 
     @Query("UPDATE books SET uri = NULL, folderId = NULL WHERE folderId = :folderId")
@@ -146,21 +146,21 @@ internal interface ReadingDao {
     @Query(
         "UPDATE books SET uri = :uri, folderId = :folderId, fileSize = :fileSize, fileModified = :fileModified, " +
             "format = :format, title = :title, author = :author, language = :language, series = :series, " +
-            "seriesNumber = :seriesNumber, hasCover = :hasCover WHERE id = :id",
+            "seriesNumber = :seriesNumber, hasCover = :hasCover, description = :description WHERE id = :id",
     )
     suspend fun place(
         id: String, uri: String, folderId: Long, fileSize: Long, fileModified: Long, format: String, title: String,
-        author: String, language: String, series: String, seriesNumber: String, hasCover: Boolean,
+        author: String, language: String, series: String, seriesNumber: String, hasCover: Boolean, description: String,
     )
 
     /** A file in the app's storage is this book, whatever was known of it before. */
     @Query(
         "UPDATE books SET path = :path, format = :format, title = :title, author = :author, language = :language, " +
-            "series = :series, seriesNumber = :seriesNumber, hasCover = :hasCover WHERE id = :id",
+            "series = :series, seriesNumber = :seriesNumber, hasCover = :hasCover, description = :description WHERE id = :id",
     )
     suspend fun keep(
         id: String, path: String, format: String, title: String, author: String, language: String, series: String,
-        seriesNumber: String, hasCover: Boolean,
+        seriesNumber: String, hasCover: Boolean, description: String,
     )
 
     @Query("SELECT * FROM catalogs ORDER BY title COLLATE NOCASE")
@@ -332,10 +332,11 @@ internal interface ReadingDao {
         Book::class, Bookmark::class, Quote::class, Folder::class, BookCollection::class, CollectionBook::class,
         Catalog::class, Account::class, RemotePosition::class, PageRead::class,
     ],
-    version = 7,
+    version = 8,
     autoMigrations = [
         AutoMigration(from = 1, to = 2), AutoMigration(from = 2, to = 3), AutoMigration(from = 3, to = 4),
         AutoMigration(from = 4, to = 5), AutoMigration(from = 5, to = 6), AutoMigration(from = 6, to = 7),
+        AutoMigration(from = 7, to = 8),
     ],
 )
 internal abstract class ReadingDatabase : RoomDatabase() {

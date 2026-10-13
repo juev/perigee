@@ -57,7 +57,7 @@ class Library internal constructor(internal val database: ReadingDatabase, priva
         dao.insert(Book(book.id, file.path, book.title, author = "", xpointer = null, progress = 0f, openedAt = 0, addedAt = now()))
         dao.keep(
             book.id, file.path, book.format, book.title, book.authors.joinToString("\n"), book.language, book.series,
-            book.seriesNumber, book.hasCover,
+            book.seriesNumber, book.hasCover, book.description,
         )
         checkNotNull(dao.book(book.id))
     }
@@ -97,10 +97,9 @@ class Library internal constructor(internal val database: ReadingDatabase, priva
     suspend fun keptOfFormat(format: String): List<Book> = dao.keptOfFormat(format)
 
     /**
-     * Books kept in the app's own storage, in no folder, of which nothing but a
-     * title is known: neither a cover nor a language. A book opened by hand
-     * before such books were read for what they say is one; so is a book that
-     * says no more than that, which costs a second reading and no harm.
+     * Books kept in the app's own storage, in no folder, whose file was never
+     * read for what the book says of itself: one opened by hand before such
+     * books were read so, or recorded before books were read for what they are about.
      */
     suspend fun keptUndescribed(): List<Book> = dao.keptUndescribed()
 
@@ -170,7 +169,7 @@ class Library internal constructor(internal val database: ReadingDatabase, priva
         )
         dao.place(
             book.id, book.uri, folderId, book.fileSize, book.fileModified, book.format, book.title,
-            book.authors.joinToString("\n"), book.language, book.series, book.seriesNumber, book.hasCover,
+            book.authors.joinToString("\n"), book.language, book.series, book.seriesNumber, book.hasCover, book.description,
         )
     }
 

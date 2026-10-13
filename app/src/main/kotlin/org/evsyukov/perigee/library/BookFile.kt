@@ -118,8 +118,23 @@ internal suspend fun readBook(
         title = said.title.ifBlank { name.dropLast(format.length + 1) },
         authors = said.authors, language = said.language, series = said.series, seriesNumber = said.seriesNumber,
         hasCover = said.cover?.let { image -> covers.save(id, image) } ?: false,
+        description = plainText(said.description),
     )
 }
+
+/**
+ * What a book says it is about, as text to show: an EPUB may put markup
+ * there, and its paragraphs are kept as lines.
+ */
+internal fun plainText(marked: String): String =
+    marked.replace(BREAKS, "\n").replace(TAGS, "")
+        .replace("&nbsp;", " ").replace("&lt;", "<").replace("&gt;", ">").replace("&quot;", "\"").replace("&#39;", "'")
+        .replace("&apos;", "'").replace("&amp;", "&")
+        .lines().map { it.trim() }.filter { it.isNotEmpty() }.joinToString("\n")
+
+private val BREAKS = Regex("(?i)<br\\s*/?>|</p>|</div>|</li>")
+// A tag begins with a letter straight after the bracket: "2 < 3 and 5 > 4" has none.
+private val TAGS = Regex("</?[A-Za-z][^<>]{0,200}>")
 
 /**
  * The file to open a book from. The engine opens files by path, so a book

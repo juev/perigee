@@ -52,6 +52,7 @@ class DescribeTest {
         assertEquals("ru", book.language)
         assertEquals("Большая сага", book.series)
         assertEquals("2", book.seriesNumber)
+        assertEquals("a line a paragraph", "О том, что было дальше.\nИ чем кончилось.", book.description)
         assertCover(Color.RED, book)
     }
 
@@ -63,6 +64,8 @@ class DescribeTest {
         assertEquals("en", book.language)
         assertEquals("Long Saga", book.series)
         assertEquals("2", book.seriesNumber)
+        // As the file has it, markup and all.
+        assertEquals("What came next, <i>and</i> how it ended.", book.description)
         assertCover(Color.BLUE, book)
     }
 
@@ -115,6 +118,7 @@ class DescribeTest {
   <book-title>Вторая книга</book-title>
   <coverpage><image l:href="#cover.png"/></coverpage>
   <lang>ru</lang>
+  <annotation><p>О том, что было дальше.</p><p>И чем кончилось.</p></annotation>
   <sequence name="Большая сага" number="2"/>
 </title-info></description>
 <body>
@@ -160,6 +164,7 @@ ${(1..40).joinToString("\n") { "<p>Абзац номер $it этой книги
     <dc:creator>Smith, Anna</dc:creator>
     <dc:creator>John Doe</dc:creator>
     <dc:language>en</dc:language>
+    <dc:description>What came next, &lt;i&gt;and&lt;/i&gt; how it ended.</dc:description>
     <dc:identifier id="id">perigee-described-epub</dc:identifier>
     <meta name="cover" content="cover-image"/>
     <meta name="calibre:series" content="Long Saga"/>

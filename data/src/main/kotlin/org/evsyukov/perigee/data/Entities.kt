@@ -39,6 +39,8 @@ data class Book(
     @ColumnInfo(defaultValue = "") val seriesNumber: String = "",
     /** Whether a cover picture is kept for the book, see [Covers]. */
     @ColumnInfo(defaultValue = "0") val hasCover: Boolean = false,
+    /** What the book says it is about, as plain text; null until its file was read for that. */
+    @ColumnInfo(defaultValue = "NULL") val description: String? = null,
     @ColumnInfo(defaultValue = "0") val addedAt: Long = 0,
     @ColumnInfo(defaultValue = "0") val favorite: Boolean = false,
     @ColumnInfo(defaultValue = "None") val status: ReadingStatus = ReadingStatus.None,
@@ -118,7 +120,11 @@ data class BookCollection(
 data class CollectionBook(val collectionId: Long, val bookId: String)
 
 /** A document of a folder as the library last saw it. */
-data class KnownFile(val id: String, val uri: String, val fileSize: Long, val fileModified: Long, val format: String = "")
+data class KnownFile(
+    val id: String, val uri: String, val fileSize: Long, val fileModified: Long, val format: String = "",
+    /** False for a book recorded before books were read for what they are about. */
+    val described: Boolean = true,
+)
 
 /** A book file found in a folder, with what it says about itself. */
 data class FoundBook(
@@ -133,6 +139,7 @@ data class FoundBook(
     val series: String,
     val seriesNumber: String,
     val hasCover: Boolean,
+    val description: String = "",
 )
 
 /** A page the reader marked. */
@@ -192,6 +199,7 @@ data class LocalBook(
     val series: String,
     val seriesNumber: String,
     val hasCover: Boolean,
+    val description: String = "",
 )
 
 /** An OPDS catalog the reader added. */

@@ -214,4 +214,8 @@
     <string name="licenses_gpl">GNU General Public License, версия 3</string>
     <string name="action_view_grid">Показать сеткой обложек</string>
     <string name="action_view_list">Показать списком</string>
+    <string name="action_about_book">О книге</string>
+    <string name="book_read">Читать</string>
+    <string name="book_read_on">Читать дальше</string>
+    <string name="book_no_description">Книга о себе ничего не рассказывает.</string>
 </resources>

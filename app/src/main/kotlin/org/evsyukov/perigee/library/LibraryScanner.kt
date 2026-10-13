@@ -50,8 +50,9 @@ class LibraryScanner(
             val format = Library.formatOf(file.name)
             if (format.isEmpty()) continue
             val was = known[file.uri]
-            // A book recorded as an archive is read again: it may be from before archives were told by the book inside.
-            if (was != null && was.fileSize == file.size && was.fileModified == file.modified && was.format != ARCHIVE) {
+            // A book recorded as an archive is read again: it may be from before archives were told by the book
+            // inside. So is one recorded before books were read for what they are about.
+            if (was != null && was.fileSize == file.size && was.fileModified == file.modified && was.format != ARCHIVE && was.described) {
                 present += file.uri
                 continue
             }
@@ -83,7 +84,7 @@ class LibraryScanner(
                 val book = readBook(context, covers, it, file.name, format) ?: return null
                 FoundBook(
                     book.id, file.uri, file.size, file.modified, book.format, book.title, book.authors, book.language,
-                    book.series, book.seriesNumber, book.hasCover,
+                    book.series, book.seriesNumber, book.hasCover, book.description,
                 )
             }
         } catch (e: IOException) {

@@ -26,7 +26,8 @@ data class BookInfo(val title: String, val authors: String, val language: String
 /**
  * What a book file says about itself, read without opening it for reading.
  * [seriesNumber] is text: books number themselves "2" as well as "2.5".
- * [cover] is an image file as the book carries it.
+ * [description] is what the book says it is about, as the file has it: an
+ * EPUB may put markup there. [cover] is an image file as the book carries it.
  */
 class BookDescription(
     val title: String,
@@ -34,6 +35,7 @@ class BookDescription(
     val language: String,
     val series: String,
     val seriesNumber: String,
+    val description: String,
     val cover: ByteArray?,
 )
 

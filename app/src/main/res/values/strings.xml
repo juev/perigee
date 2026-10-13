@@ -212,4 +212,8 @@
     <string name="licenses_gpl">GNU General Public License, version 3</string>
     <string name="action_view_grid">Show as a grid of covers</string>
     <string name="action_view_list">Show as a list</string>
+    <string name="action_about_book">About the book</string>
+    <string name="book_read">Read</string>
+    <string name="book_read_on">Read on</string>
+    <string name="book_no_description">The book says nothing of what it is about.</string>
 </resources>

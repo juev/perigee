@@ -260,6 +260,7 @@ class LibraryScannerTest {
         val picked = TestBook.write(
             File(context.cacheDir, "picked-by-hand.fb2"), "Picked With A Cover", author = "Hand Picker",
             series = "Picked Ones", seriesNumber = 2, cover = TestFolder.cover(0xFF336699.toInt()),
+            about = "What the picked book is about.",
         )
 
         assertTrue(describeKeptFile(context, library, covers, picked))
@@ -269,6 +270,7 @@ class LibraryScannerTest {
         assertEquals(listOf("Picked With A Cover", "Hand Picker", "Picked Ones", "2", "fb2"), listOf(book.title, book.author, book.series, book.seriesNumber, book.format))
         assertTrue(book.hasCover)
         assertTrue(covers.file(book.id).length() > 0)
+        assertEquals("What the picked book is about.", book.description)
         // Opening it afterwards, as the reader does, is the same book and leaves all that.
         val opened = library.open(picked, "Picked With A Cover", "Hand Picker")
         assertEquals(book.id, opened.id)
@@ -289,6 +291,8 @@ class LibraryScannerTest {
         assertTrue(book.hasCover)
         assertTrue(covers.file(book.id).length() > 0)
         assertEquals("where the reader stopped is kept", "/body/p[5]", book.xpointer)
+        assertEquals("read, and found to say nothing of what it is about", "", book.description)
+        assertTrue("so it is not read again", library.keptUndescribed().isEmpty())
         assertEquals(book.id, library.lastOpened()?.id)
     }
 

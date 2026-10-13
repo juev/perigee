@@ -3,8 +3,11 @@ package org.evsyukov.perigee.library
 import android.graphics.Color
 import androidx.activity.ComponentActivity
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.hasAnyAncestor
+import androidx.compose.ui.test.hasContentDescription
+import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.isPopup
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
@@ -409,6 +412,59 @@ class LibraryScreenTest {
         rule.waitUntil(TIMEOUT) { rule.onAllNodesWithTag("books").fetchSemanticsNodes().isNotEmpty() }
         rule.onNodeWithContentDescription(string(R.string.favorite_remove, "Gridded")).assertExists()
         rule.waitUntil(TIMEOUT) { !runBlocking { LibraryPreferences.get(activity).prefs.first() }.grid }
+    }
+
+    private fun openPageOf(title: String) {
+        rule.onNodeWithContentDescription(string(R.string.book_actions, title)).performClick()
+        inMenu(R.string.action_about_book).performClick()
+        rule.waitUntil(TIMEOUT) { rule.onAllNodesWithTag("book-page").fetchSemanticsNodes().isNotEmpty() }
+    }
+
+    private fun onPage(matcher: SemanticsMatcher) = rule.onNode(matcher and hasAnyAncestor(hasTestTag("book-page")))
+
+    private fun leavePage() {
+        InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(android.view.KeyEvent.KEYCODE_BACK)
+        rule.waitUntil(TIMEOUT) { rule.onAllNodesWithTag("book-page").fetchSemanticsNodes().isEmpty() }
+    }
+
+    @Test
+    fun bookHasAPageOfItsOwnWithWhatItSaysItIsAbout() {
+        shelve(
+            found("Paged", author = "Page Author", series = "Pages", number = "3").copy(description = "First of it.\nSecond of it."),
+            found("Silent"),
+        )
+        show()
+        waitForText("Paged")
+
+        openPageOf("Paged")
+        // Twice: as the title, and on the plate that stands for the cover the book has none of.
+        assertEquals(2, rule.onAllNodes(hasText("Paged") and hasAnyAncestor(hasTestTag("book-page"))).fetchSemanticsNodes().size)
+        onPage(hasText("Page Author")).assertIsDisplayed()
+        onPage(hasText(string(R.string.series_line, "Pages", "3"))).assertIsDisplayed()
+        onPage(hasText("First of it.")).assertIsDisplayed()
+        onPage(hasText("Second of it.")).assertIsDisplayed()
+        onPage(hasContentDescription(string(R.string.favorite_add, "Paged"))).performClick()
+        rule.waitUntil(TIMEOUT) { runBlocking { library.book("Paged") }?.favorite == true }
+        onPage(hasContentDescription(string(R.string.favorite_remove, "Paged"))).assertIsDisplayed()
+        leavePage()
+
+        openPageOf("Silent")
+        onPage(hasText(string(R.string.book_no_description))).assertIsDisplayed()
+        leavePage()
+        rule.onNodeWithTag("books").assertIsDisplayed()
+    }
+
+    @Test
+    fun bookIsReadFromItsPage() {
+        keep("Kept Book")
+        show()
+        waitForText("Kept Book")
+
+        openPageOf("Kept Book")
+        onPage(hasText(string(R.string.book_read))).performClick()
+
+        rule.waitUntil(TIMEOUT) { opened != null }
+        assertTrue(rule.onAllNodesWithTag("book-page").fetchSemanticsNodes().isEmpty())
     }
 
     @Test

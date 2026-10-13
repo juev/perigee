@@ -69,9 +69,16 @@ Room database `reading.db`, version 2 (`data/schemas`): `books` gained the docum
 
 The tests reach folders as plain directories. The system's folder dialog and its documents were checked by hand on the emulator only.
 
+## List, grid and a book's page
+
+The books of a shelf are shown as a list or as a grid of covers; a button in the bar switches between the two and the choice is kept (`LibraryPrefs.grid`). A row of the list has the cover, title, authors, series, how far the book is read, its format and where it stands with the server. A cell of the grid has the cover, a bar for how far the book is read, the title and the authors; its menu button is on the cover, and the favourite mark is in the menu. A book without a cover is drawn as a plate: its first letter in the list, its title in the grid.
+
+"About the book" in a book's menu opens the book's own page: the cover, title, authors, series, format, language, how far it is read, a button to read it, and what the book says it is about.
+
+What a book says it is about is read with the rest of what it says of itself (`Engine.describe`) and kept as plain text, a line a paragraph: the annotation of an FB2, `dc:description` of an EPUB with its markup taken out. A book recorded before this was read has no description yet (`Book.description` is null); its file is read once more the next time the library is looked through, in a folder or in the app's own storage alike. A book opened through "Open a book" is read the same way as one of a folder.
+
 ## Not done
 
 - Scanning runs while the library screen is alive; there is no background job and no progress count.
 - Copies of opened books are never removed from the app's storage.
-- A grid of covers, and a book's own page with its description.
 - Removing a book from the library by hand.
