@@ -1,0 +1,131 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  # The server moves on without a commit here: once a week the contract is
+  # checked against its latest release, and a failure of that run is a real one.
+  schedule:
+    - cron: "17 4 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NDK_VERSION: 28.2.13676358
+  CMAKE_VERSION: 3.31.6
+
+jobs:
+  build:
+    name: Build, lint, unit tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          submodules: recursive
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: temurin
+          java-version: 21
+      - name: Install the NDK and CMake
+        run: |
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "ndk;$NDK_VERSION" "cmake;$CMAKE_VERSION" "platforms;android-36"
+      # The engine's dependencies are source archives checked by SHA-256.
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: engine/.deps
+          key: engine-deps-${{ hashFiles('engine/src/main/cpp/cmake/deps.cmake') }}
+      - uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
+      - name: Build both flavors, lint, unit tests
+        run: ./gradlew build lint :app:bundlePlayRelease
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+      - name: Scan the F-Droid package for what F-Droid does not accept
+        run: uvx --from fdroidserver==2.4.5 fdroid scanner --exit-code app/build/outputs/apk/fdroid/release/app-fdroid-release-unsigned.apk
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: packages
+          path: |
+            app/build/outputs/apk/fdroid/release/*.apk
+            app/build/outputs/bundle/playRelease/*.aab
+          if-no-files-found: error
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: failure()
+        with:
+          name: build-reports
+          path: |
+            */build/reports
+            */build/test-results
+
+  device:
+    name: Tests on a device, bookOrbit ${{ matrix.server }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    # A new release of the server that breaks the contract must not turn every
+    # commit red; the weekly run is where it fails for real.
+    continue-on-error: ${{ matrix.server == 'latest' && github.event_name != 'schedule' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # The version the app is written against: every test, the contract among them.
+          - server: 3.3.0
+            tasks: connectedAndroidTest
+          # The latest release: the contract only.
+          - server: latest
+            tasks: ":contract:connectedDebugAndroidTest"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          submodules: recursive
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: temurin
+          java-version: 21
+      - name: Install the NDK and CMake
+        run: |
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "ndk;$NDK_VERSION" "cmake;$CMAKE_VERSION" "platforms;android-36"
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: engine/.deps
+          key: engine-deps-${{ hashFiles('engine/src/main/cpp/cmake/deps.cmake') }}
+      - uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
+      - name: Start the bookOrbit server
+        env:
+          BOOKORBIT_VERSION: ${{ matrix.server }}
+        run: python3 contract/up.py
+      - name: Let the emulator use KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      # Built before the emulator is up, so that it does not sit idle through the engine's build.
+      - name: Build the tests
+        run: ./gradlew assembleAndroidTest
+      - uses: ReactiveCircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0
+        with:
+          api-level: 36
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          disable-animations: true
+          # The emulator reaches the server on the runner at 10.0.2.2.
+          script: ./gradlew ${{ matrix.tasks }} -Pandroid.testInstrumentationRunnerArguments.bookorbitUrl=http://10.0.2.2:3070
+      - name: Server log
+        if: failure()
+        run: docker compose -f contract/docker-compose.yml logs --tail 300 app
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: failure()
+        with:
+          name: device-reports-${{ matrix.server }}
+          path: |
+            */build/reports/androidTests
+            */build/outputs/androidTest-results
