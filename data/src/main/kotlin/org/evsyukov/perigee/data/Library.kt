@@ -93,6 +93,46 @@ class Library internal constructor(internal val database: ReadingDatabase, priva
      */
     suspend fun unmatched(all: Boolean): List<String> = dao.notOnServer(if (all) Long.MAX_VALUE else 1)
 
+    /** Books kept in the app's own storage, in no folder, whose file is of this format. */
+    suspend fun keptOfFormat(format: String): List<Book> = dao.keptOfFormat(format)
+
+    /**
+     * A book turns out to be known by another fingerprint, as one in an archive
+     * that is now known by the file inside: what the reader left in it — the
+     * place, status, stars, bookmarks, quotes, collections, pages read — moves
+     * to the book of that fingerprint, and the old one is gone. A book that is
+     * there under the new fingerprint and was read keeps its own place.
+     * Nothing of a server is carried over: it is asked about the book anew.
+     *
+     * @return where the app kept its copy of the old book's file, for the caller to remove; empty when it kept none
+     */
+    suspend fun reidentify(oldId: String, newId: String, format: String): String = database.withTransaction {
+        val old = dao.book(oldId) ?: return@withTransaction ""
+        if (oldId == newId) return@withTransaction ""
+        val there = dao.book(newId)
+        val carried = old.copy(
+            id = newId, format = format, path = there?.path.orEmpty(), uri = there?.uri ?: old.uri, folderId = there?.folderId ?: old.folderId,
+            serverBookId = null, serverFileId = null, serverCheckedAt = 0, pushedAt = 0, statePushedAt = 0, remoteSeenAt = 0,
+            marksSyncedAt = 0, marksChangedAt = now(), serverLikeId = null, serverLikeName = "",
+        )
+        when {
+            there == null -> {
+                // The document is the new book's from here on; the old row must not hold it too.
+                dao.update(old.copy(uri = null, folderId = null))
+                dao.insert(carried)
+            }
+            there.openedAt == 0L -> dao.update(carried.copy(serverBookId = there.serverBookId, serverFileId = there.serverFileId, serverCheckedAt = there.serverCheckedAt))
+            else -> Unit
+        }
+        dao.moveBookmarks(oldId, newId)
+        dao.moveQuotes(oldId, newId)
+        dao.moveMemberships(oldId, newId)
+        dao.movePageReads(oldId, newId)
+        dao.marksChanged(newId, now())
+        dao.deleteBook(oldId)
+        old.path
+    }
+
     fun folders(): Flow<List<Folder>> = dao.folders()
 
     /** Adding a folder twice keeps one. */

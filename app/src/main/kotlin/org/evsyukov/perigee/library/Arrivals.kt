@@ -8,6 +8,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 import org.evsyukov.perigee.data.Covers
+import org.evsyukov.perigee.data.Fb2Archive
 import org.evsyukov.perigee.data.FoundBook
 import org.evsyukov.perigee.data.Library
 import org.evsyukov.perigee.data.LibraryPreferences
@@ -60,7 +61,7 @@ class Arrivals(
                 library.found(
                     folder.id,
                     FoundBook(
-                        book.id, placed.uri, placed.size, placed.modified, format, book.title, book.authors,
+                        book.id, placed.uri, placed.size, placed.modified, book.format, book.title, book.authors,
                         book.language, book.series, book.seriesNumber, book.hasCover,
                     ),
                 )
@@ -68,8 +69,11 @@ class Arrivals(
             }
             // The folder cannot be written to: the book is kept in the app rather than lost.
         }
-        val kept = File(File(context.filesDir, "books").apply { mkdirs() }, "${book.id}.${format.ifEmpty { "book" }}")
-        if (!file.renameTo(kept)) {
+        val kept = File(File(context.filesDir, "books").apply { mkdirs() }, "${book.id}.${book.format.ifEmpty { "book" }}")
+        if (book.format != format) {
+            // An archive of one FB2: the app keeps the book, not its wrapping.
+            if (!file.inputStream().use { Fb2Archive.unpack(it, kept) }) return@withContext null
+        } else if (!file.renameTo(kept)) {
             file.copyTo(kept, overwrite = true)
         }
         library.keep(kept, book)

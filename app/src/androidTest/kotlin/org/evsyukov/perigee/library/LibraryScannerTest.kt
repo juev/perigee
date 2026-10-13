@@ -9,10 +9,16 @@ import java.io.File
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.evsyukov.perigee.data.Covers
+import org.evsyukov.perigee.data.Fb2Archive
+import org.evsyukov.perigee.data.FileHash
 import org.evsyukov.perigee.data.Folder
+import org.evsyukov.perigee.data.FoundBook
 import org.evsyukov.perigee.data.Library
+import org.evsyukov.perigee.data.LibraryPreferences
+import org.evsyukov.perigee.data.LibraryPrefs
 import org.evsyukov.perigee.data.ReadingStatus
 import org.evsyukov.perigee.reader.TestBook
+import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -155,6 +161,123 @@ class LibraryScannerTest {
         assertEquals(1, scan()?.found)
         assertEquals(setOf("Good", "Bad, repaired"), books().map { it.title }.toSet())
         assertTrue(good.isFile)
+    }
+
+    /** A book as an archive in the folder, and the bytes of the book inside. */
+    private fun archived(name: String, title: String): Pair<File, ByteArray> {
+        val plain = TestBook.write(File(context.cacheDir, "$name.fb2"), title)
+        return TestFolder.zip(File(source.dir, "$name.fb2.zip"), plain) to plain.readBytes().also { plain.delete() }
+    }
+
+    private fun fingerprint(bytes: ByteArray): String =
+        FileHash.partialMd5(File(context.cacheDir, "fingerprinted").apply { writeBytes(bytes) })
+
+    @Test
+    fun bookInAnArchiveIsTheBookInside() = runBlocking<Unit> {
+        val (archive, inside) = archived("wrapped", "Wrapped Book")
+
+        assertEquals(ScanResult(found = 1, lost = 0, unreadable = 0), scan())
+
+        val book = books().single()
+        assertEquals("Wrapped Book", book.title)
+        assertEquals("known by the file inside, as a server would know it", fingerprint(inside), book.id)
+        assertEquals("fb2", book.format)
+        assertTrue("the file in the folder is left as it is", archive.isFile && Fb2Archive.isZip(archive))
+
+        // What is read, and sent to a server, is the book unpacked.
+        val copy = checkNotNull(localCopy(context, library, book))
+        assertArrayEquals(inside, copy.readBytes())
+        assertEquals(book.id, library.open(copy, "", "").id)
+
+        // The same book beside its archive is the same book.
+        File(source.dir, "plain.fb2").writeBytes(inside)
+        scan()
+        assertEquals(1, books().size)
+    }
+
+    @Test
+    fun archiveOfMoreThanABookStaysAnArchive() = runBlocking<Unit> {
+        val plain = TestBook.write(File(context.cacheDir, "first.fb2"), "With A Picture")
+        val picture = File(context.cacheDir, "cover.jpg").apply { writeBytes(ByteArray(64)) }
+        val archive = TestFolder.zip(File(source.dir, "two.fb2.zip"), plain, picture)
+
+        scan()
+
+        val book = books().single()
+        assertEquals(FileHash.partialMd5(archive), book.id)
+        assertEquals("fb2.zip", book.format)
+    }
+
+    @Test
+    fun bookKnownByItsArchiveBecomesTheBookInsideWithWhatWasLeftInIt() = runBlocking<Unit> {
+        val (archive, inside) = archived("old", "Read Before")
+        // As a version that knew a book by its archive left it.
+        val oldId = FileHash.partialMd5(archive)
+        library.found(
+            folder.id,
+            FoundBook(oldId, source.uriOf(archive), archive.length(), archive.lastModified(), "fb2.zip", "Read Before", emptyList(), "en", "", "", false),
+        )
+        val kept = File(context.cacheDir, "$oldId.fb2.zip").apply { writeBytes(archive.readBytes()) }
+        library.open(kept, "Read Before", "")
+        library.savePosition(oldId, "/body/p[1]", 0.1f)
+        library.savePosition(oldId, "/body/p[7]", 0.4f)
+        library.addBookmark(oldId, "/body/p[3]", "marked words", null)
+
+        scan()
+
+        val book = books().single()
+        assertEquals(fingerprint(inside), book.id)
+        assertEquals("fb2", book.format)
+        assertEquals("/body/p[7]", book.xpointer)
+        assertEquals("marked words", library.bookmarks(book.id).first().single().text)
+        assertNull(library.book(oldId))
+        assertFalse("the archive the app kept for reading is not needed any more", kept.exists())
+        assertArrayEquals(inside, checkNotNull(localCopy(context, library, book)).readBytes())
+        assertEquals("and it is not read over again at every look", ScanResult(found = 0, lost = 0, unreadable = 0), scan())
+    }
+
+    @Test
+    fun archiveTheAppKeptItselfIsUnpackedWhereItIs() = runBlocking<Unit> {
+        val (archive, inside) = archived("kept", "Kept In The App")
+        val kept = File(context.cacheDir, "kept-in-app.fb2.zip").apply { writeBytes(archive.readBytes()) }
+        archive.delete()
+        val old = library.open(kept, "Kept In The App", "")
+        library.addBookmark(old.id, "/body/p[3]", "marked words", null)
+
+        unpackKept(context, library)
+
+        val book = books().single()
+        assertEquals(fingerprint(inside), book.id)
+        assertEquals("fb2", book.format)
+        assertArrayEquals(inside, File(book.path).readBytes())
+        assertFalse(kept.exists())
+        assertEquals("marked words", library.bookmarks(book.id).first().single().text)
+        assertEquals("the book the app starts on is still there", book.id, library.lastOpened()?.id)
+    }
+
+    @Test
+    fun pickedOrDownloadedArchiveIsKeptAsTheBook() = runBlocking<Unit> {
+        val (archive, inside) = archived("picked", "Picked By Hand")
+        val picked = File(context.cacheDir, "picked.fb2.zip").apply { writeBytes(archive.readBytes()) }
+
+        val book = unpacked(picked)
+
+        assertEquals("picked.fb2", book.name)
+        assertArrayEquals(inside, book.readBytes())
+        assertFalse(picked.exists())
+        val plain = File(context.cacheDir, "as-it-is.epub").apply { writeText("not an archive of a book") }
+        assertEquals(plain, unpacked(plain))
+
+        // Downloaded, and kept in the app.
+        LibraryPreferences.get(context).update { LibraryPrefs(downloadsFolder = null, downloadsAsked = true) }
+        val arrivals = Arrivals(context, library, covers, LibraryPreferences.get(context)) { BookSink { _, _ -> null } }
+        val downloaded = File(context.cacheDir, "downloaded.fb2.zip").apply { writeBytes(archive.readBytes()) }
+        archive.delete()
+        val id = checkNotNull(arrivals.keep(downloaded, "fb2.zip"))
+        assertEquals(fingerprint(inside), id)
+        val kept = checkNotNull(library.book(id))
+        assertEquals("fb2", kept.format)
+        assertArrayEquals(inside, File(kept.path).readBytes())
     }
 
     @Test

@@ -184,6 +184,8 @@ One book is sent at a time, so a second asking for the same book finds it there.
 
 Sending is offered only for a book whose file the server has not, in a format it takes — of those the app reads, epub, fb2 and mobi — and to a reader allowed to add books (permission `library_upload`). When the server has one library with one folder, the book goes there; otherwise the reader is asked where, once, and the answer is kept with the account. A place that is gone is asked for again.
 
+An FB2 kept in a zip archive is sent unpacked, as the book it is: the server takes no archives, and the library knows such a book by the file inside (`library.md`, "A book in an archive").
+
 Without the devices' channel nothing is sent: the server could not be asked whether it has the file, and the book could not be synced once there.
 
 ### What the server does with the file
@@ -215,7 +217,7 @@ The server has two other ways to take a file, which the app does not use: the Bo
 - `:sync` `LikenessTest` — which books are taken for one: case, spaces, punctuation and "ё", an author's name either way round, one author in common, no title, series. `UploadTest` — against the stand-in server: what the server takes, a book sent whole under its title and synced from then on, a book not sent twice, one that got there meanwhile, the same book asked for twice at once, what is not sent at all, each refusal, a session renewed, no devices' channel, a likeness pointed out, gone with the server's book, looked for through the whole list, and left behind by a book that was sent.
 - `:data` `AccountsTest` — a likeness kept until the book's own file is there, the place books are sent to forgotten with the server.
 - `:app` `LibraryScreenTest` — a book sent from its menu, sending offered only for what the server takes from the reader, the question before a book like one on the server, where to send asked once, a refusal said at the book, a server that does not answer.
-- `:contract` `UploadContractTest` — against bookOrbit 3.3.0: what it takes, a book sent, found by its fingerprint and not sent twice, an FB2 with a Russian title, a file that is not what its name says, a place that is not there, and the three things the server does with a book that looks like one it has. The books are taken off the server afterwards.
+- `:contract` `UploadContractTest` — against bookOrbit 3.3.0: what it takes, a book sent, found by its fingerprint and not sent twice, an FB2 with a Russian title, a file that is not what its name says, a place that is not there, and the three things the server does with a book that looks like one it has. A book from an archive, sent unpacked and found by the fingerprint the archive was known by. The books are taken off the server afterwards.
 - `:contract` `AccountContractTest` — against bookOrbit 3.3.0 in docker: signing in, a refused password, the KOReader password asked for and refused, a channel made for a reader who has none, the list and search, a download read by the engine and found back by its fingerprint, a book the server has not, a missing cover, renewal of a token that ran out and of one that is not taken, signing out ending the session on the server.
 
 ```
@@ -231,7 +233,6 @@ Checked by hand on the emulator against the same server: signing in over `http:/
 - Server's books in the library's own list: a book that is only on the server is seen on the server's screen, not among the reader's books.
 - Sending several books at once, or without being asked; cancelling a book on its way; going on with one that broke off.
 - Tying a book to the server's one by its title and authors.
-- Sending `fb2.zip`: the server takes no such file, and the app does not unpack it to send.
 - OIDC.
 - Download progress, cancelling, resuming.
 - A round of syncing on a timer, and one while a book is open: a place read elsewhere meanwhile is learnt when the book is next opened.

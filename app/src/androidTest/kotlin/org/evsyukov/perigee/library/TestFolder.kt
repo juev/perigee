@@ -23,6 +23,18 @@ internal class TestFolder(val dir: File) : BookSource {
     fun uriOf(file: File): String = Uri.fromFile(file).toString()
 
     companion object {
+        /** Packs files into a zip archive, under their own names. */
+        fun zip(archive: File, vararg files: File): File {
+            java.util.zip.ZipOutputStream(archive.outputStream()).use { zip ->
+                for (file in files) {
+                    zip.putNextEntry(java.util.zip.ZipEntry(file.name))
+                    zip.write(file.readBytes())
+                    zip.closeEntry()
+                }
+            }
+            return archive
+        }
+
         fun cover(color: Int): ByteArray {
             val bitmap = Bitmap.createBitmap(30, 40, Bitmap.Config.ARGB_8888).apply { eraseColor(color) }
             return ByteArrayOutputStream().also { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }.toByteArray()

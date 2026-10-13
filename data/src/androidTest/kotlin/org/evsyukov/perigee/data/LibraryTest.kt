@@ -115,7 +115,7 @@ class LibraryTest {
         assertTrue(book.hasCover)
         assertEquals(ReadingStatus.None, book.status)
         assertEquals("", book.path)
-        assertEquals(listOf(KnownFile("id-1", "content://tree/books/saga2.epub", 100, 5)), library.filesIn(folder.id))
+        assertEquals(listOf(KnownFile("id-1", "content://tree/books/saga2.epub", 100, 5, "epub")), library.filesIn(folder.id))
     }
 
     @Test

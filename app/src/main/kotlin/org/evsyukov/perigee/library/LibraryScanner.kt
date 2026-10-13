@@ -50,7 +50,8 @@ class LibraryScanner(
             val format = Library.formatOf(file.name)
             if (format.isEmpty()) continue
             val was = known[file.uri]
-            if (was != null && was.fileSize == file.size && was.fileModified == file.modified) {
+            // A book recorded as an archive is read again: it may be from before archives were told by the book inside.
+            if (was != null && was.fileSize == file.size && was.fileModified == file.modified && was.format != ARCHIVE) {
                 present += file.uri
                 continue
             }
@@ -58,6 +59,11 @@ class LibraryScanner(
             if (book == null) {
                 unreadable++
                 continue
+            }
+            if (was != null && was.format == ARCHIVE && book.format != ARCHIVE && was.id != book.id) {
+                // The same file under the fingerprint of the book inside: what the reader left in it goes along.
+                val stale = library.reidentify(was.id, book.id, book.format)
+                if (stale.isNotEmpty()) File(stale).delete()
             }
             library.found(folder.id, book)
             present += file.uri
@@ -76,7 +82,7 @@ class LibraryScanner(
             return descriptor.use {
                 val book = readBook(context, covers, it, file.name, format) ?: return null
                 FoundBook(
-                    book.id, file.uri, file.size, file.modified, format, book.title, book.authors, book.language,
+                    book.id, file.uri, file.size, file.modified, book.format, book.title, book.authors, book.language,
                     book.series, book.seriesNumber, book.hasCover,
                 )
             }

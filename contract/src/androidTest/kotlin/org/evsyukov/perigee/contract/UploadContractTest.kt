@@ -9,6 +9,7 @@ import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 import kotlinx.coroutines.runBlocking
 import org.evsyukov.perigee.data.Book
+import org.evsyukov.perigee.data.Fb2Archive
 import org.evsyukov.perigee.data.FileHash
 import org.evsyukov.perigee.data.LocalBook
 import org.evsyukov.perigee.sync.UploadPlace
@@ -198,6 +199,31 @@ class UploadContractTest {
         // The server reads what an FB2 says of itself only after it has filed it, by the name it came under.
         awaitAuthor(title)
         assertEquals("Иван Петров", titled(title).single().getJSONArray("authors").getString(0))
+    }
+
+    @Test
+    fun bookKeptInAnArchiveIsSentUnpackedAndFoundByTheFingerprintOfTheBookInside() = runBlocking<Unit> {
+        val title = "Из архива $run"
+        val plain = fb2("archived", title, "Иван", "Петров", "Книга, которая лежала в архиве.")
+        val archive = File(dir, "archived.fb2.zip")
+        ZipOutputStream(archive.outputStream()).use { zip ->
+            zip.putNextEntry(ZipEntry("archived.fb2"))
+            zip.write(plain.readBytes())
+            zip.closeEntry()
+        }
+        plain.delete()
+        // As the library knows such a book: by the file inside the archive.
+        val id = checkNotNull(archive.inputStream().use { Fb2Archive.fingerprint(it) })
+        val unpacked = File(dir, "$id.fb2")
+        assertTrue(archive.inputStream().use { Fb2Archive.unpack(it, unpacked) })
+        val book = device.library.keep(unpacked, LocalBook(id, "fb2", title, listOf("Иван Петров"), "ru", "", "", false))
+
+        assertEquals(Uploaded.Sent, device.orbit.upload(book, unpacked, place()))
+
+        val there = titled(title).single().getJSONArray("files").getJSONObject(0)
+        assertEquals("fb2", there.getString("format"))
+        assertEquals("the server knows the file by the fingerprint the archive was known by", there.getLong("id"), device.orbit.match(listOf(id))[id]?.id)
+        assertEquals(there.getLong("id"), device.library.book(id)?.serverFileId)
     }
 
     @Test

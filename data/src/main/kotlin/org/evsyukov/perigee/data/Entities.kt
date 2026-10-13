@@ -118,7 +118,7 @@ data class BookCollection(
 data class CollectionBook(val collectionId: Long, val bookId: String)
 
 /** A document of a folder as the library last saw it. */
-data class KnownFile(val id: String, val uri: String, val fileSize: Long, val fileModified: Long)
+data class KnownFile(val id: String, val uri: String, val fileSize: Long, val fileModified: Long, val format: String = "")
 
 /** A book file found in a folder, with what it says about itself. */
 data class FoundBook(

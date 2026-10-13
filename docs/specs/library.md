@@ -29,6 +29,17 @@ The engine is native code reading arbitrary files. The scanner notes which file 
 
 The engine opens files by path. A book that lies in a folder is copied into the app's storage (`files/books/<fingerprint>.<format>`) the first time it is opened, and read from the copy afterwards. Opening a book marks it as being read, unless the reader marked it as read already. A book whose file cannot be read says so and stays in the list.
 
+## A book in an archive
+
+An FB2 is often kept zipped, as `book.fb2.zip`. The book is the FB2, the archive is how it lies on the disk:
+
+- It is known by the fingerprint of the FB2 inside, and listed as `FB2`. The archive and the same FB2 beside it are one book, and the server, which takes no archives, knows the book by the same fingerprint.
+- The file in the reader's folder is not touched. What the app keeps for reading — on first opening, or for a book downloaded into its own storage or picked by hand — is the FB2 unpacked; that is also what is sent to a server. A downloaded archive put into the reader's folder for downloads lies there as it came.
+- An archive that holds anything but one FB2 — several books, a book and a picture — stays what it was: read through the engine as an archive, known by the archive's own fingerprint, and not offered to be sent.
+- Books that an earlier version knew by their archives are known by the book inside from the next look through the folders. What the reader left in them goes along: the place, status, stars, favourites, bookmarks, quotes, collections and pages read. A book that was already read under the new fingerprint keeps its own place.
+
+`Fb2Archive` in `:data` reads the archive; `Library.reidentify` moves what the reader left.
+
 ## Shelves
 
 One row of shelves above the list:

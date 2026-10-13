@@ -202,6 +202,25 @@ class LibraryScreenTest {
     }
 
     @Test
+    fun bookInAnArchiveIsSentAsTheBookInside() {
+        val plain = TestBook.write(File(activity.cacheDir, "Archived Book.fb2"), "Archived Book")
+        val inside = plain.readBytes()
+        TestFolder.zip(File(source.dir, "archived.fb2.zip"), plain)
+        runBlocking { library.addFolder(source.uriOf(source.dir), "Books") }
+        show()
+        waitForText("Archived Book")
+        signIn()
+        waitForText("FB2 · ${string(R.string.book_not_on_server)}")
+
+        sendFromMenu("Archived Book")
+
+        waitForText("FB2 · ${string(R.string.book_on_server)}")
+        val sent = server.value.uploads.single()
+        assertEquals("the server takes no archives: it is sent the book", "Archived Book.fb2", sent.name)
+        assertArrayEquals(inside, sent.bytes)
+    }
+
+    @Test
     fun sendingIsOfferedOnlyForWhatTheServerTakesFromTheReader() {
         keep("Fb2 Book")
         keep("Text Book", format = "txt")

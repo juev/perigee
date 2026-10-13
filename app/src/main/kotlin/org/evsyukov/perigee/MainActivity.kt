@@ -28,6 +28,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.evsyukov.perigee.data.Library
 import org.evsyukov.perigee.library.LibraryScreen
+import org.evsyukov.perigee.library.unpacked
 import org.evsyukov.perigee.opds.OpdsScreen
 import org.evsyukov.perigee.reader.ReaderScreen
 import org.evsyukov.perigee.reader.VolumeKeyHost
@@ -113,6 +114,6 @@ class MainActivity : ComponentActivity(), VolumeKeyHost {
         } ?: "book"
         val target = File(File(filesDir, "books").apply { mkdirs() }, File(name).name)
         contentResolver.openInputStream(uri)!!.use { input -> target.outputStream().use { input.copyTo(it) } }
-        target
+        unpacked(target)
     }
 }

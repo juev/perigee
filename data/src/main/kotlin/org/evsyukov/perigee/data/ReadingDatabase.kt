@@ -9,6 +9,7 @@ import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Room
 import androidx.room.RoomDatabase
+import androidx.room.Update
 import kotlinx.coroutines.flow.Flow
 
 @Dao
@@ -40,6 +41,27 @@ internal interface ReadingDao {
 
     @Query("UPDATE books SET path = :path WHERE id = :id")
     suspend fun setPath(id: String, path: String)
+
+    @Update
+    suspend fun update(book: Book)
+
+    @Query("DELETE FROM books WHERE id = :id")
+    suspend fun deleteBook(id: String)
+
+    @Query("SELECT * FROM books WHERE format = :format AND uri IS NULL AND path != ''")
+    suspend fun keptOfFormat(format: String): List<Book>
+
+    @Query("UPDATE OR IGNORE bookmarks SET bookId = :to WHERE bookId = :from")
+    suspend fun moveBookmarks(from: String, to: String)
+
+    @Query("UPDATE quotes SET bookId = :to WHERE bookId = :from")
+    suspend fun moveQuotes(from: String, to: String)
+
+    @Query("UPDATE OR IGNORE collection_books SET bookId = :to WHERE bookId = :from")
+    suspend fun moveMemberships(from: String, to: String)
+
+    @Query("UPDATE page_reads SET bookId = :to WHERE bookId = :from")
+    suspend fun movePageReads(from: String, to: String)
 
     @Query("UPDATE books SET favorite = :favorite WHERE id = :id")
     suspend fun setFavorite(id: String, favorite: Boolean)
@@ -105,7 +127,7 @@ internal interface ReadingDao {
     @Query("DELETE FROM folders WHERE id = :id")
     suspend fun deleteFolder(id: Long)
 
-    @Query("SELECT id, uri, fileSize, fileModified FROM books WHERE folderId = :folderId AND uri IS NOT NULL")
+    @Query("SELECT id, uri, fileSize, fileModified, format FROM books WHERE folderId = :folderId AND uri IS NOT NULL")
     suspend fun filesIn(folderId: Long): List<KnownFile>
 
     @Query("UPDATE books SET uri = NULL, folderId = NULL WHERE folderId = :folderId")

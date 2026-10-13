@@ -1,6 +1,7 @@
 package org.evsyukov.perigee.data
 
 import java.io.File
+import java.io.InputStream
 import java.io.RandomAccessFile
 import java.nio.ByteBuffer
 import java.nio.channels.FileChannel
@@ -35,6 +36,33 @@ object FileHash {
             }
             if (buffer.position() == 0) break
             md5.update(buffer.array(), 0, buffer.position())
+        }
+        return md5.digest().joinToString("") { "%02x".format(it) }
+    }
+
+    /**
+     * The same over a file that can only be read from its start to its end,
+     * as one inside an archive. The stream is read to its end and left open.
+     */
+    fun partialMd5(stream: InputStream): String {
+        val md5 = MessageDigest.getInstance("MD5")
+        val buffer = ByteArray(16 * SAMPLE)
+        var at = 0L
+        var next = -1
+        var sampleAt = 0L
+        while (true) {
+            val read = stream.read(buffer)
+            if (read < 0) break
+            // What of this part falls into the samples; a sample may lie across two parts.
+            while (next <= 10 && sampleAt < at + read) {
+                val from = maxOf(sampleAt, at)
+                val to = minOf(sampleAt + SAMPLE, at + read)
+                md5.update(buffer, (from - at).toInt(), (to - from).toInt())
+                if (to < sampleAt + SAMPLE) break
+                next++
+                sampleAt = if (next <= 10) SAMPLE.toLong() shl (2 * next) else Long.MAX_VALUE
+            }
+            at += read
         }
         return md5.digest().joinToString("") { "%02x".format(it) }
     }
