@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom"
+      xmlns:dc="http://purl.org/dc/terms/"
+      xmlns:opds="http://opds-spec.org/2010/catalog"
+      xmlns:opensearch="http://a9.com/-/spec/opensearch/1.1/">
+  <title>Catalog</title>
+  <id>urn:bookorbit:catalog</id>
+  <updated>2026-10-13T08:27:05.984Z</updated>
+  <opensearch:totalResults>4</opensearch:totalResults>
+  <link rel="self" href="/api/v1/opds/catalog?page=1&amp;size=2" type="application/atom+xml;profile=opds-catalog;kind=acquisition"/>
+  <link rel="start" href="/api/v1/opds" type="application/atom+xml;profile=opds-catalog;kind=navigation"/>
+  <link rel="search" href="/api/v1/opds/search.opds" type="application/opensearchdescription+xml"/>
+  <link rel="search" href="/api/v1/opds/catalog?q={searchTerms}" type="application/atom+xml" title="Search"/>
+  <link rel="next" href="/api/v1/opds/catalog?page=2&amp;size=2" type="application/atom+xml;profile=opds-catalog;kind=acquisition"/>
+  <link rel="last" href="/api/v1/opds/catalog?page=2&amp;size=2" type="application/atom+xml;profile=opds-catalog;kind=acquisition"/>
+<entry>
+  <title>Contract Spine NonXhtml</title>
+  <id>urn:bookorbit:book:4</id>
+  <updated>2026-10-12T14:50:31.224Z</updated>
+  <author><name>Perigee Contract</name></author>
+  <content type="text"/>
+  <dc:language>en</dc:language>
+  <link rel="http://opds-spec.org/image" href="/api/v1/opds/4/cover?t=1.35b3b9720492cfef7b3103ca349faad2" type="image/jpeg"/>
+  <link rel="http://opds-spec.org/image/thumbnail" href="/api/v1/opds/4/thumbnail?t=1.35b3b9720492cfef7b3103ca349faad2" type="image/jpeg"/>
+  <link rel="http://opds-spec.org/acquisition" href="/api/v1/opds/4/download?fileId=4" type="application/epub+zip" title="EPUB"/>
+</entry>
+<entry>
+  <title>Contract Plain</title>
+  <id>urn:bookorbit:book:3</id>
+  <updated>2026-10-12T14:50:18.944Z</updated>
+  <author><name>Perigee Contract</name></author>
+  <content type="text"/>
+  <dc:language>en</dc:language>
+  <link rel="http://opds-spec.org/acquisition" href="/api/v1/opds/3/download?fileId=3" type="application/epub+zip" title="EPUB"/>
+</entry>
+</feed>
