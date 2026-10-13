@@ -41,6 +41,20 @@ class EngineFeaturesTest {
         return hit to rects(hit.range.start, hit.range.end).first()
     }
 
+    // --- what the book says about itself
+
+    @Test
+    fun titleAuthorAndLanguageAreRead() {
+        open(TestBooks.epub(dir)).use { doc ->
+            assertEquals(BookInfo("Perigee Test Book", "Test Author", "en", ""), doc.info())
+        }
+        open(TestBooks.russianFb2(dir)).use { doc ->
+            assertEquals("Контрольная страница", doc.info().title)
+            assertEquals("ru", doc.info().language)
+            assertTrue("got '${doc.info().authors}'", "Автор" in doc.info().authors)
+        }
+    }
+
     // --- table of contents
 
     @Test
@@ -121,6 +135,27 @@ class EngineFeaturesTest {
         val selected = checkNotNull(doc.select(rect.centerX(), rect.centerY()))
         assertEquals("brown", selected.text)
         assertEquals("the range reads back as the same text", "brown", doc.textBetween(selected.start, selected.end))
+    }
+
+    @Test
+    fun touchingTheGapBetweenWordsSelectsAWordNotTheGap() = open(TestBooks.epub(dir)).use { doc ->
+        val (first, quick) = doc.locate("quick")
+        val brown = doc.search("brown").first { it.page == first.page }
+            .let { doc.rects(it.range.start, it.range.end).first() }
+        assertEquals("both words are on one line", quick.top, brown.top)
+
+        val gap = (quick.right + brown.left) / 2
+        val selected = checkNotNull(doc.select(gap, quick.centerY()))
+        assertTrue("got '${selected.text}'", selected.text == "quick" || selected.text == "brown")
+    }
+
+    @Test
+    fun everyTouchOnALineOfTextSelectsOneWord() = open(TestBooks.epub(dir)).use { doc ->
+        val (_, rect) = doc.locate("lazy dog")
+        for (x in 24 until WIDTH - 24 step 7) {
+            val text = doc.select(x, rect.centerY())?.text ?: continue
+            assertTrue("at x=$x got '$text'", text.isNotBlank() && ' ' !in text)
+        }
     }
 
     @Test

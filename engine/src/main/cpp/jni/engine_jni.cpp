@@ -282,6 +282,12 @@ Java_org_evsyukov_perigee_engine_NativeEngine_positionPermyriad(JNIEnv*, jobject
     return viewOf(handle)->getPosPercent();
 }
 
+JNIEXPORT jobjectArray JNICALL
+Java_org_evsyukov_perigee_engine_NativeEngine_metadata(JNIEnv* env, jobject, jlong handle) {
+    LVDocView* view = viewOf(handle);
+    return toJava(env, {view->getTitle(), view->getAuthors(), view->getLanguage(), view->getSeries()});
+}
+
 JNIEXPORT jint JNICALL
 Java_org_evsyukov_perigee_engine_NativeEngine_pageOf(JNIEnv* env, jobject, jlong handle, jstring xpointer) {
     LVDocView* view = viewOf(handle);
@@ -313,19 +319,29 @@ Java_org_evsyukov_perigee_engine_NativeEngine_selectText(
     if (from.isNull() || to.isNull()) return nullptr;
     ldomXRange range(from, to);
     range.sort();
-    // An xpointer names the glyph it stands before, so the end of a selection
-    // is the glyph after the last one taken.
-    if (range.getEnd().getChar() != 0) range.getEnd().setOffset(range.getEnd().getOffset() + 1);
-    // A touch lands inside a word; the selection takes the word whole.
-    if (range.getStart().isVisibleWordChar() && !range.getStart().isVisibleWordStart()) {
-        range.getStart().prevVisibleWordStart(true);
-    }
-    if (range.getEnd().isVisibleWordChar() && !range.getEnd().isVisibleWordStart()) {
+    if (range.getStart() == range.getEnd()) {
+        // One point selects the word under it; between two words, the one before.
+        if (!range.getStart().isVisibleWordStart()) range.getStart().prevVisibleWordStart(true);
+        range.getEnd() = range.getStart();
         range.getEnd().nextVisibleWordEnd(true);
+    } else {
+        // An xpointer names the glyph it stands before, so the end of a selection
+        // is the glyph after the last one taken. A space under the finger is not taken.
+        const lChar32 last = range.getEnd().getChar();
+        if (last != 0 && last != ' ' && last != 0x00A0) {
+            range.getEnd().setOffset(range.getEnd().getOffset() + 1);
+        }
+        // A touch lands inside a word; the selection takes the word whole.
+        if (range.getStart().isVisibleWordChar() && !range.getStart().isVisibleWordStart()) {
+            range.getStart().prevVisibleWordStart(true);
+        }
+        if (range.getEnd().isVisibleWordChar() && !range.getEnd().isVisibleWordStart()) {
+            range.getEnd().nextVisibleWordEnd(true);
+        }
     }
     if (range.isNull()) return nullptr;
     lString32 text = range.getRangeText();
-    if (text.empty()) return nullptr;
+    if (lString32(text).trim().empty()) return nullptr;
     return toJava(env, {range.getStart().toString(), range.getEnd().toString(), text});
 }
 

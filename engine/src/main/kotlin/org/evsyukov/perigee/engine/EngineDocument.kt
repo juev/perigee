@@ -20,6 +20,9 @@ data class SearchHit(val range: TextRange, val before: String, val after: String
 /** A link under a touch. [target] is null when the link leads out of the book. */
 data class Link(val href: String, val source: String, val target: String?)
 
+/** What the book says about itself; empty strings for what it leaves out. */
+data class BookInfo(val title: String, val authors: String, val language: String, val series: String)
+
 /** A range to tint on the page; [color] is 0xRRGGBB. */
 data class Highlight(val start: String, val end: String, val color: Int)
 
@@ -72,6 +75,10 @@ class EngineDocument private constructor(
 
     /** How far the current page is into the book, 0..1. */
     val progress: Float get() = NativeEngine.positionPermyriad(checked()) / 10000f
+
+    fun info(): BookInfo = NativeEngine.metadata(checked()).let { (title, authors, language, series) ->
+        BookInfo(title, authors, language, series)
+    }
 
     /** Table of contents in reading order; empty when the book has none. */
     fun toc(): List<TocEntry> = NativeEngine.toc(checked()).asList().chunked(4) { (title, xpointer, depth, page) ->

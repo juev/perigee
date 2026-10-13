@@ -106,6 +106,77 @@ class BookReaderTest {
     }
 
     @Test
+    fun aBookLaidOutAgainBreaksIntoTheSamePagesAsOneOpenedThatWay() = runBlocking(Dispatchers.Default) {
+        val settings = EngineSettings(fontSize = 36, paragraphSpacingPercent = 20, paragraphIndent = true)
+        suspend fun tops(reader: BookReader) = reader.read { doc -> (0..5).map { doc.xpointerOfPage(it) } }
+
+        val fresh = open(settings, width = WIDTH, height = HEIGHT - 80)
+        val expected = tops(fresh)
+        fresh.close()
+
+        val resized = open(settings)
+        resized.resize(WIDTH, HEIGHT - 80)
+        assertEquals("after a resize", expected, tops(resized))
+        resized.close()
+
+        val restyled = open(EngineSettings(), width = WIDTH, height = HEIGHT - 80)
+        restyled.apply(settings)
+        assertEquals("after new settings", expected, tops(restyled))
+        restyled.close()
+
+        val moved = open(settings, width = WIDTH, height = HEIGHT - 80)
+        moved.goToPage(3)
+        moved.turn(1)
+        assertEquals("after reading on", expected, tops(moved))
+        moved.close()
+    }
+
+    @Test
+    fun positionOfEveryPageLeadsBackToThatPage() = runBlocking(Dispatchers.Default) {
+        val settings = EngineSettings(fontSize = 36, paragraphSpacingPercent = 20, paragraphIndent = true)
+        val reader = open(settings)
+        val positions = (0..8).map { index ->
+            // Pages reached by turning come from the ones drawn ahead.
+            val page = if (index == 0) reader.current() else reader.turn(1)
+            assertEquals(index, page.index)
+            assertEquals("top of page $index", reader.read { it.xpointerOfPage(index) }, page.xpointer)
+            page.xpointer
+        }
+        reader.close()
+
+        for ((index, position) in positions.withIndex()) {
+            val reopened = open(settings, xpointer = position)
+            val page = reopened.current()
+            assertEquals("reopened at the position of page $index", index, page.index)
+            assertEquals("and reports the same position", position, page.xpointer)
+            reopened.close()
+        }
+    }
+
+    @Test
+    fun turningTheScreenAndBackReturnsToTheSamePage() = reading { reader ->
+        for (start in 3..9) {
+            val page = reader.goToPage(start)
+            repeat(3) {
+                reader.resize(HEIGHT, WIDTH)
+                reader.resize(WIDTH, HEIGHT)
+            }
+            assertEquals("from page $start", start, reader.current().index)
+            assertEquals(page.xpointer, reader.position)
+        }
+    }
+
+    @Test
+    fun positionFollowsTheReaderNotTheLayout() = reading { reader ->
+        val page = reader.goToPage(6)
+        assertEquals(page.xpointer, reader.position)
+        reader.apply(EngineSettings(fontSize = 44))
+        assertEquals("a layout change keeps the position", page.xpointer, reader.position)
+        val next = reader.turn(1)
+        assertEquals("turning moves it", next.xpointer, reader.position)
+    }
+
+    @Test
     fun highlightsAppearOnThePageShown() = reading { reader ->
         val plain = reader.current()
         val hit = reader.read { it.search("lazy dog").first() }

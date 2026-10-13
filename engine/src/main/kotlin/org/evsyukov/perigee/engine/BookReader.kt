@@ -37,6 +37,16 @@ class BookReader private constructor(
     private val cache = HashMap<Int, Page>()
     private var highlights: List<Highlight> = emptyList()
     private var layout = 0
+
+    /**
+     * Where the reader is: the top of the page they last went to. A layout
+     * change shows the page this falls on but does not move it, so turning the
+     * screen and turning it back returns to the very same page instead of
+     * creeping towards the start of the book. This is the position to store.
+     */
+    @Volatile
+    var position: String = document.xpointer()
+        private set
     private var closed = false
 
     /** Screens are one page apart, or two when pages are shown side by side. */
@@ -48,19 +58,19 @@ class BookReader private constructor(
     /** Moves by [screens] screens, back when negative, stopping at either end of the book. */
     suspend fun turn(screens: Int): Page = onEngine {
         document.goToPage((document.currentPage + screens * step).coerceIn(0, document.pageCount - 1))
-        show()
+        arrived()
     }
 
     suspend fun goToPage(page: Int): Page = onEngine {
         val bounded = page.coerceIn(0, document.pageCount - 1)
         // Side by side, the left page is always an even one.
         document.goToPage(bounded - bounded % step)
-        show()
+        arrived()
     }
 
     /** Returns null and stays in place when the xpointer does not resolve in this book. */
     suspend fun goTo(xpointer: String): Page? = onEngine {
-        if (document.goToXPointer(xpointer)) show() else null
+        if (document.goToXPointer(xpointer)) arrived() else null
     }
 
     /**
@@ -116,9 +126,16 @@ class BookReader private constructor(
         block()
     }
 
+    /** The reader went somewhere: that place is their position from now on. */
+    private fun arrived(): Page {
+        position = document.xpointer()
+        return show()
+    }
+
     private fun relaidOut(): Page {
         cache.clear()
         layout++
+        document.goToXPointer(position)
         return show()
     }
 

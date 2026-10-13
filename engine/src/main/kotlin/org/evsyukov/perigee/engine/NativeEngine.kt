@@ -41,6 +41,9 @@ internal object NativeEngine {
     /** Position in the book in 1/10000 units. */
     external fun positionPermyriad(handle: Long): Int
 
+    /** Title, authors, language, series; "" for what the book does not say. */
+    external fun metadata(handle: Long): Array<String>
+
     /** -1 when the xpointer does not resolve. */
     external fun pageOf(handle: Long, xpointer: String): Int
     external fun xpointerOfPage(handle: Long, page: Int): String?
