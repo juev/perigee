@@ -51,6 +51,9 @@ internal interface ReadingDao {
     @Query("SELECT * FROM books WHERE format = :format AND uri IS NULL AND path != ''")
     suspend fun keptOfFormat(format: String): List<Book>
 
+    @Query("SELECT * FROM books WHERE uri IS NULL AND path != '' AND hasCover = 0 AND language = ''")
+    suspend fun keptUndescribed(): List<Book>
+
     @Query("UPDATE OR IGNORE bookmarks SET bookId = :to WHERE bookId = :from")
     suspend fun moveBookmarks(from: String, to: String)
 

@@ -22,9 +22,11 @@ import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.evsyukov.perigee.data.Covers
 import org.evsyukov.perigee.data.Library
 import org.evsyukov.perigee.legal.LicensesScreen
 import org.evsyukov.perigee.library.LibraryScreen
+import org.evsyukov.perigee.library.describeKeptFile
 import org.evsyukov.perigee.library.unpacked
 import org.evsyukov.perigee.opds.OpdsScreen
 import org.evsyukov.perigee.reader.ReaderScreen
@@ -115,6 +117,7 @@ class MainActivity : ComponentActivity(), VolumeKeyHost {
         } ?: "book"
         val target = File(File(filesDir, "books").apply { mkdirs() }, File(name).name)
         contentResolver.openInputStream(uri)!!.use { input -> target.outputStream().use { input.copyTo(it) } }
-        unpacked(target)
+        // Read for its cover, authors and series as a book of a folder is; one the engine cannot read is opened all the same.
+        unpacked(target).also { describeKeptFile(this@MainActivity, Library.get(this@MainActivity), Covers.get(this@MainActivity), it) }
     }
 }

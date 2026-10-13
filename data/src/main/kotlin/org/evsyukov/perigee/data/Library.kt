@@ -97,6 +97,14 @@ class Library internal constructor(internal val database: ReadingDatabase, priva
     suspend fun keptOfFormat(format: String): List<Book> = dao.keptOfFormat(format)
 
     /**
+     * Books kept in the app's own storage, in no folder, of which nothing but a
+     * title is known: neither a cover nor a language. A book opened by hand
+     * before such books were read for what they say is one; so is a book that
+     * says no more than that, which costs a second reading and no harm.
+     */
+    suspend fun keptUndescribed(): List<Book> = dao.keptUndescribed()
+
+    /**
      * A book turns out to be known by another fingerprint, as one in an archive
      * that is now known by the file inside: what the reader left in it — the
      * place, status, stars, bookmarks, quotes, collections, pages read — moves

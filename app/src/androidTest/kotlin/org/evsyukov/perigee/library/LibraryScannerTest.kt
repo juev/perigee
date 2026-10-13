@@ -256,6 +256,63 @@ class LibraryScannerTest {
     }
 
     @Test
+    fun bookPickedByHandIsReadForItsCoverAuthorAndSeries() = runBlocking<Unit> {
+        val picked = TestBook.write(
+            File(context.cacheDir, "picked-by-hand.fb2"), "Picked With A Cover", author = "Hand Picker",
+            series = "Picked Ones", seriesNumber = 2, cover = TestFolder.cover(0xFF336699.toInt()),
+        )
+
+        assertTrue(describeKeptFile(context, library, covers, picked))
+
+        val book = books().single()
+        assertEquals(FileHash.partialMd5(picked), book.id)
+        assertEquals(listOf("Picked With A Cover", "Hand Picker", "Picked Ones", "2", "fb2"), listOf(book.title, book.author, book.series, book.seriesNumber, book.format))
+        assertTrue(book.hasCover)
+        assertTrue(covers.file(book.id).length() > 0)
+        // Opening it afterwards, as the reader does, is the same book and leaves all that.
+        val opened = library.open(picked, "Picked With A Cover", "Hand Picker")
+        assertEquals(book.id, opened.id)
+        assertTrue(opened.hasCover)
+    }
+
+    @Test
+    fun bookOpenedBeforeSuchBooksWereReadGetsItsCover() = runBlocking<Unit> {
+        val file = TestBook.write(File(context.cacheDir, "opened-long-ago.fb2"), "Opened Long Ago", author = "Old Author", cover = TestFolder.cover(0xFF336699.toInt()))
+        val old = library.open(file, "Opened Long Ago", "Old Author")
+        library.savePosition(old.id, "/body/p[5]", 0.4f)
+        assertFalse(old.hasCover)
+
+        describeKept(context, library, covers)
+
+        val book = books().single()
+        assertEquals(old.id, book.id)
+        assertTrue(book.hasCover)
+        assertTrue(covers.file(book.id).length() > 0)
+        assertEquals("where the reader stopped is kept", "/body/p[5]", book.xpointer)
+        assertEquals(book.id, library.lastOpened()?.id)
+    }
+
+    @Test
+    fun bookOpenedLongAgoAsAnArchiveBecomesTheBookInsideWithItsCover() = runBlocking<Unit> {
+        val plain = TestBook.write(File(context.cacheDir, "long-ago.fb2"), "Archived Long Ago", cover = TestFolder.cover(0xFF336699.toInt()))
+        val inside = plain.readBytes()
+        val kept = TestFolder.zip(File(context.cacheDir, "long-ago.fb2.zip"), plain)
+        plain.delete()
+        val old = library.open(kept, "Archived Long Ago", "")
+        library.addBookmark(old.id, "/body/p[3]", "marked words", null)
+
+        describeKept(context, library, covers)
+
+        val book = books().single()
+        assertEquals(fingerprint(inside), book.id)
+        assertEquals("fb2", book.format)
+        assertTrue(book.hasCover)
+        assertArrayEquals(inside, File(book.path).readBytes())
+        assertFalse(kept.exists())
+        assertEquals("marked words", library.bookmarks(book.id).first().single().text)
+    }
+
+    @Test
     fun pickedOrDownloadedArchiveIsKeptAsTheBook() = runBlocking<Unit> {
         val (archive, inside) = archived("picked", "Picked By Hand")
         val picked = File(context.cacheDir, "picked.fb2.zip").apply { writeBytes(archive.readBytes()) }

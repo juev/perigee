@@ -392,6 +392,7 @@ class LibraryViewModel(
                 scan = viewModelScope.launch {
                     looking.update { it.copy(scanning = true) }
                     try {
+                        describeKept(getApplication(), library, covers)
                         unpackKept(getApplication(), library)
                         for (folder in library.folders().first()) scanner.scan(folder, sourceOf(folder))
                     } finally {
