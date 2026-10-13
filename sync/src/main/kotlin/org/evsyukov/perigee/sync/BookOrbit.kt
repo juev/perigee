@@ -11,13 +11,18 @@ import java.security.MessageDigest
 import java.security.SecureRandom
 import java.time.Instant
 import java.time.format.DateTimeParseException
+import kotlin.math.abs
+import kotlin.math.roundToInt
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import org.evsyukov.perigee.data.Account
 import org.evsyukov.perigee.data.Accounts
+import org.evsyukov.perigee.data.Book
 import org.evsyukov.perigee.data.Library
+import org.evsyukov.perigee.data.ReadingStatus
+import org.evsyukov.perigee.data.RemotePosition
 import org.evsyukov.perigee.data.Tokens
 import org.json.JSONArray
 import org.json.JSONException
@@ -33,11 +38,13 @@ import org.json.JSONObject
  * own; the app sets that up when the reader signs in.
  *
  * @param clientVersion what the app calls its version to the server
+ * @param deviceName what the reader's other devices are told this one is, as when a place read here is offered there
  */
 class BookOrbit(
     private val accounts: Accounts,
     private val library: Library,
     private val clientVersion: String,
+    private val deviceName: String = DEVICE_MODEL,
     private val now: () -> Long = System::currentTimeMillis,
 ) : SyncBackend {
     /** One renewal at a time: a token to renew with is good for one use. */
@@ -45,6 +52,9 @@ class BookOrbit(
 
     /** One look at the devices' channel at a time: two at once would each make a user name, or drop the other's key. */
     private val settingUp = Mutex()
+
+    /** One round of syncing at a time. */
+    private val syncing = Mutex()
 
     /**
      * Signs in with a user name and password, in place of whoever was signed
@@ -273,6 +283,155 @@ class BookOrbit(
         return found.size
     }
 
+    /**
+     * One round of keeping the server and the library in step: the places the
+     * reader got to, status and rating, and the pages read. Nothing is done
+     * for a server of a version the app was not made for.
+     *
+     * A place the reader got to elsewhere, later than here, is not gone to: it
+     * is kept as an offer for the reader to decide about, and until they do
+     * the place here is not sent over it.
+     *
+     * @throws IncompatibleServerException
+     * @throws DeviceChannelException when the devices' channel is not ready
+     * @throws SignedOutException
+     * @throws IOException when the server cannot be reached; what was not sent is sent the next time
+     */
+    suspend fun sync(): SyncReport = syncing.withLock {
+        matchLibrary(all = false)
+        val books = library.booksOnServer()
+        var report = SyncReport()
+        for (book in books) {
+            if (book.status != ReadingStatus.Reading && !book.placeUnsent && library.pendingOffer(book.id) == null) continue
+            report += syncPlaceOf(book)
+        }
+        report += syncStates(books)
+        report + syncPagesRead()
+    }
+
+    /**
+     * Brings one book's place in step, as when it is opened: there may be a
+     * later one from elsewhere to offer. Says nothing of a book the server has not.
+     */
+    suspend fun syncPlace(bookId: String): SyncReport = syncing.withLock {
+        val book = library.book(bookId)?.takeIf { it.serverFileId != null } ?: return SyncReport()
+        syncPlaceOf(book)
+    }
+
+    private suspend fun syncPlaceOf(book: Book): SyncReport {
+        val account = accounts.current() ?: throw SignedOutException()
+        val remote = device("GET", "/koreader/syncs/progress/${book.id}").json()?.takeIf { it.has("timestamp") }
+        if (remote != null && remote.optString("device_id") != account.deviceId) {
+            val at = remote.optLong("timestamp")
+            // Later than anything the reader did here or was told of before.
+            if (at > book.remoteSeenAt && at * 1000 > book.movedAt) {
+                val progress = remote.optDouble("percentage", 0.0).toFloat().coerceIn(0f, 1f)
+                if (abs(progress - book.progress) < SAME_PLACE) {
+                    library.remoteSeen(book.id, at)
+                } else {
+                    library.offer(RemotePosition(book.id, remote.textOf("progress").ifEmpty { null }, progress, remote.textOf("device"), at))
+                    return SyncReport(offers = 1)
+                }
+            }
+        }
+        // The reader has not decided about a place from elsewhere: theirs here is not sent over it.
+        if (library.pendingOffer(book.id) != null) return SyncReport()
+        val xpointer = book.xpointer
+        if (!book.placeUnsent || xpointer == null) return SyncReport()
+        val body = JSONObject()
+            .put("document", book.id).put("percentage", book.progress.toDouble().coerceIn(0.0, 1.0)).put("progress", xpointer)
+            .put("device", deviceName).put("device_id", account.deviceId).put("timestamp", book.movedAt / 1000)
+        try {
+            device("PUT", "/koreader/syncs/progress", body)
+        } catch (e: ServerResponseException) {
+            if (e.code != 404) throw e
+            // The server has the file no more.
+            library.notOnServer(listOf(book.id))
+            return SyncReport()
+        }
+        library.placeSent(book.id, book.movedAt)
+        return SyncReport(placesSent = 1)
+    }
+
+    /** Status and rating, both ways: what the reader changed here goes up, the rest is taken as the server has it. */
+    private suspend fun syncStates(books: List<Book>): SyncReport {
+        if (books.isEmpty()) return SyncReport()
+        val wanted = books.mapNotNull { it.serverBookId }.toSet()
+        val theirs = HashMap<Long, Pair<String, Int?>>()
+        var page = 0
+        var seen = 0
+        while (theirs.size < wanted.size) {
+            val reply = jwt("POST", "/books/query", JSONObject().put("pagination", JSONObject().put("page", page).put("size", STATES_PAGE)))
+            if (!reply.ok) throw failure(reply)
+            val json = reply.json() ?: break
+            val items = json.optJSONArray("items") ?: break
+            if (items.length() == 0) break
+            for (i in 0 until items.length()) {
+                val item = items.optJSONObject(i) ?: continue
+                val id = item.optLong("id")
+                if (id !in wanted) continue
+                val rating = if (item.isNull("rating")) null else item.optDouble("rating").roundToInt().takeIf { it in 1..5 }
+                theirs[id] = (item.optJSONObject("readStatus")?.textOf("status") ?: "unread") to rating
+            }
+            seen += items.length()
+            if (seen >= json.optInt("total")) break
+            page++
+        }
+        var sent = 0
+        var taken = 0
+        for (book in books) {
+            val (status, rating) = theirs[book.serverBookId] ?: continue
+            val known = STATUSES[status]
+            if (!book.stateUnsent) {
+                // A status the app has no word for, as "on hold", leaves the reader's own as it is.
+                val next = known ?: book.status
+                if (next != book.status || rating != book.rating) {
+                    library.takeState(book.id, next, rating)
+                    taken++
+                }
+                continue
+            }
+            // Only what the reader changed is sent, so that stars given here do not undo a status set there.
+            val mine = STATUSES.entries.first { it.value == book.status }.key
+            val base = "/koreader/plugin/catalog/books/${book.serverBookId}"
+            if (book.statusUnsent && known != book.status) device("PUT", "$base/read-status", JSONObject().put("status", mine))
+            if (rating != book.rating) device("PUT", "$base/rating", JSONObject().put("rating", book.rating ?: JSONObject.NULL))
+            library.stateSent(book.id, book.stateChangedAt)
+            sent++
+        }
+        return SyncReport(statesSent = sent, statesTaken = taken)
+    }
+
+    /** The pages read go up in parts the server takes; it tells apart what it was sent twice. */
+    private suspend fun syncPagesRead(): SyncReport {
+        val account = accounts.current() ?: throw SignedOutException()
+        library.forgetPageReadsBefore(now() / 1000 - PAGE_READS_KEPT_SECONDS)
+        var sent = 0
+        while (true) {
+            val reads = library.pageReadsToSend(PAGE_READS_BATCH)
+            val part = reads.groupBy { it.bookId }.entries.take(PAGE_READS_BOOKS)
+            if (part.isEmpty()) break
+            val books = JSONArray()
+            for ((bookId, events) in part) {
+                val list = JSONArray()
+                for (read in events) {
+                    list.put(
+                        JSONObject().put("page", read.page.coerceAtLeast(0)).put("startTime", read.startedAt.coerceAtLeast(1))
+                            .put("durationSeconds", read.seconds.coerceIn(0, MAX_PAGE_SECONDS)).put("totalPages", read.totalPages.coerceAtLeast(1)),
+                    )
+                }
+                books.put(JSONObject().put("hash", bookId).put("events", list))
+            }
+            val body = JSONObject()
+                .put("deviceId", account.deviceId).put("deviceModel", DEVICE_MODEL).put("pluginVersion", clientVersion).put("books", books)
+            device("POST", "/koreader/plugin/page-stats", body)
+            val told = part.flatMap { it.value }
+            library.pageReadsSent(told)
+            sent += told.size
+        }
+        return SyncReport(pagesSent = sent)
+    }
+
     /** A request with the session's token, renewed first when it has run out or is not taken. */
     private suspend fun jwt(method: String, path: String, body: JSONObject? = null): Reply {
         var token = access(stale = null)
@@ -327,7 +486,7 @@ class BookOrbit(
     }
 
     /** A request through the devices' channel. */
-    private suspend fun device(method: String, path: String, body: JSONObject): Reply {
+    private suspend fun device(method: String, path: String, body: JSONObject? = null): Reply {
         val account = accounts.current() ?: throw SignedOutException()
         if (!supports(account.serverVersion)) throw IncompatibleServerException(account.serverVersion)
         val key = accounts.deviceKey() ?: throw DeviceChannelException(DeviceChannel.PasswordNeeded)
@@ -374,6 +533,21 @@ class BookOrbit(
         private const val MAX_QUERY = 200
         private const val MATCH_BATCH = 500
         private const val MAX_COVER = 4 * 1024 * 1024
+
+        private const val STATES_PAGE = 200
+        private const val PAGE_READS_BATCH = 500
+        private const val PAGE_READS_BOOKS = 50
+        private const val MAX_PAGE_SECONDS = 86_400
+        private const val PAGE_READS_KEPT_SECONDS = 90L * 24 * 3600
+
+        /** Two places this close, as shares of the book, are the same place. */
+        private const val SAME_PLACE = 0.001f
+
+        /** The server's statuses the app has a word for. */
+        private val STATUSES = mapOf(
+            "unread" to ReadingStatus.None, "want_to_read" to ReadingStatus.ToRead,
+            "reading" to ReadingStatus.Reading, "read" to ReadingStatus.Read,
+        )
 
         /** A token this close to running out is renewed before it is used. */
         private const val EARLY_MS = 30_000L

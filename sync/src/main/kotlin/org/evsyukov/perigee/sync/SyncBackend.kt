@@ -54,6 +54,24 @@ interface SyncBackend {
     suspend fun match(hashes: Collection<String>): Map<String, RemoteFile>
 }
 
+/** What a round of syncing came to. */
+data class SyncReport(
+    /** Places of the reader the server took. */
+    val placesSent: Int = 0,
+    /** Later places from elsewhere, kept for the reader to decide about. */
+    val offers: Int = 0,
+    /** Books whose status or rating the server took, and books that took the server's. */
+    val statesSent: Int = 0,
+    val statesTaken: Int = 0,
+    /** Pages read that the server was told of. */
+    val pagesSent: Int = 0,
+) {
+    operator fun plus(other: SyncReport) = SyncReport(
+        placesSent + other.placesSent, offers + other.offers, statesSent + other.statesSent,
+        statesTaken + other.statesTaken, pagesSent + other.pagesSent,
+    )
+}
+
 /** There is something at the address, but not a server the app knows. */
 class NotAServerException(url: String) : IOException("no server at $url")
 

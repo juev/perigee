@@ -43,7 +43,10 @@ class Library internal constructor(internal val database: ReadingDatabase, priva
 
     suspend fun setFavorite(bookId: String, favorite: Boolean) = dao.setFavorite(bookId, favorite)
 
-    suspend fun setStatus(bookId: String, status: ReadingStatus) = dao.setStatus(bookId, status)
+    suspend fun setStatus(bookId: String, status: ReadingStatus) = dao.setStatus(bookId, status, now())
+
+    /** One to five stars; null takes the rating off. */
+    suspend fun setRating(bookId: String, rating: Int?) = dao.setRating(bookId, rating?.coerceIn(1, 5), now())
 
     /**
      * A file in the app's storage, as one downloaded from a catalog, joins the
@@ -137,8 +140,56 @@ class Library internal constructor(internal val database: ReadingDatabase, priva
 
     suspend fun removeFromCollection(collectionId: Long, bookId: String) = dao.deleteMember(collectionId, bookId)
 
+    /**
+     * Remembers where the reader is. A place other than the one before is a
+     * move, to be told to the server; where a book opens the first time is not.
+     */
     suspend fun savePosition(bookId: String, xpointer: String, progress: Float) =
-        dao.savePosition(bookId, xpointer, progress)
+        dao.savePosition(bookId, xpointer, progress, now())
+
+    /** The books the server has. */
+    suspend fun booksOnServer(): List<Book> = dao.onServer()
+
+    /** The server took the place the reader moved to at [movedAt]. */
+    suspend fun placeSent(bookId: String, movedAt: Long) = dao.placePushed(bookId, movedAt)
+
+    /** The server took the status and rating as the reader changed them at [changedAt]. */
+    suspend fun stateSent(bookId: String, changedAt: Long) = dao.statePushed(bookId, changedAt)
+
+    /**
+     * Takes the status and rating the server has for a book. What the reader
+     * changed here and the server has not heard of yet stays as it is.
+     */
+    suspend fun takeState(bookId: String, status: ReadingStatus, rating: Int?) = dao.takeState(bookId, status, rating)
+
+    /** The reader got further in a book somewhere else; they are to be asked whether to go there. */
+    suspend fun offer(position: RemotePosition) = database.withTransaction {
+        dao.insert(position)
+        dao.remoteSeen(position.bookId, position.at)
+    }
+
+    /** A place from elsewhere, as of the server's time [at], that is where the reader is here already. */
+    suspend fun remoteSeen(bookId: String, at: Long) = dao.remoteSeen(bookId, at)
+
+    /** The place from elsewhere the reader has not decided about; null when there is none. */
+    fun offerOf(bookId: String): Flow<RemotePosition?> = dao.remotePosition(bookId)
+
+    suspend fun pendingOffer(bookId: String): RemotePosition? = dao.remotePositionNow(bookId)
+
+    /** The reader decided, one way or the other; the same place is not offered again. */
+    suspend fun settleOffer(bookId: String) = dao.deleteRemotePosition(bookId)
+
+    /** The reader spent [seconds] on a page, from [startedAt] in seconds since 1970. */
+    suspend fun addPageRead(bookId: String, page: Int, totalPages: Int, startedAt: Long, seconds: Int) =
+        dao.insert(PageRead(bookId = bookId, page = page, totalPages = totalPages, startedAt = startedAt, seconds = seconds))
+
+    /** Pages read in books the server has, oldest first, that it was not told of yet. */
+    suspend fun pageReadsToSend(limit: Int): List<PageRead> = dao.pageReadsToSend(limit)
+
+    suspend fun pageReadsSent(reads: Collection<PageRead>) = dao.deletePageReads(reads.map { it.id })
+
+    /** Pages read in books the server never came to have are not kept for ever. */
+    suspend fun forgetPageReadsBefore(startedAt: Long) = dao.deletePageReadsBefore(startedAt)
 
     fun bookmarks(bookId: String): Flow<List<Bookmark>> = dao.bookmarks(bookId)
 

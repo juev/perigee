@@ -30,6 +30,7 @@ import org.evsyukov.perigee.data.LibraryPreferences
 import org.evsyukov.perigee.data.ReadingStatus
 import org.evsyukov.perigee.data.Shelf
 import org.evsyukov.perigee.server.Server
+import org.evsyukov.perigee.server.SyncWork
 
 data class LibraryState(
     /** False until the stored books have been read; nothing is shown before that. */
@@ -58,6 +59,8 @@ class LibraryViewModel(
     val covers: Covers,
     /** What is done once the folders were looked through, as asking the server about the books found. */
     private val afterScan: suspend () -> Unit = {},
+    /** What is done once the reader changed a status or a rating, as telling the server. */
+    private val afterChange: suspend () -> Unit = {},
     private val sourceOf: (Folder) -> BookSource,
 ) : AndroidViewModel(application) {
 
@@ -65,6 +68,7 @@ class LibraryViewModel(
     constructor(application: Application) : this(
         application, Library.get(application), LibraryPreferences.get(application), Covers.get(application),
         { Server.matchNewBooks(application) },
+        { SyncWork.soon(application) },
         { folder -> TreeSource(application.contentResolver, Uri.parse(folder.uri)) },
     )
 
@@ -128,7 +132,18 @@ class LibraryViewModel(
 
     /** Choosing the status a book already has takes it off. */
     fun setStatus(book: Book, status: ReadingStatus) {
-        viewModelScope.launch { library.setStatus(book.id, if (book.status == status) ReadingStatus.None else status) }
+        viewModelScope.launch {
+            library.setStatus(book.id, if (book.status == status) ReadingStatus.None else status)
+            afterChange()
+        }
+    }
+
+    /** One to five stars; choosing the rating a book already has takes it off. */
+    fun setRating(book: Book, rating: Int) {
+        viewModelScope.launch {
+            library.setRating(book.id, if (book.rating == rating) null else rating)
+            afterChange()
+        }
     }
 
     /** Adds a folder the reader picked and looks through it. */

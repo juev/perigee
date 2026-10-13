@@ -75,11 +75,13 @@ class LibraryScreenTest {
 
     private var wentToServer = false
     private val scansDone = java.util.concurrent.atomic.AtomicInteger()
+    private val changes = java.util.concurrent.atomic.AtomicInteger()
 
     private fun show() {
         val model = LibraryViewModel(
             activity.application, library, LibraryPreferences.get(activity),
             Covers(File(activity.cacheDir, "screen-covers")), afterScan = { scansDone.incrementAndGet() },
+            afterChange = { changes.incrementAndGet() },
         ) { source }
         rule.setContent {
             MaterialTheme {
@@ -133,6 +135,25 @@ class LibraryScreenTest {
         waitForText("Synced Book")
         rule.onNodeWithText("FB2 · ${string(R.string.book_on_server)}").assertIsDisplayed()
         rule.onNodeWithText("FB2").assertIsDisplayed()
+    }
+
+    @Test
+    fun bookIsGivenStarsAndTheyAreTakenOff() {
+        shelve(found("Rated Book"))
+        show()
+        waitForText("Rated Book")
+
+        rule.onNodeWithContentDescription(string(R.string.book_actions, "Rated Book")).performClick()
+        rule.onNodeWithContentDescription(activity.resources.getQuantityString(R.plurals.rate_stars, 4, 4)).performClick()
+        rule.waitUntil(TIMEOUT) { runBlocking { library.book("Rated Book") }?.rating == 4 }
+        waitForText("FB2 · ★★★★")
+        rule.waitUntil(TIMEOUT) { changes.get() == 1 }
+        assertTrue("to be told to the server", runBlocking { library.book("Rated Book") }!!.stateUnsent)
+
+        // The same number of stars again takes them off.
+        rule.onNodeWithContentDescription(activity.resources.getQuantityString(R.plurals.rate_stars, 4, 4)).performClick()
+        rule.waitUntil(TIMEOUT) { runBlocking { library.book("Rated Book") }?.rating == null }
+        rule.waitUntil(TIMEOUT) { changes.get() == 2 }
     }
 
     @Test

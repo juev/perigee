@@ -5,17 +5,13 @@ import android.os.ParcelFileDescriptor
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import java.io.File
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
-import org.evsyukov.perigee.data.Accounts
 import org.evsyukov.perigee.data.FileHash
-import org.evsyukov.perigee.data.Library
 import org.evsyukov.perigee.data.LocalBook
 import org.evsyukov.perigee.engine.Engine
 import org.evsyukov.perigee.sync.BookOrbit
 import org.evsyukov.perigee.sync.DeviceChannel
 import org.evsyukov.perigee.sync.SignedOutException
-import org.evsyukov.perigee.sync.TooManyAttemptsException
 import org.evsyukov.perigee.sync.WrongPasswordException
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
@@ -37,42 +33,13 @@ class AccountContractTest {
     private val context: Context = InstrumentationRegistry.getInstrumentation().targetContext
     private val dir = File(context.cacheDir, "account-contract").apply { deleteRecursively() }
     private lateinit var server: BookOrbitServer
-    private lateinit var url: String
-
-    /** A reader's device: a library of its own, signed in to the server. */
-    private class Device(context: Context) {
-        val library = Library.inMemory(context)
-        val accounts = Accounts.of(library)
-        val orbit = BookOrbit(accounts, library, "0.0.1")
-    }
 
     @Before
     fun connect() {
         server = ContractServer.connect()
-        url = checkNotNull(InstrumentationRegistry.getArguments().getString("bookorbitUrl"))
     }
 
-    /** The server takes five sign-ins a minute, and a run of the tests may ask for more. */
-    private suspend fun signIn(device: Device, password: String = BookOrbitServer.PASSWORD): DeviceChannel {
-        repeat(8) {
-            try {
-                return device.orbit.signIn(url, BookOrbitServer.USERNAME, password)
-            } catch (e: TooManyAttemptsException) {
-                delay(10_000)
-            }
-        }
-        error("the server kept asking to wait")
-    }
-
-    /** Signed in once for the tests that only look: each sign-in counts against the server's limit. */
-    private fun device(): Device = shared ?: Device(context).also { device ->
-        runBlocking {
-            // The contract reader has a user name in the devices' channel already, as one who uses KOReader would.
-            assertEquals(DeviceChannel.PasswordNeeded, signIn(device))
-            assertEquals(DeviceChannel.Ready, device.orbit.devicePassword(BookOrbitServer.KO_PASSWORD))
-        }
-        shared = device
-    }
+    private fun device(): ContractDevice = ContractDevice.signedIn(context)
 
     @Test
     fun readerSignsInAndTheSessionIsKeptSealed() = runBlocking<Unit> {
@@ -88,8 +55,8 @@ class AccountContractTest {
 
     @Test
     fun wrongPasswordIsRefused() {
-        val stranger = Device(context)
-        assertThrows(WrongPasswordException::class.java) { runBlocking { signIn(stranger, "not-the-password") } }
+        val stranger = ContractDevice(context)
+        assertThrows(WrongPasswordException::class.java) { runBlocking { stranger.signIn("not-the-password") } }
         assertNull(runBlocking { stranger.accounts.current() })
     }
 
@@ -178,8 +145,8 @@ class AccountContractTest {
 
     @Test
     fun signingOutEndsTheSessionOnTheServer() = runBlocking<Unit> {
-        val device = Device(context)
-        signIn(device)
+        val device = ContractDevice(context)
+        device.signIn()
         val tokens = checkNotNull(device.accounts.tokens())
 
         device.orbit.signOut()
@@ -211,9 +178,5 @@ class AccountContractTest {
             device.accounts.saveDevice(own, "")
             device.orbit.devicePassword(BookOrbitServer.KO_PASSWORD)
         }
-    }
-
-    private companion object {
-        var shared: Device? = null
     }
 }

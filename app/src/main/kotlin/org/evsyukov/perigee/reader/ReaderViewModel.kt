@@ -5,6 +5,7 @@ import android.graphics.Rect
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import java.io.File
+import kotlin.math.roundToInt
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.Job
@@ -27,6 +28,7 @@ import org.evsyukov.perigee.data.Library
 import org.evsyukov.perigee.data.Quote
 import org.evsyukov.perigee.data.ReaderPreferences
 import org.evsyukov.perigee.data.ReaderPrefs
+import org.evsyukov.perigee.data.RemotePosition
 import org.evsyukov.perigee.engine.BookReader
 import org.evsyukov.perigee.engine.Engine
 import org.evsyukov.perigee.engine.EngineSettings
@@ -37,6 +39,8 @@ import org.evsyukov.perigee.engine.SearchHit
 import org.evsyukov.perigee.engine.TextAlign
 import org.evsyukov.perigee.engine.TextRange
 import org.evsyukov.perigee.engine.TocEntry
+import org.evsyukov.perigee.server.Server
+import org.evsyukov.perigee.server.SyncWork
 
 /** The size of the area the page is shown in, in pixels, and the screen density. */
 data class Viewport(val width: Int, val height: Int, val density: Float, val densityDpi: Int)
@@ -79,6 +83,8 @@ data class ReaderState(
     val quoteTouch: QuoteTouch? = null,
     val canGoBack: Boolean = false,
     val search: SearchState = SearchState(),
+    /** A place the reader got to somewhere else, later than here, and has not decided about. */
+    val offer: RemotePosition? = null,
 ) {
     /** The contents entry the page shown belongs to. */
     val chapter: TocEntry? get() = page?.let { shown -> toc.lastOrNull { it.page <= shown.index } }
@@ -114,6 +120,10 @@ class ReaderViewModel(application: Application) : AndroidViewModel(application) 
     private val selectRequests = Channel<SelectRequest>(Channel.CONFLATED)
     private var watching: Job? = null
 
+    /** The page the reader is looking at and since when, for the time spent on it. */
+    private data class Looking(val bookId: String, val page: Int, val pageCount: Int, val since: Long)
+    private var looking: Looking? = null
+
     init {
         viewModelScope.launch {
             // Not collectLatest: a book being opened must not be dropped halfway
@@ -144,10 +154,63 @@ class ReaderViewModel(application: Application) : AndroidViewModel(application) 
     /** Puts the book away; the screen is free to show another. */
     fun close() {
         file = null
-        viewModelScope.launch { closeBook() }
+        viewModelScope.launch {
+            closeBook()
+            SyncWork.soon(getApplication())
+        }
+    }
+
+    /**
+     * The reader goes to the place they got to elsewhere. It is a jump like
+     * any other: Back returns to where they were.
+     */
+    fun acceptOffer() = act { open ->
+        val offer = _state.value.offer ?: return@act
+        val shown = _state.value.page ?: return@act
+        // A place that cannot be found in this copy of the book is gone to by how far into the book it is.
+        val page = offer.xpointer?.let { open.goTo(it) } ?: open.goToPage((offer.progress * (shown.pageCount - 1)).roundToInt())
+        if (page.index != shown.index) history.addLast(shown.xpointer)
+        show(page)
+        library.settleOffer(offer.bookId)
+    }
+
+    /** The reader stays where they are; the place from elsewhere is not offered again. */
+    fun declineOffer() {
+        val offer = _state.value.offer ?: return
+        viewModelScope.launch { library.settleOffer(offer.bookId) }
+    }
+
+    /** The app is put away: the page is looked at no more, and what was read is to be sent. */
+    fun paused() {
+        act { open -> open.saveCache() }
+        viewModelScope.launch {
+            stopLooking()
+            SyncWork.soon(getApplication())
+        }
+    }
+
+    /** The app is back: the page shown is looked at again. */
+    fun resumed() {
+        val book = _state.value.book ?: return
+        val page = _state.value.page ?: return
+        if (looking == null) looking = Looking(book.id, page.index, page.pageCount, clock())
+    }
+
+    /**
+     * Counts the time spent on the page that is left. A page glanced at on the
+     * way to another is not read, and one left open for long was not read all
+     * that time; the bounds are those KOReader counts by.
+     */
+    private suspend fun stopLooking() {
+        val was = looking ?: return
+        looking = null
+        val seconds = ((clock() - was.since) / 1000).toInt()
+        if (seconds < MIN_PAGE_SECONDS) return
+        library.addPageRead(was.bookId, was.page + 1, was.pageCount, was.since / 1000, seconds.coerceAtMost(MAX_PAGE_SECONDS))
     }
 
     private suspend fun closeBook() = layout.withLock {
+        stopLooking()
         watching?.cancel()
         searching?.cancel()
         reader?.close()
@@ -163,9 +226,6 @@ class ReaderViewModel(application: Application) : AndroidViewModel(application) 
         this.viewport = viewport
         viewModelScope.launch { sync() }
     }
-
-    /** The app is going to the background: a good moment to keep the laid out book for next time. */
-    fun saveCache() = act { open -> open.saveCache() }
 
     fun updatePrefs(change: (ReaderPrefs) -> ReaderPrefs) {
         viewModelScope.launch { preferences.update(change) }
@@ -358,6 +418,8 @@ class ReaderViewModel(application: Application) : AndroidViewModel(application) 
             _state.update { it.copy(book = book, toc = toc, failed = false) }
             watch(book)
             show(open.current())
+            // Not waited for: the reader reads meanwhile, and is told if there is a later place.
+            viewModelScope.launch { Server.bookOpened(getApplication(), book.id) }
         } catch (e: IllegalArgumentException) {
             _state.update { it.copy(failed = true) }
         }
@@ -388,6 +450,9 @@ class ReaderViewModel(application: Application) : AndroidViewModel(application) 
                 }
             }
             launch {
+                library.offerOf(book.id).collect { offer -> _state.update { it.copy(offer = offer) } }
+            }
+            launch {
                 library.quotes(book.id).collectLatest { quotes ->
                     _state.update { it.copy(quotes = quotes) }
                     val open = reader ?: return@collectLatest
@@ -408,7 +473,13 @@ class ReaderViewModel(application: Application) : AndroidViewModel(application) 
             )
         }
         val open = reader ?: return
-        _state.value.book?.let { library.savePosition(it.id, open.position, page.progress) }
+        val book = _state.value.book ?: return
+        library.savePosition(book.id, open.position, page.progress)
+        val was = looking
+        if (was == null || was.page != page.index || was.pageCount != page.pageCount) {
+            stopLooking()
+            looking = Looking(book.id, page.index, page.pageCount, clock())
+        }
     }
 
     private suspend fun markBookmark(page: Page) {
@@ -433,6 +504,11 @@ class ReaderViewModel(application: Application) : AndroidViewModel(application) 
 
     companion object {
         private const val BOOKMARK_TEXT_LENGTH = 120
+        private const val MIN_PAGE_SECONDS = 5
+        private const val MAX_PAGE_SECONDS = 120
+
+        /** The time pages are timed by; the tests set their own. */
+        internal var clock: () -> Long = System::currentTimeMillis
 
         // One turn in flight and one behind it: enough for a quick double tap.
         private const val MAX_TURNS_WAITING = 2

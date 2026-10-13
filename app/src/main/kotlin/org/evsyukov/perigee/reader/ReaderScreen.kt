@@ -25,15 +25,19 @@ import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.displayCutout
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.requiredWidth
 import androidx.compose.foundation.layout.wrapContentWidth
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -75,11 +79,13 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import java.io.File
 import kotlin.math.abs
+import kotlin.math.roundToInt
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.evsyukov.perigee.R
 import org.evsyukov.perigee.data.PageTurn
 import org.evsyukov.perigee.data.ReaderPrefs
+import org.evsyukov.perigee.data.RemotePosition
 import org.evsyukov.perigee.data.TapScheme
 import org.evsyukov.perigee.engine.Page
 
@@ -138,7 +144,8 @@ fun ReaderScreen(file: File, onClose: () -> Unit, viewModel: ReaderViewModel = v
         }
     }
     HideSystemBars()
-    LifecycleEventEffect(Lifecycle.Event.ON_STOP) { viewModel.saveCache() }
+    LifecycleEventEffect(Lifecycle.Event.ON_STOP) { viewModel.paused() }
+    LifecycleEventEffect(Lifecycle.Event.ON_START) { viewModel.resumed() }
     ScreenBrightness(prefs.brightness)
     VolumeKeys(prefs.volumeKeysTurnPages && panel == Panel.None) { forward -> viewModel.turn(if (forward) 1 else -1) }
 
@@ -290,6 +297,10 @@ fun ReaderScreen(file: File, onClose: () -> Unit, viewModel: ReaderViewModel = v
             )
         }
         SelectionBars(state, viewModel, Modifier.align(Alignment.BottomCenter))
+        val offer = state.offer
+        if (offer != null && panel == Panel.None && state.selection == null && state.page != null) {
+            Offer(offer, viewModel::acceptOffer, viewModel::declineOffer, Modifier.align(Alignment.BottomCenter))
+        }
     }
 
     when (panel) {
@@ -314,6 +325,30 @@ fun ReaderScreen(file: File, onClose: () -> Unit, viewModel: ReaderViewModel = v
             onDismiss = { panel = Panel.None },
         )
         Panel.None, Panel.Menu -> Unit
+    }
+}
+
+/** Asks whether to go to the place the reader got to somewhere else. */
+@Composable
+private fun Offer(offer: RemotePosition, onGo: () -> Unit, onStay: () -> Unit, modifier: Modifier) {
+    Surface(
+        modifier = modifier.padding(16.dp).navigationBarsPadding().testTag("offer"),
+        shape = RoundedCornerShape(12.dp), tonalElevation = 6.dp, shadowElevation = 6.dp,
+    ) {
+        Column(Modifier.padding(start = 16.dp, end = 8.dp, top = 12.dp, bottom = 4.dp)) {
+            val percent = (offer.progress * 100).roundToInt()
+            Text(
+                if (offer.device.isBlank()) {
+                    stringResource(R.string.offer_text_unnamed, percent)
+                } else {
+                    stringResource(R.string.offer_text, percent, offer.device)
+                },
+            )
+            Row(Modifier.align(Alignment.End)) {
+                TextButton(onClick = onStay) { Text(stringResource(R.string.offer_stay)) }
+                TextButton(onClick = onGo) { Text(stringResource(R.string.offer_go)) }
+            }
+        }
     }
 }
 

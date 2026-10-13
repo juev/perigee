@@ -26,11 +26,13 @@ internal interface ReadingDao {
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insert(book: Book)
 
-    /** What the book did not say when it was opened stays as it was known. */
+    /** What the book did not say when it was opened stays as it was known. A status that opening changes counts as changed by the reader. */
     @Query(
         "UPDATE books SET path = :path, openedAt = :openedAt, " +
             "title = CASE WHEN :title != '' THEN :title ELSE title END, " +
             "author = CASE WHEN :author != '' THEN :author ELSE author END, " +
+            "stateChangedAt = CASE WHEN status IN ('None', 'ToRead') THEN :openedAt ELSE stateChangedAt END, " +
+            "statusChangedAt = CASE WHEN status IN ('None', 'ToRead') THEN :openedAt ELSE statusChangedAt END, " +
             "status = CASE WHEN status IN ('None', 'ToRead') THEN 'Reading' ELSE status END " +
             "WHERE id = :id",
     )
@@ -42,8 +44,54 @@ internal interface ReadingDao {
     @Query("UPDATE books SET favorite = :favorite WHERE id = :id")
     suspend fun setFavorite(id: String, favorite: Boolean)
 
-    @Query("UPDATE books SET status = :status WHERE id = :id")
-    suspend fun setStatus(id: String, status: ReadingStatus)
+    @Query("UPDATE books SET status = :status, stateChangedAt = :at, statusChangedAt = :at WHERE id = :id")
+    suspend fun setStatus(id: String, status: ReadingStatus, at: Long)
+
+    @Query("UPDATE books SET rating = :rating, stateChangedAt = :at WHERE id = :id")
+    suspend fun setRating(id: String, rating: Int?, at: Long)
+
+    /** What the server says, unless the reader has said otherwise since and the server has not heard. */
+    @Query("UPDATE books SET status = :status, rating = :rating WHERE id = :id AND stateChangedAt <= statePushedAt")
+    suspend fun takeState(id: String, status: ReadingStatus, rating: Int?)
+
+    @Query("UPDATE books SET statePushedAt = :changedAt WHERE id = :id")
+    suspend fun statePushed(id: String, changedAt: Long)
+
+    @Query("UPDATE books SET pushedAt = :movedAt WHERE id = :id")
+    suspend fun placePushed(id: String, movedAt: Long)
+
+    @Query("UPDATE books SET remoteSeenAt = :at WHERE id = :id AND remoteSeenAt < :at")
+    suspend fun remoteSeen(id: String, at: Long)
+
+    @Query("SELECT * FROM books WHERE serverFileId IS NOT NULL")
+    suspend fun onServer(): List<Book>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insert(position: RemotePosition)
+
+    @Query("SELECT * FROM remote_positions WHERE bookId = :bookId")
+    fun remotePosition(bookId: String): Flow<RemotePosition?>
+
+    @Query("SELECT * FROM remote_positions WHERE bookId = :bookId")
+    suspend fun remotePositionNow(bookId: String): RemotePosition?
+
+    @Query("DELETE FROM remote_positions WHERE bookId = :bookId")
+    suspend fun deleteRemotePosition(bookId: String)
+
+    @Query("DELETE FROM remote_positions")
+    suspend fun deleteRemotePositions()
+
+    @Insert
+    suspend fun insert(read: PageRead)
+
+    @Query("SELECT p.* FROM page_reads p JOIN books b ON b.id = p.bookId WHERE b.serverFileId IS NOT NULL ORDER BY p.id LIMIT :limit")
+    suspend fun pageReadsToSend(limit: Int): List<PageRead>
+
+    @Query("DELETE FROM page_reads WHERE id IN (:ids)")
+    suspend fun deletePageReads(ids: List<Long>)
+
+    @Query("DELETE FROM page_reads WHERE startedAt < :before")
+    suspend fun deletePageReadsBefore(before: Long)
 
     @Query("SELECT * FROM folders ORDER BY name COLLATE NOCASE")
     fun folders(): Flow<List<Folder>>
@@ -129,7 +177,8 @@ internal interface ReadingDao {
     @Query("DELETE FROM accounts")
     suspend fun deleteAccount()
 
-    @Query("UPDATE books SET serverBookId = NULL, serverFileId = NULL, serverCheckedAt = 0")
+    /** Nothing was sent to the next server yet, and nothing was heard from it. */
+    @Query("UPDATE books SET serverBookId = NULL, serverFileId = NULL, serverCheckedAt = 0, pushedAt = 0, statePushedAt = 0, remoteSeenAt = 0")
     suspend fun forgetServer()
 
     @Query("UPDATE books SET serverBookId = :serverBookId, serverFileId = :serverFileId, serverCheckedAt = :at WHERE id = :id")
@@ -163,8 +212,12 @@ internal interface ReadingDao {
     @Query("DELETE FROM collection_books WHERE collectionId = :collectionId AND bookId = :bookId")
     suspend fun deleteMember(collectionId: Long, bookId: String)
 
-    @Query("UPDATE books SET xpointer = :xpointer, progress = :progress WHERE id = :id")
-    suspend fun savePosition(id: String, xpointer: String, progress: Float)
+    /** The place a book opens at for the first time, and the same place shown again, are not moves. */
+    @Query(
+        "UPDATE books SET movedAt = CASE WHEN xpointer IS NULL OR xpointer = :xpointer THEN movedAt ELSE :at END, " +
+            "xpointer = :xpointer, progress = :progress WHERE id = :id",
+    )
+    suspend fun savePosition(id: String, xpointer: String, progress: Float, at: Long)
 
     @Query("SELECT * FROM bookmarks WHERE bookId = :bookId ORDER BY createdAt DESC")
     fun bookmarks(bookId: String): Flow<List<Bookmark>>
@@ -191,10 +244,13 @@ internal interface ReadingDao {
 @Database(
     entities = [
         Book::class, Bookmark::class, Quote::class, Folder::class, BookCollection::class, CollectionBook::class,
-        Catalog::class, Account::class,
+        Catalog::class, Account::class, RemotePosition::class, PageRead::class,
     ],
-    version = 4,
-    autoMigrations = [AutoMigration(from = 1, to = 2), AutoMigration(from = 2, to = 3), AutoMigration(from = 3, to = 4)],
+    version = 5,
+    autoMigrations = [
+        AutoMigration(from = 1, to = 2), AutoMigration(from = 2, to = 3), AutoMigration(from = 3, to = 4),
+        AutoMigration(from = 4, to = 5),
+    ],
 )
 internal abstract class ReadingDatabase : RoomDatabase() {
     abstract fun dao(): ReadingDao

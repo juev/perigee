@@ -47,7 +47,29 @@ data class Book(
     @ColumnInfo(defaultValue = "NULL") val serverFileId: Long? = null,
     /** When the server was last asked about this file; zero for never. */
     @ColumnInfo(defaultValue = "0") val serverCheckedAt: Long = 0,
+    /** When the reader last moved to another place in the book; zero while they have not. */
+    @ColumnInfo(defaultValue = "0") val movedAt: Long = 0,
+    /** [movedAt] of the place the server last took; the place is still to be sent while [movedAt] is later. */
+    @ColumnInfo(defaultValue = "0") val pushedAt: Long = 0,
+    /** One to five stars; null for a book not rated. */
+    @ColumnInfo(defaultValue = "NULL") val rating: Int? = null,
+    /** When the reader last changed [status] or [rating], and which of those changes the server last took. */
+    @ColumnInfo(defaultValue = "0") val stateChangedAt: Long = 0,
+    @ColumnInfo(defaultValue = "0") val statePushedAt: Long = 0,
+    /** When the reader last changed [status] itself: a rating given must not carry an old status along. */
+    @ColumnInfo(defaultValue = "0") val statusChangedAt: Long = 0,
+    /** The server's time, in seconds, of the latest place from elsewhere the reader was told of or has decided on. */
+    @ColumnInfo(defaultValue = "0") val remoteSeenAt: Long = 0,
 ) {
+    /** Whether the reader's place is still to be sent to the server. */
+    val placeUnsent: Boolean get() = movedAt > pushedAt
+
+    /** Whether the reader's status or rating is still to be sent to the server. */
+    val stateUnsent: Boolean get() = stateChangedAt > statePushedAt
+
+    /** Whether it is the status that the reader changed since the server last heard. */
+    val statusUnsent: Boolean get() = statusChangedAt > statePushedAt
+
     val authors: List<String> get() = author.split('\n').filter { it.isNotBlank() }
 
     /** Authors on one line, for showing. */
@@ -195,3 +217,40 @@ data class Account(
 
 /** A session with the server: a short-lived token to ask with, and a longer-lived one to get the next pair. */
 data class Tokens(val access: String, val accessExpiresAt: Long, val refresh: String, val refreshExpiresAt: Long)
+
+/**
+ * A place in a book the reader got to somewhere else, later than here, and
+ * has not decided about yet: go there, or stay.
+ */
+@Entity(
+    tableName = "remote_positions",
+    foreignKeys = [ForeignKey(Book::class, ["id"], ["bookId"], onDelete = ForeignKey.CASCADE)],
+)
+data class RemotePosition(
+    @PrimaryKey val bookId: String,
+    /** Null when only how far into the book is known, as from a reader that does not count in xpointers. */
+    val xpointer: String?,
+    /** 0..1. */
+    val progress: Float,
+    /** What the other device or reader calls itself. */
+    val device: String,
+    /** The server's time of it, in seconds. */
+    val at: Long,
+)
+
+/** A page the reader spent time on, for the server's statistics; kept until the server has it. */
+@Entity(
+    tableName = "page_reads",
+    foreignKeys = [ForeignKey(Book::class, ["id"], ["bookId"], onDelete = ForeignKey.CASCADE)],
+    indices = [Index("bookId")],
+)
+data class PageRead(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val bookId: String,
+    /** Counted from one, as the reader sees it. */
+    val page: Int,
+    val totalPages: Int,
+    /** Seconds since 1970. */
+    val startedAt: Long,
+    val seconds: Int,
+)

@@ -1,6 +1,6 @@
 # bookOrbit: the account, the server's books, and finding the reader's books on it
 
-Requirements R6, R10 and R12 of `plan.md`. The reader signs in to a bookOrbit server, looks through its books, downloads them into the library described in `library.md`, and the app finds out which books of the library the server has. Syncing of what is read — position, highlights, bookmarks, status, statistics — is built on this in the steps that follow and is not described here.
+Requirements R6, R7, R9, R10 and R12 of `plan.md`. The reader signs in to a bookOrbit server, looks through its books, downloads them into the library described in `library.md`, and the app finds out which books of the library the server has. The reader's place, status, rating and the pages read are kept in step with the server; highlights and bookmarks are the step that follows and are not described here.
 
 Checked against bookOrbit 3.3.0: by reading its source at tag `v3.3.0`, and by the contract tests against its docker image.
 
@@ -91,6 +91,43 @@ The server remembers fingerprints it was asked about and did not know, and lists
 
 `GET books/:id` has no fingerprint of the file in 3.3.0, so there is no way to match through the web API.
 
+## Syncing what is read
+
+Requirements R7 and R9. `BookOrbit.sync()` is one round: the reader's places, status and rating, and the pages read, for the books the server has. It goes through the devices' channel, so nothing of it happens for a server of a version the app was not made for, or while the channel is not ready.
+
+### Places
+
+`PUT koreader/syncs/progress` takes a place as KOReader sends it: the file's fingerprint, the xpointer, the share of the book read, the name and id of the device, and the time the reader got there. `GET koreader/syncs/progress/:hash` answers with the latest place the server has from anywhere — a device, or the web reader, whose CFI the server turns into an xpointer for EPUB.
+
+- A place is the reader's to send once they moved: where a book opens the first time, and the same place shown again, are not moves. Only the last place of a book is sent.
+- Before a place is sent the server is asked for its latest. One from another device or the web reader, later than the reader's last move here and than anything they were told of before, is not gone to: it is kept as an offer. While the reader has not decided, the place here is not sent over it. This is what keeps a later place elsewhere from being overwritten by an older one here (Lagrange #276).
+- An offer names the share of the book and the device. "Go there" is a jump like any other, and Back returns; the place gone to becomes the reader's own and is sent. "Stay here" keeps the place here, which is then sent as theirs. Either way the same place is not offered again.
+- A place from elsewhere that is the same share of the book as here, within a thousandth, is not offered: xpointers of one place differ between the engine and the server and cannot be compared as text.
+- A place known only as a share — FB2 read in the web reader — is offered and gone to by the share.
+- The server answers a book it has no more with 404; the book stops being synced and stays the reader's.
+- A place is asked about when its book is opened, and in every round for books being read and books with something to send.
+
+The server orders places by whole seconds, and a later place there is "later" by the clocks of the devices that sent it: a device whose clock is wrong offers, or fails to offer, accordingly.
+
+### Status and rating
+
+- The app's statuses are the server's `unread`, `want_to_read`, `reading`, `read`. The server's others, `on_hold` and `abandoned`, have no word here: a book with one keeps the reader's own status, and it is not replaced on the server unless the reader changes the status here.
+- What the reader changed here goes up through `PUT koreader/plugin/catalog/books/:id/read-status` and `…/rating`; only what was changed and differs is sent, so that stars given here do not carry an old status along.
+- Everything else is taken as the server has it, from `POST books/query`, 200 books to a page. The later change wins; a change here that the server has not heard of is not undone by what it says meanwhile.
+- A rating is one to five stars, set in the book's menu in the library; choosing the same number again takes it off.
+
+### Pages read
+
+The reading screen times each page: from when it is shown to when another is, the book is closed, or the app is put away. Less than 5 seconds is not a page read, and no page counts for more than 120 — the bounds KOReader counts by. The times are kept in `page_reads` and go up through `POST koreader/plugin/page-stats`, at most 500 to a request; the server makes reading sessions and statistics of them, and tells apart what it was sent twice. Pages read in a book the server has not are kept for 90 days, in case the book gets there.
+
+### When
+
+- A round is asked for when the app starts, when a book is closed, when the app is put away with a book open, and when a status or a rating is changed. It runs through WorkManager some seconds later, when there is a network; a round that could not reach the server is tried again with growing pauses.
+- What only the reader can put right — a session that ended, the KOReader password, a server of another version — is not tried over and over; it is said on the server's screen.
+- There is no round on a timer: what was read elsewhere is learnt when the app is next opened, or the book is.
+
+Sending is safe to repeat: the last place wins by its own time, status and rating are set to a value, and pages read are deduplicated by the server.
+
 ## Screen
 
 "bookOrbit server" in the library's menu.
@@ -117,6 +154,10 @@ Limits either way: 500 MB by default (`maxUploadSizeMb` of `app-info`); of the f
 - `:data` `AccountsTest` — sealed tokens and key, what the server said of books, signing out and in to another server; `MigrationTest` — a database of every earlier version.
 - `:sync` `BookOrbitTest` — against a stand-in server (`:sync-fake`, `FakeOrbit`) that answers as 3.3.0 was seen to: addresses, versions, each refusal to sign in, no password to a non-server or across a redirect, renewal before and after a refusal, one renewal for many requests, a session that ended, each state of the devices' channel, the channel looked at from several places at once, a server of another version, the list of books, file names, matching in parts of 500.
 - `:app` `ServerScreenTest` — the screen against the same stand-in: signing in with each kind of failure, the plain HTTP question, a download into the library, a file that is not a book, a book the reader already has, the KOReader password, an unknown version, search, the next part of the list, a session that ended, signing out, a server that fails and is tried again. `OpdsScreenTest` — the plain HTTP question for catalogs. `LibraryScreenTest` — the mark on a book the server has.
+- `:data` `SyncStateTest` — what is a move and what is not, what is still to be sent, the server's status giving way to the reader's unsent one, offers, pages read, another server told everything anew.
+- `:sync` `SyncRoundTest` — rounds against the stand-in server: a place sent once, a later place elsewhere offered and not overwritten, a book just opened, the same place, a place as a share, reading without the server, an answer that was lost, a book the server has no more, status and rating both ways, a status the app has no word for, many pages read, a server of another version, a channel that is not ready.
+- `:app` `ReaderScreenTest` — going to an offered place and back, an offer as a share, staying, the time on pages with its bounds and the app put away; `LibraryScreenTest` — stars; `server.SyncRoundTest` — which rounds are done with, tried again, or wait for the reader.
+- `:contract` `SyncContractTest` — against bookOrbit 3.3.0: a place sent and seen by the web reader as a CFI, a later place from the web reader offered with an xpointer the engine finds on the right page and not overwritten, the reader staying, FB2 kept word for word, status and rating both ways including `on_hold`, pages read in the book's statistics once.
 - `:contract` `AccountContractTest` — against bookOrbit 3.3.0 in docker: signing in, a refused password, the KOReader password asked for and refused, a channel made for a reader who has none, the list and search, a download read by the engine and found back by its fingerprint, a book the server has not, a missing cover, renewal of a token that ran out and of one that is not taken, signing out ending the session on the server.
 
 ```
@@ -125,7 +166,7 @@ python3 contract/up.py
     -Pandroid.testInstrumentationRunnerArguments.bookorbitUrl=http://10.0.2.2:3070
 ```
 
-Checked by hand on the emulator against the same server: signing in over `http://` with the question, the KOReader password, the list, a download kept in the app, the mark in the library, the screen reopened still signed in, the book opened from it.
+Checked by hand on the emulator against the same server: signing in over `http://` with the question, the KOReader password, the list, a download kept in the app, the mark in the library, the screen reopened still signed in, the book opened from it; and a place read on another device offered when the book was opened, gone to, and come back from.
 
 ## Not done
 
@@ -133,6 +174,10 @@ Checked by hand on the emulator against the same server: signing in over `http:/
 - Uploading, see above.
 - OIDC.
 - Download progress, cancelling, resuming.
+- Highlights and bookmarks.
+- A round of syncing on a timer, and one while a book is open: a place read elsewhere meanwhile is learnt when the book is next opened.
+- A sign in the library or the reader that something waits to be sent, or could not be.
+- The reader's review of a book, and the statuses `on_hold` and `abandoned`.
 - KEPUB files of the server.
 - A second server.
 - Running the contract tests against the latest server image in CI.

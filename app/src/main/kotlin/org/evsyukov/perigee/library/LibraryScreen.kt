@@ -38,6 +38,7 @@ import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
@@ -80,6 +81,7 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextRange
@@ -209,6 +211,7 @@ fun LibraryScreen(
                 onOpen = open,
                 onFavorite = { model.setFavorite(it, !it.favorite) },
                 onStatus = model::setStatus,
+                onRating = model::setRating,
                 onCollections = { collectionsOf = it.id },
             )
         }
@@ -480,6 +483,7 @@ private fun Books(
     onOpen: (Book) -> Unit,
     onFavorite: (Book) -> Unit,
     onStatus: (Book, ReadingStatus) -> Unit,
+    onRating: (Book, Int) -> Unit,
     onCollections: (Book) -> Unit,
 ) {
     LazyColumn(Modifier.fillMaxSize().testTag("books"), contentPadding = padding) {
@@ -487,7 +491,7 @@ private fun Books(
             item("empty") { Nothing(R.string.shelf_empty) }
         }
         items(books, key = { it.id }) { book ->
-            BookRow(book, covers, onOpen, onFavorite, onStatus, onCollections)
+            BookRow(book, covers, onOpen, onFavorite, onStatus, onRating, onCollections)
         }
     }
 }
@@ -499,6 +503,7 @@ private fun BookRow(
     onOpen: (Book) -> Unit,
     onFavorite: (Book) -> Unit,
     onStatus: (Book, ReadingStatus) -> Unit,
+    onRating: (Book, Int) -> Unit,
     onCollections: (Book) -> Unit,
 ) {
     Row(
@@ -523,7 +528,7 @@ private fun BookRow(
             val read = if (book.openedAt > 0) stringResource(R.string.percent, (book.progress * 100).toInt()) else null
             Text(
                 listOfNotNull(
-                    read, book.format.uppercase().ifEmpty { null },
+                    read, book.format.uppercase().ifEmpty { null }, book.rating?.let { "★".repeat(it) },
                     if (book.serverFileId != null) stringResource(R.string.book_on_server) else null,
                 ).joinToString(" · "),
                 style = MaterialTheme.typography.labelSmall,
@@ -557,6 +562,21 @@ private fun BookRow(
                             onStatus(book, status)
                         },
                     )
+                }
+                HorizontalDivider()
+                Row(Modifier.padding(horizontal = 4.dp)) {
+                    for (stars in 1..5) {
+                        IconButton(onClick = { onRating(book, stars) }) {
+                            Icon(
+                                Icons.Filled.Star, pluralStringResource(R.plurals.rate_stars, stars, stars),
+                                tint = if (stars <= (book.rating ?: 0)) {
+                                    MaterialTheme.colorScheme.primary
+                                } else {
+                                    MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f)
+                                },
+                            )
+                        }
+                    }
                 }
                 HorizontalDivider()
                 DropdownMenuItem(

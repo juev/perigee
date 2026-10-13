@@ -1,6 +1,7 @@
 package org.evsyukov.perigee.server
 
 import android.content.Context
+import android.os.Build
 import java.io.IOException
 import org.evsyukov.perigee.data.Accounts
 import org.evsyukov.perigee.data.Library
@@ -15,7 +16,8 @@ internal object Server {
         orbit ?: run {
             val app = context.applicationContext
             val version = app.packageManager.getPackageInfo(app.packageName, 0).versionName ?: "0"
-            BookOrbit(Accounts.get(app), Library.get(app), version).also { orbit = it }
+            // Named with the model: a reader with the app on two devices is told which one a place was read on.
+            BookOrbit(Accounts.get(app), Library.get(app), version, "Perigee, ${Build.MODEL}").also { orbit = it }
         }
     }
 
@@ -30,6 +32,20 @@ internal object Server {
             get(context).matchLibrary(all = false)
         } catch (e: IOException) {
             // Not signed in any more, no network, a channel that is not ready: none of it is the library's to report.
+        }
+    }
+
+    /**
+     * A book was opened: asks the server whether the reader got further in it
+     * somewhere else. What it finds waits in the library as an offer. Says
+     * nothing when the server cannot be asked; the next round of syncing asks.
+     */
+    suspend fun bookOpened(context: Context, bookId: String) {
+        if (Accounts.get(context).current() == null) return
+        try {
+            get(context).syncPlace(bookId)
+        } catch (e: IOException) {
+            // The reader came to read; whatever is wrong with the server is told on its own screen.
         }
     }
 }

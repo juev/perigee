@@ -176,4 +176,14 @@
     <string name="server_channel_switched_off">Синхронизация с устройствами для чтения выключена в ваших настройках KOReader на сервере, поэтому чтение синхронизироваться не будет.</string>
     <string name="server_unsupported">Приложение не рассчитано на сервер версии %1$s. Книги с него скачивать можно, но синхронизация выключена, чтобы ничего не испортить.</string>
     <string name="book_on_server">на сервере</string>
+    <plurals name="rate_stars">
+        <item quantity="one">%1$d звезда</item>
+        <item quantity="few">%1$d звезды</item>
+        <item quantity="many">%1$d звёзд</item>
+        <item quantity="other">%1$d звезды</item>
+    </plurals>
+    <string name="offer_text">Эта книга прочитана до %1$d%% на %2$s. Перейти туда?</string>
+    <string name="offer_text_unnamed">Эта книга прочитана до %1$d%% на другом устройстве. Перейти туда?</string>
+    <string name="offer_go">Перейти</string>
+    <string name="offer_stay">Остаться здесь</string>
 </resources>

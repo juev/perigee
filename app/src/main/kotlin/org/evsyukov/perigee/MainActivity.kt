@@ -32,6 +32,7 @@ import org.evsyukov.perigee.opds.OpdsScreen
 import org.evsyukov.perigee.reader.ReaderScreen
 import org.evsyukov.perigee.reader.VolumeKeyHost
 import org.evsyukov.perigee.server.ServerScreen
+import org.evsyukov.perigee.server.SyncWork
 
 class MainActivity : ComponentActivity(), VolumeKeyHost {
     override var onVolumeKey: ((down: Boolean) -> Unit)? = null
@@ -56,6 +57,8 @@ class MainActivity : ComponentActivity(), VolumeKeyHost {
                             ready = true
                         }
                     }
+                    // What other devices did since the app was last used is asked for at the start.
+                    LaunchedEffect(Unit) { SyncWork.soon(this@MainActivity) }
                     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
                         if (uri != null) scope.launch { bookPath = importBook(uri).path }
                     }

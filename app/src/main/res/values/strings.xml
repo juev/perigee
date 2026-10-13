@@ -176,4 +176,12 @@
     <string name="server_channel_switched_off">Syncing with reading devices is switched off in your KOReader settings on the server, so reading will not be synced.</string>
     <string name="server_unsupported">This app was not made for a server of version %1$s. Its books can be downloaded, but nothing is synced with it, so that nothing gets spoiled.</string>
     <string name="book_on_server">on the server</string>
+    <plurals name="rate_stars">
+        <item quantity="one">%1$d star</item>
+        <item quantity="other">%1$d stars</item>
+    </plurals>
+    <string name="offer_text">You are at %1$d%% of this book on %2$s. Go there?</string>
+    <string name="offer_text_unnamed">You are at %1$d%% of this book on another device. Go there?</string>
+    <string name="offer_go">Go there</string>
+    <string name="offer_stay">Stay here</string>
 </resources>

@@ -31,7 +31,7 @@ class BookOrbitTest {
     private var clock = 1_000_000L
     private val library = Library.inMemory(context)
     private val accounts = Accounts.of(library)
-    private val orbit = BookOrbit(accounts, library, "0.0.1") { clock }
+    private val orbit = BookOrbit(accounts, library, "0.0.1", now = { clock })
     private val server = FakeOrbit()
     private val dir = File(context.cacheDir, "orbit-test").apply { deleteRecursively() }
 
