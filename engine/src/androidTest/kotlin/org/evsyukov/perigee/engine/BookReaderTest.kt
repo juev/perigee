@@ -177,6 +177,27 @@ class BookReaderTest {
     }
 
     @Test
+    fun storedPositionDoesNotMoveWhenTheBookIsOpenedInAnotherLayout() = runBlocking(Dispatchers.Default) {
+        val portrait = open()
+        val stored = portrait.goToPage(6).xpointer
+        portrait.close()
+
+        // Opened on a wide screen, where pages break elsewhere, and only looked at.
+        val landscape = open(width = HEIGHT, height = WIDTH, xpointer = stored)
+        landscape.current()
+        assertEquals(stored, landscape.position)
+        val jumped = open(width = HEIGHT, height = WIDTH)
+        jumped.goTo(stored)
+        assertEquals(stored, jumped.position)
+        landscape.close()
+        jumped.close()
+
+        val again = open(xpointer = stored)
+        assertEquals("back in the first layout the reader is on the same page", 6, again.current().index)
+        again.close()
+    }
+
+    @Test
     fun highlightsAppearOnThePageShown() = reading { reader ->
         val plain = reader.current()
         val hit = reader.read { it.search("lazy dog").first() }

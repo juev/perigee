@@ -325,6 +325,8 @@ class ReaderScreenTest {
         rule.onNodeWithTag("font-size").assertTextEquals(ReaderPrefs().fontSize.toString())
         repeat(4) { rule.onNodeWithTag("font-size-more").performClick() }
 
+        // Each press is stored first and shown when the stored value comes back.
+        rule.waitUntil(TIMEOUT) { model().prefs.value.fontSize == ReaderPrefs().fontSize + 4 }
         rule.onNodeWithTag("font-size").assertTextEquals((ReaderPrefs().fontSize + 4).toString())
         rule.waitUntil(TIMEOUT) { model().state.value.page!!.pageCount > pagesBefore }
         assertEquals("the setting is stored", ReaderPrefs().fontSize + 4, runBlocking { preferences.prefs.first() }.fontSize)

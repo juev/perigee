@@ -39,7 +39,8 @@ class BookReader private constructor(
     private var layout = 0
 
     /**
-     * Where the reader is: the top of the page they last went to. A layout
+     * Where the reader is: the top of the page they last turned to, or the
+     * place they last jumped to. A layout
      * change shows the page this falls on but does not move it, so turning the
      * screen and turning it back returns to the very same page instead of
      * creeping towards the start of the book. This is the position to store.
@@ -70,7 +71,14 @@ class BookReader private constructor(
 
     /** Returns null and stays in place when the xpointer does not resolve in this book. */
     suspend fun goTo(xpointer: String): Page? = onEngine {
-        if (document.goToXPointer(xpointer)) arrived() else null
+        if (document.goToXPointer(xpointer)) {
+            // The place asked for, not the top of the page it happens to be on
+            // now: a stored position must not move just because it was opened.
+            position = xpointer
+            show()
+        } else {
+            null
+        }
     }
 
     /**
@@ -184,8 +192,9 @@ class BookReader private constructor(
             densityDpi: Int = context.resources.displayMetrics.densityDpi,
         ): BookReader = withContext(Engine.thread) {
             val document = EngineDocument.open(context, file, width, height, settings, densityDpi)
-            if (xpointer != null) document.goToXPointer(xpointer)
-            BookReader(document, width, height, settings)
+            val reader = BookReader(document, width, height, settings)
+            if (xpointer != null && document.goToXPointer(xpointer)) reader.position = xpointer
+            reader
         }
     }
 }
