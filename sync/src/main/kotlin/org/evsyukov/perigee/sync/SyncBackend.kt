@@ -65,10 +65,14 @@ data class SyncReport(
     val statesTaken: Int = 0,
     /** Pages read that the server was told of. */
     val pagesSent: Int = 0,
+    /** Quotes and bookmarks the server took, and those made, changed or removed here as it said. */
+    val marksSent: Int = 0,
+    val marksTaken: Int = 0,
 ) {
     operator fun plus(other: SyncReport) = SyncReport(
         placesSent + other.placesSent, offers + other.offers, statesSent + other.statesSent,
-        statesTaken + other.statesTaken, pagesSent + other.pagesSent,
+        statesTaken + other.statesTaken, pagesSent + other.pagesSent, marksSent + other.marksSent,
+        marksTaken + other.marksTaken,
     )
 }
 

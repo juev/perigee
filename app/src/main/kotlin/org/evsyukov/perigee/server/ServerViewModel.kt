@@ -185,6 +185,24 @@ class ServerViewModel(
         }
     }
 
+    /** The reader does not know that password and sets a new one, which their other devices will need too. */
+    fun newDevicePassword(password: String) {
+        if (_state.value.channelBusy) return
+        _state.update { it.copy(channelBusy = true, channelPasswordWrong = false) }
+        viewModelScope.launch {
+            try {
+                val channel = orbit.newDevicePassword(password)
+                _state.update { it.copy(channelBusy = false, channel = channel) }
+                if (channel == DeviceChannel.Ready) matchLibrary()
+            } catch (e: IllegalArgumentException) {
+                _state.update { it.copy(channelBusy = false, channelPasswordWrong = true) }
+            } catch (e: IOException) {
+                _state.update { it.copy(channelBusy = false) }
+                failed(e)
+            }
+        }
+    }
+
     /** Looks the server's books up by a phrase; an empty one shows them all. */
     fun search(query: String) {
         _state.update { it.copy(query = query.trim(), books = emptyList(), more = false) }

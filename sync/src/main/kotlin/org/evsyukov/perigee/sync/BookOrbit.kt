@@ -23,6 +23,7 @@ import org.evsyukov.perigee.data.Book
 import org.evsyukov.perigee.data.Library
 import org.evsyukov.perigee.data.ReadingStatus
 import org.evsyukov.perigee.data.RemotePosition
+import org.evsyukov.perigee.data.Stamps
 import org.evsyukov.perigee.data.Tokens
 import org.json.JSONArray
 import org.json.JSONException
@@ -179,6 +180,26 @@ class BookOrbit(
         state
     }
 
+    /**
+     * Gives the reader's user name in the devices' channel a new password, for
+     * a reader who does not know the one it has: the app made it up before it
+     * was installed anew, or they forgot. Their other reading devices have to
+     * be given the new one too.
+     *
+     * @throws IllegalArgumentException when the password is shorter than the server takes
+     * @throws NotAllowedException when the reader may not sync devices
+     */
+    suspend fun newDevicePassword(password: String): DeviceChannel = settingUp.withLock {
+        require(password.length >= MIN_DEVICE_PASSWORD) { "the server wants $MIN_DEVICE_PASSWORD characters at least" }
+        val account = accounts.current() ?: throw SignedOutException()
+        if (account.deviceUser.isEmpty()) return setUpDevice()
+        val reply = jwt("PATCH", "/koreader/credentials", JSONObject().put("password", password))
+        if (!reply.ok) throw failure(reply)
+        val key = md5(password)
+        accounts.saveDevice(account.deviceUser, key)
+        probe(account, account.deviceUser, key)
+    }
+
     private suspend fun probe(account: Account, user: String, key: String): DeviceChannel {
         val reply = io { Http(account.url).call("GET", "/koreader/users/auth", headers = deviceHeaders(user, key)) }
         return when (reply.code) {
@@ -305,8 +326,175 @@ class BookOrbit(
             if (book.status != ReadingStatus.Reading && !book.placeUnsent && library.pendingOffer(book.id) == null) continue
             report += syncPlaceOf(book)
         }
+        for (book in books) {
+            // A book never synced may have marks from before the reader signed in.
+            val neverSynced = book.marksSyncedAt == 0L && library.marksOf(book.id).let { it.first.isNotEmpty() || it.second.isNotEmpty() }
+            if (book.status == ReadingStatus.Reading || book.marksUnsent || neverSynced) report += syncMarksOf(book)
+        }
         report += syncStates(books)
         report + syncPagesRead()
+    }
+
+    /**
+     * Brings the quotes and bookmarks of one book in step, as when it is
+     * opened. Asked twice: a quote made in the web reader is given a place the
+     * engine knows on the first asking and handed over on the second.
+     */
+    suspend fun syncMarks(bookId: String): SyncReport = syncing.withLock {
+        val book = library.book(bookId)?.takeIf { it.serverFileId != null } ?: return SyncReport()
+        syncMarksOf(book) + syncMarksOf(checkNotNull(library.book(bookId)))
+    }
+
+    /**
+     * Quotes and bookmarks of a book, both ways. The server is told of what was
+     * made or changed here, and learns of what was removed from the list of
+     * all that is here; so the list is said to be whole only when it is.
+     */
+    private suspend fun syncMarksOf(book: Book): SyncReport {
+        val changedAt = book.marksChangedAt
+        val report = try {
+            exchangeQuotes(book) + exchangeBookmarks(book)
+        } catch (e: BookGone) {
+            library.notOnServer(listOf(book.id))
+            return SyncReport()
+        }
+        library.marksSynced(book.id, maxOf(changedAt, 1))
+        return report
+    }
+
+    /** The server has the file no more. */
+    private class BookGone : IOException()
+
+    private suspend fun exchangeBody(account: Account, book: JSONObject): JSONObject = JSONObject()
+        .put("deviceId", account.deviceId).put("deviceModel", DEVICE_MODEL).put("pluginVersion", clientVersion)
+        // The device's wall clock, for the server to stamp what it hands over in the device's own time.
+        .put("deviceTime", Stamps.of(now())).put("books", JSONArray().put(book))
+
+    private suspend fun exchangeQuotes(book: Book): SyncReport {
+        val account = accounts.current() ?: throw SignedOutException()
+        var sent = 0
+        var taken = 0
+        repeat(MAX_EXCHANGES) {
+            val quotes = library.marksOf(book.id).second
+            val changes = quotes.filter { it.unsent }.take(CHANGES_PER_EXCHANGE)
+            val keys = JSONArray()
+            for (quote in quotes.take(MAX_QUOTE_KEYS)) keys.put(JSONObject().put("k", Stamps.key(quote.stamp, quote.start)).put("dt", quote.stamp))
+            val told = JSONArray()
+            for (quote in changes) {
+                val change = JSONObject()
+                    .put("datetime", quote.stamp).put("drawer", "lighten").put("color", "#%06X".format(quote.color and 0xFFFFFF))
+                    .put("text", quote.text.take(MAX_QUOTE_TEXT)).put("posFormat", "xpointer").put("pos0", quote.start).put("pos1", quote.end)
+                if (quote.updatedAt != quote.createdAt) change.put("datetimeUpdated", Stamps.of(quote.updatedAt))
+                quote.note?.let { change.put("note", it.take(MAX_NOTE)) }
+                quote.chapter?.let { change.put("chapter", it.take(MAX_CHAPTER)) }
+                told.put(change)
+            }
+            val request = JSONObject().put("hash", book.id).put("keys", keys)
+                // A list cut short must not be taken for all there is: what it leaves out would be removed.
+                .put("keysComplete", quotes.size <= MAX_QUOTE_KEYS).put("changes", told)
+            val result = device("POST", "/koreader/plugin/annotations/exchange", exchangeBody(account, request))
+                .json()?.optJSONArray("results")?.optJSONObject(0) ?: throw BookGone()
+            for (quote in changes) library.quoteSent(quote.id, quote.updatedAt)
+            sent += changes.size
+
+            val toApply = result.optJSONObject("toApply") ?: JSONObject()
+            val applied = JSONArray()
+            val deleted = JSONArray()
+            toApply.optJSONArray("add").each { add ->
+                val start = add.textOf("pos0")
+                library.takeQuote(
+                    book.id, add.textOf("datetime"), start, add.textOf("pos1").ifEmpty { start }, add.textOf("text"),
+                    add.textOf("note"), colorOf(add.textOf("color")), add.textOf("chapter").ifEmpty { null },
+                )
+                applied.put(JSONObject().put("serverId", add.optLong("serverId")).put("version", add.optInt("version", 1)).put("status", "applied"))
+                taken++
+            }
+            val mine = library.marksOf(book.id).second
+            toApply.optJSONArray("edit").each { edit ->
+                val quote = mine.firstOrNull { Stamps.key(it.stamp, it.start) == edit.textOf("key") }
+                    ?: mine.firstOrNull { it.stamp == edit.textOf("datetime") }
+                if (quote != null) {
+                    library.takeQuoteChange(quote.id, edit.textOf("text").ifEmpty { quote.text }, edit.textOf("note"), colorOf(edit.textOf("color")), edit.textOf("chapter").ifEmpty { quote.chapter })
+                    taken++
+                }
+                applied.put(
+                    JSONObject().put("serverId", edit.optLong("serverId")).put("version", edit.optInt("version", 1))
+                        .put("status", if (quote != null) "applied" else "failed"),
+                )
+            }
+            toApply.optJSONArray("delete").each { gone ->
+                val quote = mine.firstOrNull { Stamps.key(it.stamp, it.start) == gone.textOf("key") }
+                    ?: mine.firstOrNull { it.stamp == gone.textOf("datetime") }
+                if (quote != null) {
+                    library.dropQuote(quote.id)
+                    taken++
+                }
+                // Removed already is removed all the same.
+                deleted.put(JSONObject().put("serverId", gone.optLong("serverId")).put("status", "applied"))
+            }
+            if (applied.length() + deleted.length() > 0) {
+                val ack = JSONObject().put("hash", book.id).put("applied", applied).put("deleted", deleted)
+                device("POST", "/koreader/plugin/annotations/exchange-ack", exchangeBody(account, ack))
+            }
+            if (!result.optBoolean("more") && quotes.count { it.unsent } <= CHANGES_PER_EXCHANGE) return SyncReport(marksSent = sent, marksTaken = taken)
+        }
+        return SyncReport(marksSent = sent, marksTaken = taken)
+    }
+
+    private suspend fun exchangeBookmarks(book: Book): SyncReport {
+        val account = accounts.current() ?: throw SignedOutException()
+        var sent = 0
+        var taken = 0
+        repeat(MAX_EXCHANGES) {
+            val bookmarks = library.marksOf(book.id).first
+            val changes = bookmarks.filter { !it.sent }.take(CHANGES_PER_EXCHANGE)
+            val keys = JSONArray()
+            for (bookmark in bookmarks.take(MAX_BOOKMARK_KEYS)) {
+                keys.put(JSONObject().put("k", Stamps.key(bookmark.stamp, bookmark.xpointer)).put("dt", bookmark.stamp))
+            }
+            val told = JSONArray()
+            for (bookmark in changes) {
+                val change = JSONObject().put("datetime", bookmark.stamp).put("pos", bookmark.xpointer)
+                // The words of the page are what the server titles the bookmark by.
+                if (bookmark.text.isNotBlank()) change.put("note", bookmark.text.take(MAX_BOOKMARK_TEXT))
+                bookmark.chapter?.let { change.put("chapter", it.take(MAX_CHAPTER)) }
+                told.put(change)
+            }
+            val request = JSONObject().put("hash", book.id).put("keys", keys)
+                .put("keysComplete", bookmarks.size <= MAX_BOOKMARK_KEYS).put("changes", told)
+            val result = device("POST", "/koreader/plugin/bookmarks/exchange", exchangeBody(account, request))
+                .json()?.optJSONArray("results")?.optJSONObject(0) ?: throw BookGone()
+            // Taken or not: one the server cannot place, as in a format it has no places for, will not fare better again.
+            for (bookmark in changes) library.bookmarkSent(bookmark.id)
+            sent += changes.size
+
+            val toApply = result.optJSONObject("toApply") ?: JSONObject()
+            val applied = JSONArray()
+            val deleted = JSONArray()
+            toApply.optJSONArray("add").each { add ->
+                val bookmark = library.takeBookmark(book.id, add.textOf("pos"), add.textOf("title"))
+                applied.put(
+                    JSONObject().put("serverId", add.optLong("serverId")).put("status", "applied")
+                        .put("key", Stamps.key(bookmark.stamp, bookmark.xpointer)).put("datetime", bookmark.stamp).put("pos", bookmark.xpointer),
+                )
+                taken++
+            }
+            val mine = library.marksOf(book.id).first
+            toApply.optJSONArray("delete").each { gone ->
+                val bookmark = mine.firstOrNull { Stamps.key(it.stamp, it.xpointer) == gone.textOf("key") }
+                if (bookmark != null) {
+                    library.dropBookmark(bookmark.id)
+                    taken++
+                }
+                deleted.put(JSONObject().put("serverId", gone.optLong("serverId")).put("status", "applied"))
+            }
+            if (applied.length() + deleted.length() > 0) {
+                val ack = JSONObject().put("hash", book.id).put("applied", applied).put("deleted", deleted)
+                device("POST", "/koreader/plugin/bookmarks/exchange-ack", exchangeBody(account, ack))
+            }
+            if (!result.optBoolean("more") && bookmarks.count { !it.sent } <= CHANGES_PER_EXCHANGE) return SyncReport(marksSent = sent, marksTaken = taken)
+        }
+        return SyncReport(marksSent = sent, marksTaken = taken)
     }
 
     /**
@@ -534,7 +722,35 @@ class BookOrbit(
         private const val MATCH_BATCH = 500
         private const val MAX_COVER = 4 * 1024 * 1024
 
+        /** The shortest password the server takes for the devices' channel. */
+        const val MIN_DEVICE_PASSWORD = 6
         private const val STATES_PAGE = 200
+        private const val MAX_EXCHANGES = 40
+        private const val CHANGES_PER_EXCHANGE = 50
+        private const val MAX_QUOTE_KEYS = 5000
+        private const val MAX_BOOKMARK_KEYS = 500
+        private const val MAX_QUOTE_TEXT = 10_000
+        private const val MAX_NOTE = 5_000
+        private const val MAX_CHAPTER = 500
+        private const val MAX_BOOKMARK_TEXT = 255
+
+        /** The colours KOReader names, as the server's web pages show them. */
+        private val NAMED_COLORS = mapOf(
+            "red" to 0xF87171, "orange" to 0xFB923C, "yellow" to 0xFACC15, "green" to 0x4ADE80, "olive" to 0x84CC16,
+            "cyan" to 0x22D3EE, "blue" to 0x38BDF8, "purple" to 0xC084FC, "gray" to 0x9CA3AF,
+        )
+
+        /** A colour as the server tells it to a device: by name, or as #RRGGBB; yellow when it is neither. */
+        internal fun colorOf(told: String): Int {
+            val text = told.trim().lowercase()
+            NAMED_COLORS[text]?.let { return it }
+            return text.removePrefix("#").takeIf { it.length == 6 }?.toIntOrNull(16) ?: NAMED_COLORS.getValue("yellow")
+        }
+
+        private inline fun JSONArray?.each(block: (JSONObject) -> Unit) {
+            if (this == null) return
+            for (i in 0 until length()) optJSONObject(i)?.let(block)
+        }
         private const val PAGE_READS_BATCH = 500
         private const val PAGE_READS_BOOKS = 50
         private const val MAX_PAGE_SECONDS = 86_400

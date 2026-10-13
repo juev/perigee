@@ -37,13 +37,16 @@ internal object Server {
 
     /**
      * A book was opened: asks the server whether the reader got further in it
-     * somewhere else. What it finds waits in the library as an offer. Says
+     * somewhere else, and for the quotes and bookmarks made there. A later
+     * place waits in the library as an offer. Says
      * nothing when the server cannot be asked; the next round of syncing asks.
      */
     suspend fun bookOpened(context: Context, bookId: String) {
         if (Accounts.get(context).current() == null) return
         try {
             get(context).syncPlace(bookId)
+            // Quotes and bookmarks made elsewhere appear in the open book as they arrive.
+            get(context).syncMarks(bookId)
         } catch (e: IOException) {
             // The reader came to read; whatever is wrong with the server is told on its own screen.
         }

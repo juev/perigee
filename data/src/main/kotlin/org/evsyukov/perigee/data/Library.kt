@@ -194,27 +194,96 @@ class Library internal constructor(internal val database: ReadingDatabase, priva
     fun bookmarks(bookId: String): Flow<List<Bookmark>> = dao.bookmarks(bookId)
 
     /** Marking a page twice keeps one bookmark. */
-    suspend fun addBookmark(bookId: String, xpointer: String, text: String, chapter: String?) {
-        dao.insert(Bookmark(bookId = bookId, xpointer = xpointer, text = text, chapter = chapter, createdAt = now()))
+    suspend fun addBookmark(bookId: String, xpointer: String, text: String, chapter: String?) = database.withTransaction {
+        val at = now()
+        dao.insert(Bookmark(bookId = bookId, xpointer = xpointer, text = text, chapter = chapter, createdAt = at, stamp = Stamps.of(at)))
+        dao.marksChanged(bookId, at)
     }
 
-    suspend fun removeBookmark(id: Long) = dao.deleteBookmark(id)
+    suspend fun removeBookmark(id: Long) = database.withTransaction {
+        dao.marksChangedByBookmark(id, now())
+        dao.deleteBookmark(id)
+    }
 
     fun quotes(bookId: String): Flow<List<Quote>> = dao.quotes(bookId)
 
     suspend fun addQuote(
         bookId: String, start: String, end: String, text: String, color: Int, chapter: String?, note: String? = null,
-    ): Long = dao.insert(
-        Quote(
-            bookId = bookId, start = start, end = end, text = text, note = note, color = color,
-            chapter = chapter, createdAt = now(), updatedAt = now(),
-        ),
-    )
+    ): Long = database.withTransaction {
+        val at = now()
+        dao.marksChanged(bookId, at)
+        dao.insert(
+            Quote(
+                bookId = bookId, start = start, end = end, text = text, note = note, color = color,
+                chapter = chapter, createdAt = at, updatedAt = at, stamp = Stamps.of(at),
+            ),
+        )
+    }
 
-    suspend fun updateQuote(id: Long, note: String?, color: Int) =
-        dao.updateQuote(id, note?.takeIf { it.isNotBlank() }, color, now())
+    suspend fun updateQuote(id: Long, note: String?, color: Int) = database.withTransaction {
+        val at = now()
+        dao.marksChangedByQuote(id, at)
+        dao.updateQuote(id, note?.takeIf { it.isNotBlank() }, color, at)
+    }
 
-    suspend fun removeQuote(id: Long) = dao.deleteQuote(id)
+    suspend fun removeQuote(id: Long) = database.withTransaction {
+        dao.marksChangedByQuote(id, now())
+        dao.deleteQuote(id)
+    }
+
+    /** The bookmarks and quotes of a book as they are now, each with the stamp the server knows it by. */
+    suspend fun marksOf(bookId: String): Pair<List<Bookmark>, List<Quote>> = database.withTransaction {
+        dao.stampBookmarks()
+        dao.stampQuotes()
+        dao.bookmarksNow(bookId) to dao.quotesNow(bookId)
+    }
+
+    /** The server has the quote as it was at [updatedAt]. */
+    suspend fun quoteSent(id: Long, updatedAt: Long) = dao.quoteSent(id, updatedAt)
+
+    suspend fun bookmarkSent(id: Long) = dao.bookmarkSent(id)
+
+    /** The server heard of every change to the book's marks made up to [changedAt]. */
+    suspend fun marksSynced(bookId: String, changedAt: Long) = dao.marksSynced(bookId, changedAt)
+
+    /**
+     * A quote made somewhere else, as the server tells of it. One the library
+     * has already, by its stamp and place, is not taken twice.
+     */
+    suspend fun takeQuote(
+        bookId: String, stamp: String, start: String, end: String, text: String, note: String?, color: Int, chapter: String?,
+    ) = database.withTransaction {
+        if (dao.quotesNow(bookId).any { it.stamp == stamp && it.start == start }) return@withTransaction
+        val at = now()
+        dao.insert(
+            Quote(
+                bookId = bookId, start = start, end = end, text = text, note = note?.takeIf { it.isNotBlank() }, color = color,
+                chapter = chapter, createdAt = at, updatedAt = at, stamp = stamp, sentAt = at,
+            ),
+        )
+    }
+
+    /** A quote changed somewhere else. What the reader changed here since is overruled: the later word wins. */
+    suspend fun takeQuoteChange(id: Long, text: String, note: String?, color: Int, chapter: String?) =
+        dao.takeQuote(id, text, note?.takeIf { it.isNotBlank() }, color, chapter, now())
+
+    /** A quote or bookmark removed somewhere else is removed here; nothing of it is told back. */
+    suspend fun dropQuote(id: Long) = dao.deleteQuote(id)
+
+    suspend fun dropBookmark(id: Long) = dao.deleteBookmark(id)
+
+    /**
+     * A bookmark made somewhere else. Returns it as the library has it: the
+     * one that was on that place already, or the new one, stamped now.
+     */
+    suspend fun takeBookmark(bookId: String, xpointer: String, text: String): Bookmark = database.withTransaction {
+        val at = now()
+        dao.insert(Bookmark(bookId = bookId, xpointer = xpointer, text = text, chapter = null, createdAt = at, stamp = Stamps.of(at), sent = true))
+        dao.stampBookmarks()
+        val taken = dao.bookmarksNow(bookId).first { it.xpointer == xpointer }
+        dao.bookmarkSent(taken.id)
+        taken.copy(sent = true)
+    }
 
     companion object {
         @Volatile

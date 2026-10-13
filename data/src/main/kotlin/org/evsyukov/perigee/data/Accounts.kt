@@ -25,6 +25,8 @@ class Accounts internal constructor(private val database: ReadingDatabase, priva
         return database.withTransaction {
             dao.forgetServer()
             dao.deleteRemotePositions()
+            dao.unsendQuotes()
+            dao.unsendBookmarks()
             dao.insert(
                 Account(
                     url = url, user = user, name = name,
@@ -71,6 +73,8 @@ class Accounts internal constructor(private val database: ReadingDatabase, priva
         dao.deleteAccount()
         dao.forgetServer()
         dao.deleteRemotePositions()
+        dao.unsendQuotes()
+        dao.unsendBookmarks()
     }
 
     private suspend fun seal(tokens: Tokens): Pair<String, String> =

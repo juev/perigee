@@ -60,7 +60,13 @@ data class Book(
     @ColumnInfo(defaultValue = "0") val statusChangedAt: Long = 0,
     /** The server's time, in seconds, of the latest place from elsewhere the reader was told of or has decided on. */
     @ColumnInfo(defaultValue = "0") val remoteSeenAt: Long = 0,
+    /** When a bookmark or a quote of the book was last added, changed or removed here, and which of those changes the server last heard of. */
+    @ColumnInfo(defaultValue = "0") val marksChangedAt: Long = 0,
+    @ColumnInfo(defaultValue = "0") val marksSyncedAt: Long = 0,
 ) {
+    /** Whether bookmarks or quotes changed here since the server last heard; one removed leaves no other trace. */
+    val marksUnsent: Boolean get() = marksChangedAt > marksSyncedAt
+
     /** Whether the reader's place is still to be sent to the server. */
     val placeUnsent: Boolean get() = movedAt > pushedAt
 
@@ -138,6 +144,10 @@ data class Bookmark(
     val text: String,
     val chapter: String?,
     val createdAt: Long,
+    /** The time it was made as devices tell it to the server, see [Stamps]; with [xpointer] it is what the server knows the bookmark by. */
+    @ColumnInfo(defaultValue = "") val stamp: String = "",
+    /** Whether the server was told of it, or it came from there. */
+    @ColumnInfo(defaultValue = "0") val sent: Boolean = false,
 )
 
 /** A passage the reader highlighted, with an optional note. */
@@ -158,7 +168,13 @@ data class Quote(
     val chapter: String?,
     val createdAt: Long,
     val updatedAt: Long,
-)
+    /** The time it was made as devices tell it to the server, see [Stamps]; with [start] it is what the server knows the quote by. */
+    @ColumnInfo(defaultValue = "") val stamp: String = "",
+    /** [updatedAt] as of when the server last had it; the quote is still to be sent while [updatedAt] is later. */
+    @ColumnInfo(defaultValue = "0") val sentAt: Long = 0,
+) {
+    val unsent: Boolean get() = updatedAt > sentAt
+}
 
 /** What a book file says about itself, for a file that is already in the app's storage. */
 data class LocalBook(

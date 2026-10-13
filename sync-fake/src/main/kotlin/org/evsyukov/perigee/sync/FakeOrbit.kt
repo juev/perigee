@@ -51,6 +51,179 @@ class FakeOrbit : AutoCloseable {
     val pagesRead = ArrayList<JSONObject>()
     var pagesTwice = 0
 
+    /** A quote as the server keeps it, with what it knows of the device having it. */
+    class Quote(
+        val serverId: Long, var stamp: String?, val pos0: String, val pos1: String, var text: String, var note: String?,
+        var color: String, var version: Int = 1, var deleted: Boolean = false,
+        /** The device has it, as of [onDevice]; a removal the device was told of is [removalKnown]. */
+        var known: Boolean = false, var onDevice: Int = 0, var removalKnown: Boolean = false,
+    )
+
+    class Bookmark(
+        val serverId: Long, val pos: String, var title: String, var key: String? = null, var deleted: Boolean = false,
+        var removalKnown: Boolean = false,
+    )
+
+    /** Quotes and bookmarks by the fingerprint of the file. */
+    val quotes = HashMap<String, MutableList<Quote>>()
+    val bookmarks = HashMap<String, MutableList<Bookmark>>()
+    private val marks = AtomicInteger(100)
+
+    /** While set, bookmarks from devices are refused, as for a format the server has no places in. */
+    var bookmarksRefused = false
+
+    /** How many quotes a list of them is handed over in parts of; the real server's is a hundred. */
+    var handedOverAtOnce = 100
+
+    /** A quote made in the web reader. */
+    fun webQuote(hash: String, pos0: String, pos1: String, text: String, note: String? = null, color: String = "yellow"): Quote =
+        Quote(marks.incrementAndGet().toLong(), null, pos0, pos1, text, note, color).also { quotes.getOrPut(hash) { ArrayList() } += it }
+
+    fun webBookmark(hash: String, pos: String, title: String): Bookmark =
+        Bookmark(marks.incrementAndGet().toLong(), pos, title).also { bookmarks.getOrPut(hash) { ArrayList() } += it }
+
+    private fun key(stamp: String, place: String) = md5("$stamp|$place")
+
+    private fun exchangeQuotes(body: JSONObject): Answer {
+        val book = body.getJSONArray("books").getJSONObject(0)
+        val hash = book.getString("hash")
+        if (hash !in files) return Answer(201, JSONObject().put("results", JSONArray()).put("unmatched", JSONArray().put(hash)).toString())
+        val list = quotes.getOrPut(hash) { ArrayList() }
+        val changes = book.getJSONArray("changes")
+        for (i in 0 until changes.length()) {
+            val change = changes.getJSONObject(i)
+            val known = list.firstOrNull { it.stamp == change.getString("datetime") && it.pos0 == change.getString("pos0") }
+            val note = if (change.has("note")) change.getString("note") else null
+            if (known == null) {
+                list += Quote(
+                    marks.incrementAndGet().toLong(), change.getString("datetime"), change.getString("pos0"), change.optString("pos1"),
+                    change.optString("text"), note, change.optString("color"), known = true, onDevice = 1,
+                )
+            } else if (!known.deleted && (known.note != note || known.color != change.optString("color"))) {
+                known.note = note
+                known.color = change.optString("color")
+                known.version++
+                known.onDevice = known.version
+            }
+        }
+        if (book.getBoolean("keysComplete")) {
+            val keys = book.getJSONArray("keys")
+            val present = (0 until keys.length()).map { keys.getJSONObject(it) }
+            for (quote in list) {
+                if (!quote.known || quote.deleted) continue
+                val stamp = quote.stamp ?: continue
+                if (present.any { it.getString("k") == key(stamp, quote.pos0) || it.getString("dt") == stamp }) continue
+                quote.deleted = true
+                quote.removalKnown = true
+            }
+        }
+        val add = JSONArray()
+        val edit = JSONArray()
+        val delete = JSONArray()
+        var room = handedOverAtOnce
+        var more = false
+        for (quote in list) {
+            val entry = JSONObject().put("serverId", quote.serverId).put("version", quote.version)
+                .put("drawer", "lighten").put("color", quote.color).put("text", quote.text).put("note", quote.note ?: JSONObject.NULL)
+                .put("chapter", JSONObject.NULL)
+            val into = when {
+                !quote.deleted && !quote.known -> add
+                !quote.deleted && quote.version > quote.onDevice -> edit
+                quote.deleted && quote.known && !quote.removalKnown -> delete
+                else -> continue
+            }
+            if (room == 0) {
+                more = true
+                break
+            }
+            room--
+            if (quote.stamp == null) quote.stamp = "2031-01-01 00:00:%02d".format(quote.serverId % 60)
+            entry.put("datetime", quote.stamp)
+            when (into) {
+                add -> entry.put("datetimeUpdated", JSONObject.NULL).put("posFormat", "xpointer").put("pos0", quote.pos0).put("pos1", quote.pos1)
+                else -> entry.put("key", key(quote.stamp!!, quote.pos0)).put("datetimeUpdated", "2031-01-01 00:01:00")
+            }
+            into.put(entry)
+        }
+        val result = JSONObject().put("hash", hash).put("bookId", files.getValue(hash).first)
+            .put("toApply", JSONObject().put("add", add).put("edit", edit).put("delete", delete)).put("more", more)
+        return Answer(201, JSONObject().put("results", JSONArray().put(result)).put("unmatched", JSONArray()).toString())
+    }
+
+    private fun ackQuotes(body: JSONObject): Answer {
+        val book = body.getJSONArray("books").getJSONObject(0)
+        val list = quotes[book.getString("hash")].orEmpty()
+        val applied = book.getJSONArray("applied")
+        for (i in 0 until applied.length()) {
+            val entry = applied.getJSONObject(i)
+            val quote = list.firstOrNull { it.serverId == entry.getLong("serverId") } ?: continue
+            if (entry.getString("status") != "applied") continue
+            quote.known = true
+            quote.onDevice = entry.getInt("version")
+        }
+        val deleted = book.getJSONArray("deleted")
+        for (i in 0 until deleted.length()) {
+            list.firstOrNull { it.serverId == deleted.getJSONObject(i).getLong("serverId") }?.removalKnown = true
+        }
+        return Answer(201, "{}")
+    }
+
+    private fun exchangeBookmarks(body: JSONObject): Answer {
+        val book = body.getJSONArray("books").getJSONObject(0)
+        val hash = book.getString("hash")
+        if (hash !in files) return Answer(201, JSONObject().put("results", JSONArray()).put("unmatched", JSONArray().put(hash)).toString())
+        val list = bookmarks.getOrPut(hash) { ArrayList() }
+        val changes = book.getJSONArray("changes")
+        var rejected = 0
+        for (i in 0 until changes.length()) {
+            val change = changes.getJSONObject(i)
+            val k = key(change.getString("datetime"), change.getString("pos"))
+            if (list.any { it.key == k }) continue
+            if (bookmarksRefused) {
+                rejected++
+                continue
+            }
+            list += Bookmark(marks.incrementAndGet().toLong(), change.getString("pos"), change.optString("note", "Bookmark"), key = k)
+        }
+        if (book.getBoolean("keysComplete")) {
+            val keys = book.getJSONArray("keys")
+            val present = (0 until keys.length()).map { keys.getJSONObject(it).getString("k") }.toSet()
+            for (bookmark in list) {
+                if (bookmark.key == null || bookmark.deleted || bookmark.key in present) continue
+                bookmark.deleted = true
+                bookmark.removalKnown = true
+            }
+        }
+        val add = JSONArray()
+        val delete = JSONArray()
+        for (bookmark in list) {
+            when {
+                !bookmark.deleted && bookmark.key == null ->
+                    add.put(JSONObject().put("serverId", bookmark.serverId).put("pos", bookmark.pos).put("pageno", JSONObject.NULL).put("title", bookmark.title))
+                bookmark.deleted && bookmark.key != null && !bookmark.removalKnown ->
+                    delete.put(JSONObject().put("serverId", bookmark.serverId).put("key", bookmark.key).put("datetime", JSONObject.NULL))
+            }
+        }
+        val result = JSONObject().put("hash", hash).put("bookId", files.getValue(hash).first).put("rejected", rejected)
+            .put("toApply", JSONObject().put("add", add).put("delete", delete)).put("more", false)
+        return Answer(201, JSONObject().put("results", JSONArray().put(result)).put("unmatched", JSONArray()).toString())
+    }
+
+    private fun ackBookmarks(body: JSONObject): Answer {
+        val book = body.getJSONArray("books").getJSONObject(0)
+        val list = bookmarks[book.getString("hash")].orEmpty()
+        val applied = book.getJSONArray("applied")
+        for (i in 0 until applied.length()) {
+            val entry = applied.getJSONObject(i)
+            list.firstOrNull { it.serverId == entry.getLong("serverId") }?.key = entry.getString("key")
+        }
+        val deleted = book.getJSONArray("deleted")
+        for (i in 0 until deleted.length()) {
+            list.firstOrNull { it.serverId == deleted.getJSONObject(i).getLong("serverId") }?.removalKnown = true
+        }
+        return Answer(201, "{}")
+    }
+
     private val server = TestServer(::answer)
     val url get() = server.url
     val seen get() = server.seen
@@ -127,6 +300,12 @@ class FakeOrbit : AutoCloseable {
                 if (path.endsWith("/rating")) ratings[id] = if (body.isNull("rating")) null else body.getInt("rating")
                 return Answer(200, "{}")
             }
+            when (path) {
+                "/koreader/plugin/annotations/exchange" -> return exchangeQuotes(body)
+                "/koreader/plugin/annotations/exchange-ack" -> return ackQuotes(body)
+                "/koreader/plugin/bookmarks/exchange" -> return exchangeBookmarks(body)
+                "/koreader/plugin/bookmarks/exchange-ack" -> return ackBookmarks(body)
+            }
             if (path == "/koreader/plugin/page-stats") {
                 val books = body.getJSONArray("books")
                 val unmatched = JSONArray()
@@ -158,6 +337,13 @@ class FakeOrbit : AutoCloseable {
             path == "/koreader/credentials" && !deviceAllowed -> error(403, "Missing permission: koreader_sync")
             path == "/koreader/credentials" && request.method == "GET" ->
                 Answer(200, deviceUser?.let { JSONObject().put("username", it).put("syncEnabled", true).toString() }.orEmpty())
+            path == "/koreader/credentials" && request.method == "PATCH" -> when {
+                deviceUser == null -> error(404, "KOReader credentials not found")
+                else -> {
+                    deviceKey = md5(body.getString("password"))
+                    Answer(200, "{\"success\":true}")
+                }
+            }
             path == "/koreader/credentials" && request.method == "POST" -> when {
                 deviceUser != null -> error(409, "KOReader credentials already exist")
                 body.getString("username") in takenNames -> error(409, "Username already taken")

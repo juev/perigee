@@ -9,6 +9,7 @@ import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -41,6 +42,7 @@ class MigrationTest {
         helper.runMigrationsAndValidate(NAME, 3, true).close()
         helper.runMigrationsAndValidate(NAME, 4, true).close()
         helper.runMigrationsAndValidate(NAME, 5, true).close()
+        helper.runMigrationsAndValidate(NAME, 6, true).close()
 
         val database = Room.databaseBuilder(instrumentation.targetContext, ReadingDatabase::class.java, NAME).build()
         try {
@@ -59,6 +61,12 @@ class MigrationTest {
             assertFalse(book.stateUnsent)
             assertNull(book.rating)
             assertEquals(listOf("abc"), library.unmatched(all = false))
+            // Marks made before they were stamped get a stamp by when they were made, once, and are still to be sent.
+            val (bookmarks, quotes) = library.marksOf("abc")
+            assertEquals(Stamps.of(5), bookmarks.single().stamp)
+            assertEquals(Stamps.of(6), quotes.single().stamp)
+            assertTrue(quotes.single().unsent)
+            assertFalse(bookmarks.single().sent)
             assertEquals("words", library.bookmarks("abc").first().single().text)
             assertEquals("note", library.quotes("abc").first().single().note)
         } finally {

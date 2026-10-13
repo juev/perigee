@@ -178,8 +178,50 @@ internal interface ReadingDao {
     suspend fun deleteAccount()
 
     /** Nothing was sent to the next server yet, and nothing was heard from it. */
-    @Query("UPDATE books SET serverBookId = NULL, serverFileId = NULL, serverCheckedAt = 0, pushedAt = 0, statePushedAt = 0, remoteSeenAt = 0")
+    @Query("UPDATE books SET serverBookId = NULL, serverFileId = NULL, serverCheckedAt = 0, pushedAt = 0, statePushedAt = 0, remoteSeenAt = 0, marksSyncedAt = 0")
     suspend fun forgetServer()
+
+    /** The next server has every quote and bookmark still to hear of. */
+    @Query("UPDATE quotes SET sentAt = 0")
+    suspend fun unsendQuotes()
+
+    @Query("UPDATE bookmarks SET sent = 0")
+    suspend fun unsendBookmarks()
+
+    @Query("UPDATE books SET marksChangedAt = :at WHERE id = :id")
+    suspend fun marksChanged(id: String, at: Long)
+
+    @Query("UPDATE books SET marksChangedAt = :at WHERE id = (SELECT bookId FROM quotes WHERE id = :quoteId)")
+    suspend fun marksChangedByQuote(quoteId: Long, at: Long)
+
+    @Query("UPDATE books SET marksChangedAt = :at WHERE id = (SELECT bookId FROM bookmarks WHERE id = :bookmarkId)")
+    suspend fun marksChangedByBookmark(bookmarkId: Long, at: Long)
+
+    @Query("UPDATE books SET marksSyncedAt = :changedAt WHERE id = :id")
+    suspend fun marksSynced(id: String, changedAt: Long)
+
+    @Query("SELECT * FROM quotes WHERE bookId = :bookId ORDER BY id")
+    suspend fun quotesNow(bookId: String): List<Quote>
+
+    @Query("SELECT * FROM bookmarks WHERE bookId = :bookId ORDER BY id")
+    suspend fun bookmarksNow(bookId: String): List<Bookmark>
+
+    /** Marks made by a version that did not stamp them are stamped by when they were made. */
+    @Query("UPDATE quotes SET stamp = strftime('%Y-%m-%d %H:%M:%S', createdAt / 1000, 'unixepoch', 'localtime') WHERE stamp = ''")
+    suspend fun stampQuotes()
+
+    @Query("UPDATE bookmarks SET stamp = strftime('%Y-%m-%d %H:%M:%S', createdAt / 1000, 'unixepoch', 'localtime') WHERE stamp = ''")
+    suspend fun stampBookmarks()
+
+    @Query("UPDATE quotes SET sentAt = :updatedAt WHERE id = :id")
+    suspend fun quoteSent(id: Long, updatedAt: Long)
+
+    @Query("UPDATE bookmarks SET sent = 1 WHERE id = :id")
+    suspend fun bookmarkSent(id: Long)
+
+    /** A change that came from the server: nothing of it is to be sent back. */
+    @Query("UPDATE quotes SET text = :text, note = :note, color = :color, chapter = :chapter, updatedAt = :at, sentAt = :at WHERE id = :id")
+    suspend fun takeQuote(id: Long, text: String, note: String?, color: Int, chapter: String?, at: Long)
 
     @Query("UPDATE books SET serverBookId = :serverBookId, serverFileId = :serverFileId, serverCheckedAt = :at WHERE id = :id")
     suspend fun setServerFile(id: String, serverBookId: Long?, serverFileId: Long?, at: Long)
@@ -246,10 +288,10 @@ internal interface ReadingDao {
         Book::class, Bookmark::class, Quote::class, Folder::class, BookCollection::class, CollectionBook::class,
         Catalog::class, Account::class, RemotePosition::class, PageRead::class,
     ],
-    version = 5,
+    version = 6,
     autoMigrations = [
         AutoMigration(from = 1, to = 2), AutoMigration(from = 2, to = 3), AutoMigration(from = 3, to = 4),
-        AutoMigration(from = 4, to = 5),
+        AutoMigration(from = 4, to = 5), AutoMigration(from = 5, to = 6),
     ],
 )
 internal abstract class ReadingDatabase : RoomDatabase() {

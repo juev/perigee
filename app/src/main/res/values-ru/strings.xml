@@ -186,4 +186,6 @@
     <string name="offer_text_unnamed">Эта книга прочитана до %1$d%% на другом устройстве. Перейти туда?</string>
     <string name="offer_go">Перейти</string>
     <string name="offer_stay">Остаться здесь</string>
+    <string name="server_channel_forgotten">Не знаете его? Введите новый, не короче шести символов, и задайте его. Другим вашим устройствам для чтения, которые синхронизируются с этим сервером, тоже понадобится новый.</string>
+    <string name="server_channel_set_new">Задать как новый пароль</string>
 </resources>

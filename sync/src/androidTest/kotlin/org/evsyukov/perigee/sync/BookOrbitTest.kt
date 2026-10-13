@@ -204,6 +204,25 @@ class BookOrbitTest {
     }
 
     @Test
+    fun readerWhoDoesNotKnowThePasswordSetsANewOne() = runBlocking<Unit> {
+        signIn()
+        val made = server.deviceKey
+        // As after the app was installed anew: the password it made up went with its data.
+        orbit.signOut()
+        assertEquals(DeviceChannel.PasswordNeeded, signIn())
+
+        failing<IllegalArgumentException> { orbit.newDevicePassword("short") }
+        assertEquals(made, server.deviceKey)
+
+        assertEquals(DeviceChannel.Ready, orbit.newDevicePassword("chosen anew"))
+
+        assertEquals(FakeOrbit.md5("chosen anew"), server.deviceKey)
+        assertEquals(server.deviceKey, accounts.deviceKey())
+        assertEquals("the user name stays", "reader", server.deviceUser)
+        assertTrue(orbit.match(listOf("0".repeat(32))).isEmpty())
+    }
+
+    @Test
     fun takenUserNameIsMadeUpAnother() = runBlocking<Unit> {
         server.takenNames += "reader"
         assertEquals(DeviceChannel.Ready, signIn())

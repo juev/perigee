@@ -83,6 +83,7 @@ import org.evsyukov.perigee.data.Account
 import org.evsyukov.perigee.data.Library
 import org.evsyukov.perigee.isPlainHttp
 import org.evsyukov.perigee.library.folderName
+import org.evsyukov.perigee.sync.BookOrbit
 import org.evsyukov.perigee.sync.DeviceChannel
 import org.evsyukov.perigee.sync.RemoteBook
 import org.evsyukov.perigee.sync.RemoteFile
@@ -274,7 +275,7 @@ private fun Books(padding: PaddingValues, state: ServerState, model: ServerViewM
     LazyColumn(Modifier.fillMaxSize().testTag("server-books"), contentPadding = padding) {
         val channel = state.channel
         if (channel != null && channel != DeviceChannel.Ready) {
-            item("channel") { Channel(channel, state, model::devicePassword) }
+            item("channel") { Channel(channel, state, model::devicePassword, model::newDevicePassword) }
         }
         state.failure?.let { failure ->
             item("failure") {
@@ -306,7 +307,7 @@ private fun Books(padding: PaddingValues, state: ServerState, model: ServerViewM
 
 /** What stands between the reader and the syncing of their reading, and what they can do about it. */
 @Composable
-private fun Channel(channel: DeviceChannel, state: ServerState, onPassword: (String) -> Unit) {
+private fun Channel(channel: DeviceChannel, state: ServerState, onPassword: (String) -> Unit, onNewPassword: (String) -> Unit) {
     Surface(color = MaterialTheme.colorScheme.secondaryContainer, modifier = Modifier.fillMaxWidth().testTag("server-channel")) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             when (channel) {
@@ -326,6 +327,11 @@ private fun Channel(channel: DeviceChannel, state: ServerState, onPassword: (Str
                     Button(enabled = !state.channelBusy && password.isNotEmpty(), onClick = { onPassword(password) }) {
                         Text(stringResource(R.string.server_channel_connect))
                     }
+                    Text(stringResource(R.string.server_channel_forgotten), style = MaterialTheme.typography.bodySmall)
+                    TextButton(
+                        enabled = !state.channelBusy && password.length >= BookOrbit.MIN_DEVICE_PASSWORD,
+                        onClick = { onNewPassword(password) },
+                    ) { Text(stringResource(R.string.server_channel_set_new)) }
                 }
                 DeviceChannel.NotAllowed -> Text(stringResource(R.string.server_channel_not_allowed))
                 DeviceChannel.SwitchedOff -> Text(stringResource(R.string.server_channel_switched_off))

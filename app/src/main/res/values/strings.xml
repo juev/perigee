@@ -184,4 +184,6 @@
     <string name="offer_text_unnamed">You are at %1$d%% of this book on another device. Go there?</string>
     <string name="offer_go">Go there</string>
     <string name="offer_stay">Stay here</string>
+    <string name="server_channel_forgotten">Do not know it? Type a new one, six characters or more, and set it. Your other reading devices that sync with this server will need the new one too.</string>
+    <string name="server_channel_set_new">Set as the new password</string>
 </resources>

@@ -19,9 +19,9 @@ Works today:
 - OPDS catalogues: browsing, search, downloading into the library.
 - A bookOrbit server: signing in, its books with covers and search, downloading them, and finding which of your books the server already has.
 
-- Syncing with bookOrbit: the place you got to, both ways, with a later place read elsewhere offered rather than jumped to; status and rating; time spent reading for the server's statistics.
+- Syncing with bookOrbit: the place you got to, both ways, with a later place read elsewhere offered rather than jumped to; highlights with notes and bookmarks, both ways; status and rating; time spent reading for the server's statistics.
 
-Not there yet: syncing of highlights and bookmarks with bookOrbit, and release builds. A spike has shown that exact positions and highlights can be exchanged with bookOrbit for EPUB; see [docs/spikes/position-contract.md](docs/spikes/position-contract.md).
+Not there yet: release builds. A spike has shown that exact positions and highlights can be exchanged with bookOrbit for EPUB; see [docs/spikes/position-contract.md](docs/spikes/position-contract.md).
 
 The engine reads EPUB, FB2, FB3, MOBI (not KF8/AZW3), TXT, RTF, DOC, DOCX, ODT, HTML and CHM. The tests cover EPUB and FB2; the other formats have not been checked in Perigee.
 

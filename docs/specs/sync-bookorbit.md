@@ -1,6 +1,6 @@
 # bookOrbit: the account, the server's books, and finding the reader's books on it
 
-Requirements R6, R7, R9, R10 and R12 of `plan.md`. The reader signs in to a bookOrbit server, looks through its books, downloads them into the library described in `library.md`, and the app finds out which books of the library the server has. The reader's place, status, rating and the pages read are kept in step with the server; highlights and bookmarks are the step that follows and are not described here.
+Requirements R6 to R10 and R12 of `plan.md`. The reader signs in to a bookOrbit server, looks through its books, downloads them into the library described in `library.md`, and the app finds out which books of the library the server has. The reader's place, quotes and bookmarks, status, rating and the pages read are kept in step with the server.
 
 Checked against bookOrbit 3.3.0: by reading its source at tag `v3.3.0`, and by the contract tests against its docker image.
 
@@ -56,6 +56,7 @@ The server keeps one user name and password of this channel per reader, the same
 - **The reader has none.** The app makes one: the user name is the reader's own, with a random ending when that is taken; the password is random and is never shown. Only its key is stored, sealed.
 - **The reader has one already**, as someone who uses KOReader. The server does not give the password back, and replacing it would cut the reader's other devices off. The app asks for the password, checks it with `GET koreader/users/auth`, and stores the key.
 - **The key stops being taken**, as after the password was changed in the browser: the key is dropped and the password is asked for again.
+- **The reader does not know the password**: the app made it up and was installed anew since, or signed out — the key went with its data — or they forgot. They type a new one, six characters at least, and the app sets it (`PATCH koreader/credentials`). Their other reading devices then need the new one too, which the screen says.
 - **The reader is not allowed** to sync devices (permission `koreader_sync`), or syncing is switched off in their KOReader settings on the server: the app says so; the server's books can still be seen and downloaded.
 
 A reader for whom the app made the password and who later wants KOReader on the same server sets a new password in the server's settings and gives it to both.
@@ -120,6 +121,21 @@ The server orders places by whole seconds, and a later place there is "later" by
 
 The reading screen times each page: from when it is shown to when another is, the book is closed, or the app is put away. Less than 5 seconds is not a page read, and no page counts for more than 120 — the bounds KOReader counts by. The times are kept in `page_reads` and go up through `POST koreader/plugin/page-stats`, at most 500 to a request; the server makes reading sessions and statistics of them, and tells apart what it was sent twice. Pages read in a book the server has not are kept for 90 days, in case the book gets there.
 
+### Quotes and bookmarks
+
+Requirement R8. They go through `POST koreader/plugin/annotations/exchange` and `…/bookmarks/exchange`, one book to a request, each followed by `…/exchange-ack` when the server handed something over.
+
+- **What a mark is known by.** The server knows a device's mark by the MD5 of the time it was made and its place: `md5("yyyy-MM-dd HH:mm:ss|xpointer")`, the time being the device's wall clock without a zone, as KOReader writes it. A quote and a bookmark keep that time as their `stamp` from the moment they are made; one that came from the server keeps the time the server gave it, and its place in the server's own words, so that the key the app sends is the key the server holds.
+- **Up.** A request carries the quotes made or changed here since the server last had them, at most 50, and the keys of all the quotes of the book. A change goes with the same stamp and place, so the server changes the quote it has; sent twice, as after an answer lost on the way, it makes nothing new.
+- **Removals.** Nothing is sent about a removal. The server takes a quote of this device for removed when its key is missing from a list that is said to be whole — so the list is said to be whole only when it is: with more quotes than the 5000 keys a request takes (500 for bookmarks), it is sent as not whole and nothing is removed. A removal leaves no row behind to remember it by; the book is marked as having marks changed, and that is what brings it into the next round.
+- **Down.** The server hands over quotes made elsewhere, changes to quotes the device has, and removals, a hundred at a time, and is told of each one taken. A quote the library has already, by its stamp and place, is not taken twice. A quote made in the web reader has no place the engine knows until the server has made one: it is handed over on the exchange after the one that asked, which is why a book is asked about twice when it is opened.
+- **Colours.** A quote goes up with its colour as `#RRGGBB`; the server tells devices a colour by one of KOReader's nine names, which are shown here as the server's web pages show them.
+- **Bookmarks** are the same, with two differences. The server hands a bookmark over without a time; the app stamps it and tells the server the key it will know it by. And the server has no places of its own in formats other than EPUB: a bookmark in FB2 is refused, kept here, and not sent again.
+- **Which books.** Books being read, books whose marks changed here, and books with marks that the server was never told of, as those marked before the reader signed in. And the book that is opened, at once.
+- **Another server, or signing in again.** Every mark is to be sent anew. To the server the app is then a device it has not seen, and it hands the reader's own quotes back as new ones; they are known by stamp and place and not taken twice.
+
+The ends of a quote are sent as selected. The server drops white space at the ends of a range, so its copy of a quote that ends on a space is a character shorter (`docs/spikes/position-contract.md`).
+
 ### When
 
 - A round is asked for when the app starts, when a book is closed, when the app is put away with a book open, and when a status or a rating is changed. It runs through WorkManager some seconds later, when there is a network; a round that could not reach the server is tried again with growing pauses.
@@ -157,6 +173,9 @@ Limits either way: 500 MB by default (`maxUploadSizeMb` of `app-info`); of the f
 - `:data` `SyncStateTest` — what is a move and what is not, what is still to be sent, the server's status giving way to the reader's unsent one, offers, pages read, another server told everything anew.
 - `:sync` `SyncRoundTest` — rounds against the stand-in server: a place sent once, a later place elsewhere offered and not overwritten, a book just opened, the same place, a place as a share, reading without the server, an answer that was lost, a book the server has no more, status and rating both ways, a status the app has no word for, many pages read, a server of another version, a channel that is not ready.
 - `:app` `ReaderScreenTest` — going to an offered place and back, an offer as a share, staying, the time on pages with its bounds and the app put away; `LibraryScreenTest` — stars; `server.SyncRoundTest` — which rounds are done with, tried again, or wait for the reader.
+- `:data` `MarksSyncTest` — stamps and keys, every change to marks being news even a removal, marks from the server not sent back and not taken twice, another server told of every mark anew.
+- `:sync` `MarksRoundTest` — a quote made, changed and removed on either side, an answer lost on the way, a list too long to be whole, hundreds of quotes in parts, bookmarks both ways, a bookmark the server cannot place, marks made before signing in, the reader's own quotes not taken twice after signing in again, a book the server has no more, colours.
+- `:contract` `MarksContractTest` — against bookOrbit 3.3.0: a quote made here seen by the web reader at an exact CFI, changed here, sent twice without a second one made, changed and removed in the web reader; a quote made in the web reader taken with a place the engine finds the same words by, and removed here; bookmarks made and removed on either side.
 - `:contract` `SyncContractTest` — against bookOrbit 3.3.0: a place sent and seen by the web reader as a CFI, a later place from the web reader offered with an xpointer the engine finds on the right page and not overwritten, the reader staying, FB2 kept word for word, status and rating both ways including `on_hold`, pages read in the book's statistics once.
 - `:contract` `AccountContractTest` — against bookOrbit 3.3.0 in docker: signing in, a refused password, the KOReader password asked for and refused, a channel made for a reader who has none, the list and search, a download read by the engine and found back by its fingerprint, a book the server has not, a missing cover, renewal of a token that ran out and of one that is not taken, signing out ending the session on the server.
 
@@ -166,7 +185,7 @@ python3 contract/up.py
     -Pandroid.testInstrumentationRunnerArguments.bookorbitUrl=http://10.0.2.2:3070
 ```
 
-Checked by hand on the emulator against the same server: signing in over `http://` with the question, the KOReader password, the list, a download kept in the app, the mark in the library, the screen reopened still signed in, the book opened from it; and a place read on another device offered when the book was opened, gone to, and come back from.
+Checked by hand on the emulator against the same server: signing in over `http://` with the question, the KOReader password, the list, a download kept in the app, the mark in the library, the screen reopened still signed in, the book opened from it; a place read on another device offered when the book was opened, gone to, and come back from; and quotes kept on the server listed in a book opened for the first time.
 
 ## Not done
 
@@ -174,10 +193,12 @@ Checked by hand on the emulator against the same server: signing in over `http:/
 - Uploading, see above.
 - OIDC.
 - Download progress, cancelling, resuming.
-- Highlights and bookmarks.
 - A round of syncing on a timer, and one while a book is open: a place read elsewhere meanwhile is learnt when the book is next opened.
 - A sign in the library or the reader that something waits to be sent, or could not be.
 - The reader's review of a book, and the statuses `on_hold` and `abandoned`.
+- Styles of a quote other than a highlight (underline, strike-through), which the server has and the app shows as highlights; the server's stars on quotes.
+- Trimming a quote to its words before it is sent.
+- A bookmark's words changed elsewhere: the server does not hand such a change over.
 - KEPUB files of the server.
 - A second server.
 - Running the contract tests against the latest server image in CI.

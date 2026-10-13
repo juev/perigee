@@ -217,6 +217,23 @@ class ServerScreenTest {
     }
 
     @Test
+    fun readerWhoDoesNotKnowTheKoreaderPasswordSetsANewOne() {
+        // The app made the password up, and was installed anew since.
+        server.deviceUser = "reader"
+        server.deviceKey = FakeOrbit.md5("made up and lost")
+        show()
+        signIn()
+        waitForText(string(R.string.server_channel_password_needed, "reader"))
+
+        rule.onNodeWithTag("server-channel-password").performTextReplacement("chosen anew")
+        rule.onNodeWithText(string(R.string.server_channel_set_new)).performClick()
+
+        rule.waitUntil(TIMEOUT) { rule.onAllNodesWithTag("server-channel").fetchSemanticsNodes().isEmpty() }
+        assertEquals(FakeOrbit.md5("chosen anew"), server.deviceKey)
+        assertEquals(server.deviceKey, runBlocking { accounts.deviceKey() })
+    }
+
+    @Test
     fun serverOfAnUnknownVersionIsReadButNotSyncedWith() {
         server.version = "v4.0.0"
         serverHas(book(7, "Listed Title", 70))
