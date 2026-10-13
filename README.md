@@ -15,7 +15,11 @@ Works today:
 - Reading settings modelled on ReadEra: colour scheme, font, size, boldness, line spacing, alignment, paragraph spacing and indent, margins.
 - Table of contents, bookmarks, highlights with notes, search in the book, return from a jump.
 
-Not there yet: a library of books, OPDS catalogues, sync with bookOrbit, release builds. A spike has shown that exact positions and highlights can be exchanged with bookOrbit for EPUB; see [docs/spikes/position-contract.md](docs/spikes/position-contract.md).
+- A library of the books in the folders you pick: shelves, authors, series, collections, search.
+- OPDS catalogues: browsing, search, downloading into the library.
+- A bookOrbit server: signing in, its books with covers and search, downloading them, and finding which of your books the server already has.
+
+Not there yet: syncing of reading progress, highlights and bookmarks with bookOrbit, and release builds. A spike has shown that exact positions and highlights can be exchanged with bookOrbit for EPUB; see [docs/spikes/position-contract.md](docs/spikes/position-contract.md).
 
 The engine reads EPUB, FB2, FB3, MOBI (not KF8/AZW3), TXT, RTF, DOC, DOCX, ODT, HTML and CHM. The tests cover EPUB and FB2; the other formats have not been checked in Perigee.
 
@@ -69,12 +73,14 @@ python3 contract/up.py
 | Module | What it is |
 |---|---|
 | `engine` | crengine built for Android, a JNI layer and a Kotlin API: pages, positions, selection, search, contents |
-| `data` | Room and DataStore: opened books, positions, bookmarks, highlights, reading settings |
-| `app` | The app: the reading screen in Jetpack Compose |
-| `contract` | Tests of the position contract against a bookOrbit server |
+| `data` | Room and DataStore: the library, positions, bookmarks, highlights, catalogues, the server account, settings |
+| `opds` | OPDS 1.x catalogues: parsing, browsing, downloads |
+| `sync` | The bookOrbit server: account, session, its books, matching files; `sync-fake` is a stand-in server for tests |
+| `app` | The app in Jetpack Compose: reading screen, library, catalogues, server |
+| `contract` | Tests against a real bookOrbit server: positions, OPDS, account |
 | `third_party/crengine` | The engine, a git submodule pinned to a commit |
 
-[docs/specs/reader.md](docs/specs/reader.md) specifies the engine API and the reading screen.
+Specifications are in [docs/specs](docs/specs): [reader.md](docs/specs/reader.md) for the engine API and the reading screen, [library.md](docs/specs/library.md), [opds.md](docs/specs/opds.md), and [sync-bookorbit.md](docs/specs/sync-bookorbit.md) for the server.
 
 ## License
 

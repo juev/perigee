@@ -2,8 +2,6 @@ package org.evsyukov.perigee.opds
 
 import android.app.Application
 import android.graphics.BitmapFactory
-import android.net.Uri
-import android.os.ParcelFileDescriptor
 import android.util.LruCache
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
@@ -17,20 +15,14 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.evsyukov.perigee.data.Catalog
 import org.evsyukov.perigee.data.Catalogs
-import org.evsyukov.perigee.data.Covers
-import org.evsyukov.perigee.data.FoundBook
 import org.evsyukov.perigee.data.Library
-import org.evsyukov.perigee.data.LibraryPreferences
-import org.evsyukov.perigee.library.BookSink
-import org.evsyukov.perigee.library.TreeSink
+import org.evsyukov.perigee.library.Arrivals
 import org.evsyukov.perigee.library.localCopy
-import org.evsyukov.perigee.library.readBook
 
 /** Why a catalog did not answer as hoped. */
 enum class Failure {
@@ -97,17 +89,11 @@ class OpdsViewModel(
     application: Application,
     private val catalogs: Catalogs,
     private val library: Library,
-    private val covers: Covers,
-    private val preferences: LibraryPreferences,
-    /** The folder downloads are put into, by its tree URI. */
-    private val sinkOf: (String) -> BookSink,
+    private val arrivals: Arrivals,
 ) : AndroidViewModel(application) {
 
     @Suppress("unused") // The constructor the system makes the model with.
-    constructor(application: Application) : this(
-        application, Catalogs.get(application), Library.get(application), Covers.get(application),
-        LibraryPreferences.get(application), { uri -> TreeSink(application.contentResolver, Uri.parse(uri)) },
-    )
+    constructor(application: Application) : this(application, Catalogs.get(application), Library.get(application), Arrivals(application))
 
     private val _state = MutableStateFlow(OpdsState())
     val state: StateFlow<OpdsState> = _state.asStateFlow()
@@ -233,34 +219,32 @@ class OpdsViewModel(
         val from = client ?: return
         if (_state.value.downloads[link.url] is Download.Running) return
         viewModelScope.launch {
-            if (!preferences.prefs.first().downloadsAsked) {
+            if (!arrivals.asked()) {
                 _state.update { it.copy(asking = entry to link) }
                 return@launch
             }
             mark(link, Download.Running)
             val app = getApplication<Application>()
             // Its own folder: two books may come under one name.
-            val arrivals = File(app.cacheDir, "opds/${UUID.randomUUID()}")
+            val landing = File(app.cacheDir, "opds/${UUID.randomUUID()}")
             val result = try {
-                val file = from.download(link, entry.title, arrivals)
-                keep(file, link.format.ifEmpty { Library.formatOf(file.name) })
+                val file = from.download(link, entry.title, landing)
+                arrivals.keep(file, link.format.ifEmpty { Library.formatOf(file.name) })?.let(Download::Done)
+                    ?: Download.Failed(Failure.NotABook)
             } catch (e: IOException) {
                 Download.Failed(failureOf(e))
             } finally {
-                withContext(Dispatchers.IO) { arrivals.deleteRecursively() }
+                withContext(Dispatchers.IO) { landing.deleteRecursively() }
             }
             mark(link, result)
         }
     }
 
     /** The reader chose a folder for downloaded books; the download that waited for it goes on. */
-    fun downloadInto(uri: String, name: String) = answer {
-        library.addFolder(uri, name)
-        preferences.update { it.copy(downloadsFolder = uri, downloadsAsked = true) }
-    }
+    fun downloadInto(uri: String, name: String) = answer { arrivals.into(uri, name) }
 
     /** The reader would rather keep downloaded books in the app's own storage. */
-    fun downloadIntoApp() = answer { preferences.update { it.copy(downloadsAsked = true) } }
+    fun downloadIntoApp() = answer(arrivals::intoApp)
 
     /** The question was put away unanswered; it will be asked again. */
     fun dismissAsking() = _state.update { it.copy(asking = null) }
@@ -276,37 +260,6 @@ class OpdsViewModel(
 
     /** The file to read a downloaded book from; null when it cannot be got at any more. */
     suspend fun fileOf(bookId: String): File? = library.book(bookId)?.let { localCopy(getApplication(), library, it) }
-
-    private suspend fun keep(file: File, format: String): Download = withContext(Dispatchers.IO) {
-        val app = getApplication<Application>()
-        val book = ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY).use {
-            readBook(app, covers, it, file.name, format)
-        } ?: return@withContext Download.Failed(Failure.NotABook)
-        val folderUri = preferences.prefs.first().downloadsFolder
-        if (folderUri != null) {
-            // A book that lies in a folder already is not put there twice.
-            if (library.book(book.id)?.uri != null) return@withContext Download.Done(book.id)
-            val placed = sinkOf(folderUri).put(file.name, file)
-            if (placed != null) {
-                val folder = library.addFolder(folderUri, "")
-                library.found(
-                    folder.id,
-                    FoundBook(
-                        book.id, placed.uri, placed.size, placed.modified, format, book.title, book.authors,
-                        book.language, book.series, book.seriesNumber, book.hasCover,
-                    ),
-                )
-                return@withContext Download.Done(book.id)
-            }
-            // The folder cannot be written to: the book is kept in the app rather than lost.
-        }
-        val kept = File(File(app.filesDir, "books").apply { mkdirs() }, "${book.id}.${format.ifEmpty { "book" }}")
-        if (!file.renameTo(kept)) {
-            file.copyTo(kept, overwrite = true)
-        }
-        library.keep(kept, book)
-        Download.Done(book.id)
-    }
 
     private fun mark(link: OpdsLink, download: Download) =
         _state.update { it.copy(downloads = it.downloads + (link.url to download)) }

@@ -28,6 +28,7 @@ import org.evsyukov.perigee.data.FoundBook
 import org.evsyukov.perigee.data.Library
 import org.evsyukov.perigee.data.LibraryPreferences
 import org.evsyukov.perigee.data.LibraryPrefs
+import org.evsyukov.perigee.library.Arrivals
 import org.evsyukov.perigee.library.BookSink
 import org.evsyukov.perigee.library.SourceFile
 import org.evsyukov.perigee.reader.TestBook
@@ -85,8 +86,9 @@ class OpdsScreenTest {
 
     private fun show() {
         val model = OpdsViewModel(
-            activity.application, catalogs, library, Covers(File(activity.cacheDir, "opds-covers")), preferences,
-        ) { sink }
+            activity.application, catalogs, library,
+            Arrivals(activity, library, Covers(File(activity.cacheDir, "opds-covers")), preferences) { sink },
+        )
         rule.setContent { MaterialTheme { OpdsScreen(onOpen = { opened = it }, onClose = { closed = true }, model = model) } }
     }
 
@@ -100,6 +102,10 @@ class OpdsScreenTest {
         rule.onNodeWithTag("catalog-user").performTextReplacement(user)
         rule.onNodeWithTag("catalog-password").performTextReplacement(password)
         rule.onNodeWithText(string(R.string.catalog_check_and_add)).performClick()
+        // The test catalog is reached over plain HTTP, which the reader has to agree to before a password goes out.
+        if (address.startsWith("http://") && (user.isNotEmpty() || password.isNotEmpty())) {
+            rule.onNodeWithTag("plain-http-send").performClick()
+        }
     }
 
     /** Adds the test catalog through the form and opens it. */
@@ -139,6 +145,36 @@ class OpdsScreenTest {
         val stored = runBlocking { catalogs.all().first().single() }
         assertEquals("the catalog is titled as it titles itself", "Home Books", stored.title)
         assertFalse("secret-1" in stored.secret)
+    }
+
+    @Test
+    fun passwordGoesOverPlainHttpOnlyAfterTheReaderAgrees() {
+        show()
+        rule.onNodeWithText(string(R.string.catalog_add)).performClick()
+        rule.onNodeWithTag("catalog-address").performTextReplacement("${catalog.url}/opds")
+        rule.onNodeWithTag("catalog-user").performTextReplacement("reader")
+        rule.onNodeWithTag("catalog-password").performTextReplacement("secret-1")
+
+        rule.onNodeWithText(string(R.string.catalog_check_and_add)).performClick()
+        rule.onNodeWithText(string(R.string.plain_http_title)).assertIsDisplayed()
+        rule.onNodeWithTag("plain-http-cancel").performClick()
+        rule.waitForIdle()
+        assertTrue("nothing was sent: ${catalog.asked}", catalog.asked.isEmpty())
+        assertTrue(runBlocking { catalogs.all().first().isEmpty() })
+
+        rule.onNodeWithText(string(R.string.catalog_check_and_add)).performClick()
+        rule.onNodeWithTag("plain-http-send").performClick()
+        waitForText("Home Books")
+        assertEquals(1, runBlocking { catalogs.all().first().size })
+    }
+
+    @Test
+    fun catalogWithoutAPasswordIsAddedOverPlainHttpUnasked() {
+        show()
+        rule.onNodeWithText(string(R.string.catalog_add)).performClick()
+        fillIn("http://127.0.0.1:1/opds")
+        waitForText(string(R.string.catalog_unreachable))
+        assertTrue(rule.onAllNodesWithText(string(R.string.plain_http_title)).fetchSemanticsNodes().isEmpty())
     }
 
     @Test

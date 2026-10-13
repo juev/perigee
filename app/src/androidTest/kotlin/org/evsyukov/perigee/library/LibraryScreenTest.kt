@@ -73,13 +73,21 @@ class LibraryScreenTest {
         hasCover = false,
     )
 
+    private var wentToServer = false
+    private val scansDone = java.util.concurrent.atomic.AtomicInteger()
+
     private fun show() {
         val model = LibraryViewModel(
             activity.application, library, LibraryPreferences.get(activity),
-            Covers(File(activity.cacheDir, "screen-covers")),
+            Covers(File(activity.cacheDir, "screen-covers")), afterScan = { scansDone.incrementAndGet() },
         ) { source }
         rule.setContent {
-            MaterialTheme { LibraryScreen(onOpen = { opened = it }, onOpenFile = { askedForFile = true }, onCatalogs = {}, model = model) }
+            MaterialTheme {
+                LibraryScreen(
+                    onOpen = { opened = it }, onOpenFile = { askedForFile = true }, onCatalogs = {},
+                    onServer = { wentToServer = true }, model = model,
+                )
+            }
         }
     }
 
@@ -115,6 +123,29 @@ class LibraryScreenTest {
         rule.onNodeWithText("Anna Smith").assertIsDisplayed()
         rule.onNodeWithText(string(R.string.series_line, "Long Saga", "2")).assertIsDisplayed()
         rule.onNodeWithText("Plain Book").assertIsDisplayed()
+    }
+
+    @Test
+    fun bookTheServerHasIsMarked() {
+        shelve(found("Synced Book"), found("Local Book"))
+        runBlocking { library.onServer("Synced Book", serverBookId = 7, serverFileId = 70) }
+        show()
+        waitForText("Synced Book")
+        rule.onNodeWithText("FB2 · ${string(R.string.book_on_server)}").assertIsDisplayed()
+        rule.onNodeWithText("FB2").assertIsDisplayed()
+    }
+
+    @Test
+    fun serverIsReachedFromTheMenuAndAskedAboutBooksAfterALook() {
+        show()
+        rule.waitUntil(TIMEOUT) { scansDone.get() >= 1 }
+        rule.onNodeWithContentDescription(string(R.string.action_more)).performClick()
+        rule.onNodeWithText(string(R.string.action_rescan)).performClick()
+        rule.waitUntil(TIMEOUT) { scansDone.get() >= 2 }
+
+        rule.onNodeWithContentDescription(string(R.string.action_more)).performClick()
+        rule.onNodeWithText(string(R.string.action_server)).performClick()
+        assertTrue(wentToServer)
     }
 
     @Test

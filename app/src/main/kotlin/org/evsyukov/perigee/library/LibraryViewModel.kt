@@ -29,6 +29,7 @@ import org.evsyukov.perigee.data.Library
 import org.evsyukov.perigee.data.LibraryPreferences
 import org.evsyukov.perigee.data.ReadingStatus
 import org.evsyukov.perigee.data.Shelf
+import org.evsyukov.perigee.server.Server
 
 data class LibraryState(
     /** False until the stored books have been read; nothing is shown before that. */
@@ -55,12 +56,15 @@ class LibraryViewModel(
     private val library: Library,
     private val preferences: LibraryPreferences,
     val covers: Covers,
+    /** What is done once the folders were looked through, as asking the server about the books found. */
+    private val afterScan: suspend () -> Unit = {},
     private val sourceOf: (Folder) -> BookSource,
 ) : AndroidViewModel(application) {
 
     @Suppress("unused") // The constructor the system makes the model with.
     constructor(application: Application) : this(
         application, Library.get(application), LibraryPreferences.get(application), Covers.get(application),
+        { Server.matchNewBooks(application) },
         { folder -> TreeSource(application.contentResolver, Uri.parse(folder.uri)) },
     )
 
@@ -162,6 +166,7 @@ class LibraryViewModel(
                     } finally {
                         looking.update { it.copy(scanning = false) }
                     }
+                    afterScan()
                 }
             }
         }

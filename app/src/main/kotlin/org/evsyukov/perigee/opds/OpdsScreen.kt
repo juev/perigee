@@ -74,8 +74,10 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import java.io.File
 import kotlinx.coroutines.launch
+import org.evsyukov.perigee.PlainHttpWarning
 import org.evsyukov.perigee.R
 import org.evsyukov.perigee.data.Catalog
+import org.evsyukov.perigee.isPlainHttp
 import org.evsyukov.perigee.library.folderName
 
 /**
@@ -387,6 +389,16 @@ private fun AddCatalogDialog(busy: Boolean, failure: Failure?, onAdd: (String, S
     var user by rememberSaveable { mutableStateOf("") }
     // Not saved with the screen: a password is not written out for a rotation's sake.
     var password by remember { mutableStateOf("") }
+    var warning by remember { mutableStateOf(false) }
+    if (warning) {
+        PlainHttpWarning(
+            onSend = {
+                warning = false
+                onAdd(address, user, password)
+            },
+            onDismiss = { warning = false },
+        )
+    }
     AlertDialog(
         onDismissRequest = onClose,
         title = { Text(stringResource(R.string.catalog_add)) },
@@ -416,7 +428,13 @@ private fun AddCatalogDialog(busy: Boolean, failure: Failure?, onAdd: (String, S
             }
         },
         confirmButton = {
-            TextButton(enabled = !busy && address.isNotBlank(), onClick = { onAdd(address, user, password) }) {
+            TextButton(
+                enabled = !busy && address.isNotBlank(),
+                onClick = {
+                    // A catalog open to everyone has nothing to give away.
+                    if (isPlainHttp(address) && (user.isNotBlank() || password.isNotEmpty())) warning = true else onAdd(address, user, password)
+                },
+            ) {
                 Text(stringResource(R.string.catalog_check_and_add))
             }
         },

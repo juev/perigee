@@ -14,7 +14,7 @@ Requirement R5 of `plan.md`. A catalog is a library on the network that lists bo
 - The user name and password go to the catalog's own server only — same scheme, host and port as the catalog's address. Covers and files on other servers are fetched without them.
 - Redirects are followed by the client itself, at most six, under the same rule: a redirect to another server does not carry the password along.
 - In the app a password is stored sealed with a key kept by the Android Keystore (`Secrets`, AES-GCM). When it cannot be opened any more, as after the app's files were moved to another device, the catalog says so and has to be added again.
-- Plain HTTP is allowed for the whole app, because a catalog is often a server at home reached by a local address. Over plain HTTP the password travels unprotected; the app does not warn about it yet.
+- Plain HTTP is allowed for the whole app, because a catalog is often a server at home reached by a local address. Over plain HTTP the password travels unprotected: before a catalog whose address starts with `http://` is added with a user name or password, the app says so and asks to confirm. A catalog open to everyone is added without the question.
 
 ### Search
 
@@ -42,7 +42,7 @@ Where the file is kept is the reader's choice, asked for at the first download a
 - `:opds` `OpdsParserTest` — pages recorded on 2026-10-13 from bookOrbit 3.3.0 and from Project Gutenberg (`opds/src/androidTest/assets/feeds`), plus hand-written pages for paid links, broken links and things that are not catalogs.
 - `:opds` `OpdsClientTest` — against servers the test runs itself: credentials, refusals, redirects within and across servers, search by template and by description, download names, oversized pictures.
 - `:data` `CatalogsTest` — sealed passwords, adding twice, removal, a downloaded file joining the library.
-- `:app` `OpdsScreenTest` — the screen against a small catalog served by the test: adding with each kind of failure, browsing, the next part of a page, search, a broken section, and downloads: the question at the first one, into the app, into a folder, a book that is in a folder already, a folder that cannot be written to. The folder is a plain directory there.
+- `:app` `OpdsScreenTest` — the screen against a small catalog served by the test: adding with each kind of failure, the question before a password goes over plain HTTP, browsing, the next part of a page, search, a broken section, and downloads: the question at the first one, into the app, into a folder, a book that is in a folder already, a folder that cannot be written to. The folder is a plain directory there.
 - `:contract` `OpdsContractTest` — the client against the catalog of a real bookOrbit 3.3.0 in docker: browsing, pages, search, download checked by the engine, refused passwords. The server has OPDS off by default and separate OPDS users; the test switches it on (`PATCH app-settings/opds_enabled`) and makes a user (`POST opds-users`).
 
 Checked by hand on the emulator against the same server: adding the catalog, browsing, downloading an EPUB, reading it, finding it in the library; and downloading an FB2 into a folder picked through the system's dialog, where it appeared as a file and in the library.
@@ -54,5 +54,4 @@ Checked by hand on the emulator against the same server: adding the catalog, bro
 - A message when the downloads folder could not be written to and the book went into the app instead.
 - Facets, and files a catalog offers only after a purchase or a loan.
 - Editing a catalog; it is removed and added again.
-- A warning when a password is sent over plain HTTP.
 - Catalogs suggested out of the box.
