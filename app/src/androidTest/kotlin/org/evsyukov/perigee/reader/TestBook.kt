@@ -1,5 +1,6 @@
 package org.evsyukov.perigee.reader
 
+import android.util.Base64
 import java.io.File
 
 /** A generated book of three chapters, so the tests carry no third-party texts. */
@@ -7,7 +8,23 @@ internal object TestBook {
     /** Occurs once, in the second chapter. */
     const val RARE_WORD = "needlework"
 
-    fun write(file: File, title: String): File {
+    /**
+     * @param author first and last name
+     * @param cover a PNG file
+     */
+    fun write(
+        file: File,
+        title: String,
+        author: String = "Test Author",
+        series: String? = null,
+        seriesNumber: Int = 0,
+        cover: ByteArray? = null,
+    ): File {
+        val sequence = series?.let { """<sequence name="$it" number="$seriesNumber"/>""" }.orEmpty()
+        val coverPage = if (cover != null) """<coverpage><image l:href="#cover.png"/></coverpage>""" else ""
+        val binary = cover?.let {
+            """<binary id="cover.png" content-type="image/png">${Base64.encodeToString(it, Base64.NO_WRAP)}</binary>"""
+        }.orEmpty()
         val sections = (1..3).joinToString("\n") { chapter ->
             val lead = if (chapter == 2) "<p>The $RARE_WORD of this chapter is found nowhere else.</p>" else ""
             val body = (1..60).joinToString("\n") { n ->
@@ -19,14 +36,15 @@ internal object TestBook {
         }
         file.writeText(
             """<?xml version="1.0" encoding="UTF-8"?>
-<FictionBook xmlns="http://www.gribuser.ru/xml/fictionbook/2.0">
+<FictionBook xmlns="http://www.gribuser.ru/xml/fictionbook/2.0" xmlns:l="http://www.w3.org/1999/xlink">
 <description><title-info>
-  <author><first-name>Test</first-name><last-name>Author</last-name></author>
-  <book-title>$title</book-title><lang>en</lang>
+  <author><first-name>${author.substringBefore(' ')}</first-name><last-name>${author.substringAfter(' ')}</last-name></author>
+  <book-title>$title</book-title>$coverPage<lang>en</lang>$sequence
 </title-info></description>
 <body>
 $sections
 </body>
+$binary
 </FictionBook>""",
         )
         return file

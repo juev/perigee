@@ -44,8 +44,16 @@ internal object NativeEngine {
     /** Position in the book in 1/10000 units. */
     external fun positionPermyriad(handle: Long): Int
 
-    /** Title, authors, language, series; "" for what the book does not say. */
+    /** Title, authors one to a line, language, series; "" for what the book does not say. */
     external fun metadata(handle: Long): Array<String>
+
+    /**
+     * Reads what a book file says about itself without laying it out. Two
+     * items: title, authors one to a line, language, series and its number as
+     * strings, then the cover image file as bytes or null. Null when the
+     * engine cannot read the file.
+     */
+    external fun describe(fd: Int, name: String): Array<Any?>?
 
     /** -1 when the xpointer does not resolve. */
     external fun pageOf(handle: Long, xpointer: String): Int

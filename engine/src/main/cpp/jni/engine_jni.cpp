@@ -4,7 +4,10 @@
 
 #include <jni.h>
 #include <android/bitmap.h>
+#include <sys/mman.h>
+#include <sys/stat.h>
 
+#include <climits>
 #include <string>
 #include <vector>
 
@@ -45,6 +48,9 @@ jstring toJava(JNIEnv* env, const lString32& s) {
     }
     return env->NewString(reinterpret_cast<const jchar*>(utf16.data()), static_cast<jsize>(utf16.size()));
 }
+
+/// A cover larger than this is not worth a thumbnail.
+const lvsize_t MAX_COVER_BYTES = 16 * 1024 * 1024;
 
 LVDocView* viewOf(jlong handle) {
     return reinterpret_cast<LVDocView*>(handle);
@@ -111,6 +117,13 @@ lString32 contextAfter(const ldomXPointerEx& hitEnd, int words) {
         to = next;
     }
     return ldomXRange(hitEnd, to).getRangeText();
+}
+
+/// Authors one to a line. FB2 names come in parts and the engine joins the
+/// people with a comma by default, which a name may contain itself.
+lString32 authorsOf(LVDocView* view) {
+    if (view->getDocFormat() == doc_format_fb2) return extractDocAuthors(view->getDocument(), cs32("\n"), false);
+    return view->getAuthors();
 }
 
 }  // namespace
@@ -294,7 +307,54 @@ Java_org_evsyukov_perigee_engine_NativeEngine_positionPermyriad(JNIEnv*, jobject
 JNIEXPORT jobjectArray JNICALL
 Java_org_evsyukov_perigee_engine_NativeEngine_metadata(JNIEnv* env, jobject, jlong handle) {
     LVDocView* view = viewOf(handle);
-    return toJava(env, {view->getTitle(), view->getAuthors(), view->getLanguage(), view->getSeries()});
+    return toJava(env, {view->getTitle(), authorsOf(view), view->getLanguage(), view->getSeries()});
+}
+
+JNIEXPORT jobjectArray JNICALL
+Java_org_evsyukov_perigee_engine_NativeEngine_describe(JNIEnv* env, jobject, jint fd, jstring name) {
+    struct stat st {};
+    if (fstat(fd, &st) != 0 || st.st_size <= 0 || st.st_size > INT_MAX) return nullptr;
+    const auto size = static_cast<size_t>(st.st_size);
+    // The file is read where it lies: a document picked through the system has
+    // a descriptor but no path the engine could open.
+    void* bytes = mmap(nullptr, size, PROT_READ, MAP_PRIVATE, fd, 0);
+    if (bytes == MAP_FAILED) return nullptr;
+    jobjectArray out = nullptr;
+    {
+        // The view and all its streams go before the mapping does.
+        LVDocView view(-1, true);
+        CRPropRef props = LVCreatePropsContainer();
+        props->setInt(PROP_MIN_FILE_SIZE_TO_CACHE, INT_MAX);
+        view.propsApply(props);
+        const lString32 fileName = toCre(env, name);
+        view.getDocProps()->setString(DOC_PROP_FILE_NAME, fileName);
+        view.getDocProps()->setString(DOC_PROP_FILE_SIZE, lString32::itoa(static_cast<int>(size)));
+        LVStreamRef stream = LVCreateMemoryStream(bytes, static_cast<int>(size), false, LVOM_READ);
+        stream->SetName(fileName.c_str());
+        if (view.LoadDocument(stream, true) && view.getDocument()) {
+            out = env->NewObjectArray(2, env->FindClass("java/lang/Object"), nullptr);
+            CRPropRef doc = view.getDocProps();
+            jobjectArray texts = toJava(env, {view.getTitle(), authorsOf(&view), view.getLanguage(),
+                                              doc->getStringDef(DOC_PROP_SERIES_NAME, ""),
+                                              doc->getStringDef(DOC_PROP_SERIES_NUMBER, "")});
+            env->SetObjectArrayElement(out, 0, texts);
+            LVStreamRef cover = view.getCoverPageImageStream();
+            const lvsize_t coverSize = cover.isNull() ? 0 : cover->GetSize();
+            if (coverSize > 0 && coverSize <= MAX_COVER_BYTES) {
+                std::vector<lUInt8> image(coverSize);
+                lvsize_t read = 0;
+                cover->SetPos(0);
+                if (cover->Read(image.data(), coverSize, &read) == LVERR_OK && read == coverSize) {
+                    jbyteArray data = env->NewByteArray(static_cast<jsize>(coverSize));
+                    env->SetByteArrayRegion(
+                            data, 0, static_cast<jsize>(coverSize), reinterpret_cast<const jbyte*>(image.data()));
+                    env->SetObjectArrayElement(out, 1, data);
+                }
+            }
+        }
+    }
+    munmap(bytes, size);
+    return out;
 }
 
 JNIEXPORT jint JNICALL

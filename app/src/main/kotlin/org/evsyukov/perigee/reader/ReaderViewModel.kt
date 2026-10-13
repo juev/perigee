@@ -352,7 +352,7 @@ class ReaderViewModel(application: Application) : AndroidViewModel(application) 
             reader = open
             applied = target
             val info = open.read { it.info() }
-            val book = library.open(file, info.title.ifBlank { file.nameWithoutExtension }, info.authors)
+            val book = library.open(file, info.title, info.authors)
             book.xpointer?.let { open.goTo(it) }
             val toc = open.read { it.toc() }
             _state.update { it.copy(book = book, toc = toc, failed = false) }

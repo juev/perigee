@@ -1,6 +1,7 @@
 package org.evsyukov.perigee.engine
 
 import android.content.Context
+import android.os.ParcelFileDescriptor
 import java.io.File
 import java.util.concurrent.Executors
 import kotlinx.coroutines.CoroutineDispatcher
@@ -15,13 +16,18 @@ object Engine {
     private const val ASSET_ROOT = "crengine"
     private const val CACHE_BYTES = 64L * 1024 * 1024
 
+    // The engine walks a book's markup by recursion. A badly made book nests
+    // elements hundreds deep, which overflows the megabyte a thread gets by
+    // default; this is what a main thread has, where the engine usually runs.
+    private const val STACK_BYTES = 8L * 1024 * 1024
+
     /**
      * crengine is not thread-safe and keeps process-wide state (its string
      * allocator, the font manager), so every call into it, for every open book,
      * runs on this one thread. That also keeps layout off the main thread.
      */
     internal val thread: CoroutineDispatcher =
-        Executors.newSingleThreadExecutor { Thread(it, "crengine") }.asCoroutineDispatcher()
+        Executors.newSingleThreadExecutor { Thread(null, it, "crengine", STACK_BYTES) }.asCoroutineDispatcher()
 
     private var dataDir: File? = null
     private val readingFaces = sortedSetOf<String>()
@@ -41,6 +47,28 @@ object Engine {
         addReadingFonts(files)
         readingFaces.toList()
     }
+
+    /**
+     * Reads title, authors, series and cover from a book file, for a list of
+     * books. The file is read through its descriptor, so it may be a document
+     * that has no path. [name] is the file name: some formats are told by it.
+     * Null when the engine cannot read the file.
+     */
+    suspend fun describe(context: Context, file: ParcelFileDescriptor, name: String): BookDescription? =
+        withContext(thread) {
+            init(context)
+            val (texts, cover) = NativeEngine.describe(file.fd, name) ?: return@withContext null
+            val (title, authors, language, series, seriesNumber) = (texts as Array<*>).map { it as String }
+            BookDescription(
+                title, authorNames(authors), language, series, seriesNumber, cover as ByteArray?,
+            )
+        }
+
+    /** The engine names authors one to a line and may leave a gap where a name has no middle part. */
+    internal fun authorNames(lines: String): List<String> =
+        lines.split('\n').map { it.trim().replace(SPACES, " ") }.filter { it.isNotEmpty() }
+
+    private val SPACES = Regex("\\s+")
 
     internal fun facesOnEngineThread(context: Context): List<String> {
         init(context)
@@ -71,7 +99,7 @@ object Engine {
 
     internal fun stylesheetFor(file: File): File {
         val dir = checkNotNull(dataDir) { "Engine.init was not called" }
-        val name = when (file.extension.lowercase()) {
+        val name = when (file.name.lowercase().removeSuffix(".zip").substringAfterLast('.')) {
             "fb2", "fb3", "txt" -> "fb2.css"
             else -> "epub.css"
         }

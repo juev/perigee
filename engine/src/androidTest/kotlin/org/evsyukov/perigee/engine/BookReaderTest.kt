@@ -42,6 +42,29 @@ class BookReaderTest {
     }
 
     @Test
+    fun badlyMadeBookWithParagraphsNeverClosedOpens() = runBlocking(Dispatchers.Default) {
+        // Each paragraph ends up inside the one before it: hundreds of levels,
+        // which the engine walks by recursion. This took the app down.
+        val body = (1..360).joinToString("\n") { "<p>Paragraph $it was opened and never closed, like the rest of them." }
+        val file = File(dir, "nested.fb2").apply {
+            writeText(
+                """<?xml version="1.0" encoding="UTF-8"?>
+<FictionBook xmlns="http://www.gribuser.ru/xml/fictionbook/2.0">
+<description><title-info><book-title>Nested</book-title><lang>en</lang></title-info></description>
+<body><section><title><p>One</p></title>$body</section></body>
+</FictionBook>""",
+            )
+        }
+        val reader = BookReader.open(context, file, WIDTH, HEIGHT, densityDpi = DENSITY)
+        try {
+            assertTrue(reader.current().pageCount > 1)
+            assertEquals(1, reader.turn(1).index)
+        } finally {
+            reader.close()
+        }
+    }
+
+    @Test
     fun turningMovesOneScreenAndStopsAtTheEndsOfTheBook() = reading { reader ->
         val first = reader.current()
         assertEquals(0, first.index)

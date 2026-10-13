@@ -72,4 +72,47 @@
     <string name="search_nothing">Nothing found.</string>
     <string name="search_found">Found: %1$d</string>
     <string name="search_page">p. %1$d</string>
+
+    <string name="library_title">Library</string>
+    <string name="shelf_reading">Reading</string>
+    <string name="shelf_all">All books</string>
+    <string name="shelf_favorites">Favourites</string>
+    <string name="shelf_to_read">To read</string>
+    <string name="shelf_read">Have read</string>
+    <string name="shelf_authors">Authors</string>
+    <string name="shelf_series">Series</string>
+    <string name="shelf_collections">Collections</string>
+    <string name="shelf_empty">No books here.</string>
+    <string name="library_empty">There are no books yet. Add a folder you keep books in, and they will be listed here.</string>
+    <string name="scanning">Looking for books…</string>
+    <string name="search_library_hint">Title, author or series</string>
+    <string name="unknown_author">Author not named</string>
+    <string name="series_line">%1$s, book %2$s</string>
+    <plurals name="books_count">
+        <item quantity="one">%d book</item>
+        <item quantity="other">%d books</item>
+    </plurals>
+    <string name="book_unavailable">The file of this book cannot be read.</string>
+    <string name="book_actions">Actions for %1$s</string>
+    <string name="favorite_add">Add %1$s to favourites</string>
+    <string name="favorite_remove">Remove %1$s from favourites</string>
+    <string name="action_clear">Clear</string>
+    <string name="action_more">More</string>
+    <string name="action_sort">Sort</string>
+    <string name="sort_recent">Last read first</string>
+    <string name="sort_title">By title</string>
+    <string name="sort_author">By author</string>
+    <string name="sort_added">Last added first</string>
+    <string name="action_folders">Folders with books</string>
+    <string name="action_add_folder">Add a folder</string>
+    <string name="action_remove_folder">Remove the folder %1$s</string>
+    <string name="action_rescan">Look for new books</string>
+    <string name="folders_empty">No folders yet. Books are looked for in the folders you add, and in the folders inside them.</string>
+    <string name="action_collections">Collections…</string>
+    <string name="collection_new">New collection</string>
+    <string name="collection_name">Name</string>
+    <string name="collection_actions">Actions for the collection %1$s</string>
+    <string name="action_rename">Rename</string>
+    <string name="action_create">Create</string>
+    <string name="action_done">Done</string>
 </resources>

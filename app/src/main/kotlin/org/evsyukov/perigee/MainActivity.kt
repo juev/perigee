@@ -10,12 +10,9 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.isSystemInDarkTheme
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.LaunchedEffect
@@ -24,14 +21,13 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.res.stringResource
 import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.evsyukov.perigee.data.Library
+import org.evsyukov.perigee.library.LibraryScreen
 import org.evsyukov.perigee.reader.ReaderScreen
 import org.evsyukov.perigee.reader.VolumeKeyHost
 
@@ -46,7 +42,7 @@ class MainActivity : ComponentActivity(), VolumeKeyHost {
                 Surface(Modifier.fillMaxSize()) {
                     val scope = rememberCoroutineScope()
                     var bookPath by rememberSaveable { mutableStateOf<String?>(null) }
-                    // Until the last book is looked up there is nothing to show, not even the button.
+                    // Until the last book is looked up there is nothing to show, not even the library.
                     var ready by rememberSaveable { mutableStateOf(false) }
                     LaunchedEffect(Unit) {
                         if (!ready) {
@@ -61,11 +57,10 @@ class MainActivity : ComponentActivity(), VolumeKeyHost {
                     val path = bookPath
                     when {
                         !ready -> Unit
-                        path == null -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                            Button(onClick = { picker.launch(arrayOf("*/*")) }) {
-                                Text(stringResource(R.string.open_book))
-                            }
-                        }
+                        path == null -> LibraryScreen(
+                            onOpen = { bookPath = it.path },
+                            onOpenFile = { picker.launch(arrayOf("*/*")) },
+                        )
                         else -> ReaderScreen(File(path), onClose = { bookPath = null })
                     }
                 }

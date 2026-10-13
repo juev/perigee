@@ -91,7 +91,7 @@ internal fun ReaderMenu(
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                         )
-                        val author = state.book?.author.orEmpty()
+                        val author = state.book?.authorLine.orEmpty()
                         if (author.isNotEmpty()) {
                             Text(author, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         }

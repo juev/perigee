@@ -20,8 +20,22 @@ data class SearchHit(val range: TextRange, val before: String, val after: String
 /** A link under a touch. [target] is null when the link leads out of the book. */
 data class Link(val href: String, val source: String, val target: String?)
 
-/** What the book says about itself; empty strings for what it leaves out. */
+/** What the book says about itself; empty strings for what it leaves out. [authors] are one to a line. */
 data class BookInfo(val title: String, val authors: String, val language: String, val series: String)
+
+/**
+ * What a book file says about itself, read without opening it for reading.
+ * [seriesNumber] is text: books number themselves "2" as well as "2.5".
+ * [cover] is an image file as the book carries it.
+ */
+class BookDescription(
+    val title: String,
+    val authors: List<String>,
+    val language: String,
+    val series: String,
+    val seriesNumber: String,
+    val cover: ByteArray?,
+)
 
 /** A range to tint on the page; [color] is 0xRRGGBB. */
 data class Highlight(val start: String, val end: String, val color: Int)
@@ -77,7 +91,7 @@ class EngineDocument private constructor(
     val progress: Float get() = NativeEngine.positionPermyriad(checked()) / 10000f
 
     fun info(): BookInfo = NativeEngine.metadata(checked()).let { (title, authors, language, series) ->
-        BookInfo(title, authors, language, series)
+        BookInfo(title, Engine.authorNames(authors).joinToString("\n"), language, series)
     }
 
     /** Table of contents in reading order; empty when the book has none. */
