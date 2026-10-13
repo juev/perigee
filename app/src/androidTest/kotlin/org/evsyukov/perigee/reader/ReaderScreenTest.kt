@@ -233,6 +233,22 @@ class ReaderScreenTest {
     }
 
     @Test
+    fun touchThatMissesAButtonOfTheMenuStaysOnTheMenu() {
+        show()
+        waitForBook()
+        openMenu()
+        // On the title, between the buttons: not a button, and not the page either.
+        rule.onNodeWithTag("top-bar").performTouchInput { click(Offset(width * 0.4f, height * 0.5f)) }
+        rule.onNodeWithTag("position").performTouchInput { click() }
+        rule.waitForIdle()
+        rule.onNodeWithTag("position").assertIsDisplayed()
+        assertEquals(0, shownPage())
+
+        rule.onNodeWithContentDescription(string(R.string.action_contents)).performClick()
+        rule.onNodeWithText("Chapter 3").assertIsDisplayed()
+    }
+
+    @Test
     fun otherTurnSchemesFollowTheirOwnZones() {
         runBlocking { preferences.update { it.copy(tapScheme = TapScheme.TopBottom) } }
         show()

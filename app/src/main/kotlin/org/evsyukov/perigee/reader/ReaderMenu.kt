@@ -7,6 +7,7 @@ import android.content.Intent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -51,6 +52,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
@@ -76,7 +78,7 @@ internal fun ReaderMenu(
     onSeek: (Float) -> Unit,
 ) {
     Box(Modifier.fillMaxSize()) {
-        Surface(Modifier.align(Alignment.TopCenter).fillMaxWidth(), tonalElevation = 3.dp, shadowElevation = 4.dp) {
+        Surface(Modifier.align(Alignment.TopCenter).fillMaxWidth().swallowTouches().testTag("top-bar"), tonalElevation = 3.dp, shadowElevation = 4.dp) {
             Column(Modifier.windowInsetsPadding(WindowInsets.safeDrawing).padding(horizontal = 4.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     IconButton(onClick = onClose) {
@@ -114,7 +116,7 @@ internal fun ReaderMenu(
 
         // The menu stays composed while it fades out, even if the book is gone by then.
         val page = state.page
-        if (page != null) Surface(Modifier.align(Alignment.BottomCenter).fillMaxWidth(), tonalElevation = 3.dp, shadowElevation = 4.dp) {
+        if (page != null) Surface(Modifier.align(Alignment.BottomCenter).fillMaxWidth().swallowTouches(), tonalElevation = 3.dp, shadowElevation = 4.dp) {
             Column(Modifier.windowInsetsPadding(WindowInsets.navigationBars).padding(horizontal = 12.dp, vertical = 4.dp)) {
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     IconButton(onClick = onGoBack, enabled = state.canGoBack) {
@@ -148,6 +150,12 @@ internal fun ReaderMenu(
     }
 }
 
+/**
+ * A touch that misses a button of a bar ends on the bar. Without this it would
+ * fall through to the page underneath and close the menu or turn the page.
+ */
+private fun Modifier.swallowTouches(): Modifier = pointerInput(Unit) { detectTapGestures { } }
+
 /** Actions for the text being selected, or for the quote that was touched. */
 @Composable
 internal fun SelectionBars(state: ReaderState, viewModel: ReaderViewModel, modifier: Modifier) {
@@ -161,7 +169,7 @@ internal fun SelectionBars(state: ReaderState, viewModel: ReaderViewModel, modif
     val translateLabel = stringResource(R.string.action_translate)
     if (text != null) {
         Surface(
-            modifier.windowInsetsPadding(WindowInsets.navigationBars).padding(12.dp).testTag("selection-bar"),
+            modifier.windowInsetsPadding(WindowInsets.navigationBars).padding(12.dp).swallowTouches().testTag("selection-bar"),
             shape = MaterialTheme.shapes.large,
             tonalElevation = 6.dp,
             shadowElevation = 6.dp,
