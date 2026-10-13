@@ -39,6 +39,7 @@ class MigrationTest {
         }
         helper.runMigrationsAndValidate(NAME, 2, true).close()
         helper.runMigrationsAndValidate(NAME, 3, true).close()
+        helper.runMigrationsAndValidate(NAME, 4, true).close()
 
         val database = Room.databaseBuilder(instrumentation.targetContext, ReadingDatabase::class.java, NAME).build()
         try {
@@ -52,6 +53,8 @@ class MigrationTest {
             assertNull(book.uri)
             assertFalse(book.favorite)
             assertEquals(ReadingStatus.None, book.status)
+            assertNull(book.serverFileId)
+            assertEquals(listOf("abc"), library.unmatched(all = false))
             assertEquals("words", library.bookmarks("abc").first().single().text)
             assertEquals("note", library.quotes("abc").first().single().note)
         } finally {

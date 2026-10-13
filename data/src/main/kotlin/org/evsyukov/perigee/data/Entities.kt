@@ -42,6 +42,11 @@ data class Book(
     @ColumnInfo(defaultValue = "0") val addedAt: Long = 0,
     @ColumnInfo(defaultValue = "0") val favorite: Boolean = false,
     @ColumnInfo(defaultValue = "None") val status: ReadingStatus = ReadingStatus.None,
+    /** The book and its file on the server the reader signed in to; null when the server has no such file. */
+    @ColumnInfo(defaultValue = "NULL") val serverBookId: Long? = null,
+    @ColumnInfo(defaultValue = "NULL") val serverFileId: Long? = null,
+    /** When the server was last asked about this file; zero for never. */
+    @ColumnInfo(defaultValue = "0") val serverCheckedAt: Long = 0,
 ) {
     val authors: List<String> get() = author.split('\n').filter { it.isNotBlank() }
 
@@ -158,3 +163,35 @@ data class Catalog(
     val secret: String,
     val addedAt: Long,
 )
+
+/** The server the reader signed in to. There is one at most. */
+@Entity(tableName = "accounts")
+data class Account(
+    @PrimaryKey val id: Long = SINGLE,
+    /** The address the server is reached at, without the path of its API. */
+    val url: String,
+    val user: String,
+    /** What the server calls the reader. */
+    val name: String,
+    /** The tokens of the session, sealed; see [Secrets]. */
+    val accessSecret: String,
+    val accessExpiresAt: Long,
+    val refreshSecret: String,
+    val refreshExpiresAt: Long,
+    /** What this installation calls itself to the server; made up when the reader signs in. */
+    val deviceId: String,
+    /** The user name of the channel reading devices sync through; empty until it is set up. */
+    val deviceUser: String,
+    /** The key of that channel, sealed. */
+    val deviceSecret: String,
+    /** The version the server named when it was last asked. */
+    val serverVersion: String,
+    val addedAt: Long,
+) {
+    companion object {
+        const val SINGLE = 1L
+    }
+}
+
+/** A session with the server: a short-lived token to ask with, and a longer-lived one to get the next pair. */
+data class Tokens(val access: String, val accessExpiresAt: Long, val refresh: String, val refreshExpiresAt: Long)

@@ -105,6 +105,40 @@ internal interface ReadingDao {
     @Query("DELETE FROM catalogs WHERE id = :id")
     suspend fun deleteCatalog(id: Long)
 
+    @Query("SELECT * FROM accounts WHERE id = ${Account.SINGLE}")
+    fun accountFlow(): Flow<Account?>
+
+    @Query("SELECT * FROM accounts WHERE id = ${Account.SINGLE}")
+    suspend fun account(): Account?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insert(account: Account)
+
+    @Query(
+        "UPDATE accounts SET accessSecret = :access, accessExpiresAt = :accessExpiresAt, " +
+            "refreshSecret = :refresh, refreshExpiresAt = :refreshExpiresAt WHERE id = ${Account.SINGLE}",
+    )
+    suspend fun updateTokens(access: String, accessExpiresAt: Long, refresh: String, refreshExpiresAt: Long)
+
+    @Query("UPDATE accounts SET deviceUser = :user, deviceSecret = :secret WHERE id = ${Account.SINGLE}")
+    suspend fun updateDevice(user: String, secret: String)
+
+    @Query("UPDATE accounts SET serverVersion = :version WHERE id = ${Account.SINGLE}")
+    suspend fun updateServerVersion(version: String)
+
+    @Query("DELETE FROM accounts")
+    suspend fun deleteAccount()
+
+    @Query("UPDATE books SET serverBookId = NULL, serverFileId = NULL, serverCheckedAt = 0")
+    suspend fun forgetServer()
+
+    @Query("UPDATE books SET serverBookId = :serverBookId, serverFileId = :serverFileId, serverCheckedAt = :at WHERE id = :id")
+    suspend fun setServerFile(id: String, serverBookId: Long?, serverFileId: Long?, at: Long)
+
+    /** Books the server was never asked about, or not since [before]. */
+    @Query("SELECT id FROM books WHERE serverFileId IS NULL AND serverCheckedAt < :before AND (uri IS NOT NULL OR path != '')")
+    suspend fun notOnServer(before: Long): List<String>
+
     @Query("SELECT * FROM collections ORDER BY name COLLATE NOCASE")
     fun collections(): Flow<List<BookCollection>>
 
@@ -157,10 +191,10 @@ internal interface ReadingDao {
 @Database(
     entities = [
         Book::class, Bookmark::class, Quote::class, Folder::class, BookCollection::class, CollectionBook::class,
-        Catalog::class,
+        Catalog::class, Account::class,
     ],
-    version = 3,
-    autoMigrations = [AutoMigration(from = 1, to = 2), AutoMigration(from = 2, to = 3)],
+    version = 4,
+    autoMigrations = [AutoMigration(from = 1, to = 2), AutoMigration(from = 2, to = 3), AutoMigration(from = 3, to = 4)],
 )
 internal abstract class ReadingDatabase : RoomDatabase() {
     abstract fun dao(): ReadingDao

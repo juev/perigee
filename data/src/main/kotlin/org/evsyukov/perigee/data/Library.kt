@@ -11,7 +11,7 @@ import kotlinx.coroutines.withContext
  * The reader's books and what they left in them: position, bookmarks, quotes.
  * Books come from folders the reader picked, or are opened one by one.
  */
-class Library internal constructor(private val database: ReadingDatabase, private val now: () -> Long) {
+class Library internal constructor(internal val database: ReadingDatabase, private val now: () -> Long) {
     private val dao = database.dao()
 
     /**
@@ -58,6 +58,21 @@ class Library internal constructor(private val database: ReadingDatabase, privat
         )
         checkNotNull(dao.book(book.id))
     }
+
+    /** The server has this file, as [serverFileId] of its book [serverBookId]. */
+    suspend fun onServer(bookId: String, serverBookId: Long, serverFileId: Long) =
+        dao.setServerFile(bookId, serverBookId, serverFileId, now())
+
+    /** The server was asked about these files and has none of them. */
+    suspend fun notOnServer(bookIds: Collection<String>) = database.withTransaction {
+        for (id in bookIds) dao.setServerFile(id, null, null, now())
+    }
+
+    /**
+     * Books of the library the server is not known to have. With [all] every
+     * such book, to ask about them again; without, only those never asked about.
+     */
+    suspend fun unmatched(all: Boolean): List<String> = dao.notOnServer(if (all) Long.MAX_VALUE else 1)
 
     fun folders(): Flow<List<Folder>> = dao.folders()
 

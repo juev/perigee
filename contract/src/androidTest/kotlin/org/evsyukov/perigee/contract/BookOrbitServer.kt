@@ -54,6 +54,9 @@ internal class BookOrbitServer(private val baseUrl: String) {
     fun koreader(method: String, path: String, body: JSONObject? = null) =
         request(method, path, body, mapOf("x-auth-user" to KO_USERNAME, "x-auth-key" to md5(KO_PASSWORD.toByteArray())))
 
+    /** A request with the headers given and no others. */
+    fun plain(method: String, path: String, headers: Map<String, String>, body: JSONObject? = null) = request(method, path, body, headers)
+
     data class Book(val bookId: Int, val fileId: Int)
 
     fun bookByTitle(title: String): Book {

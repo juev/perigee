@@ -29,6 +29,7 @@ kotlin {
 dependencies {
     androidTestImplementation(project(":engine"))
     androidTestImplementation(project(":opds"))
+    androidTestImplementation(project(":sync"))
     androidTestImplementation("androidx.test.ext:junit:1.2.1")
     androidTestImplementation("androidx.test:runner:1.6.2")
 }
