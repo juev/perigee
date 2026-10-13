@@ -8,6 +8,7 @@ import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.isPopup
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
@@ -380,6 +381,33 @@ class LibraryScreenTest {
         rule.onNodeWithContentDescription(string(R.string.action_more)).performClick()
         rule.onNodeWithText(string(R.string.action_server)).performClick()
         assertTrue(wentToServer)
+    }
+
+    @Test
+    fun booksAreShownAsAGridOfCoversOrAListAndTheChoiceIsKept() {
+        shelve(found("Gridded", author = "Grid Author"), found("Other"))
+        show()
+        waitForText("Gridded")
+        rule.onNodeWithTag("books").assertExists()
+
+        rule.onNodeWithContentDescription(string(R.string.action_view_grid)).performClick()
+        rule.waitUntil(TIMEOUT) { rule.onAllNodesWithTag("books-grid").fetchSemanticsNodes().isNotEmpty() }
+        rule.onNodeWithText("Grid Author").assertExists()
+        assertTrue(rule.onAllNodesWithTag("books").fetchSemanticsNodes().isEmpty())
+        rule.waitUntil(TIMEOUT) { runBlocking { LibraryPreferences.get(activity).prefs.first() }.grid }
+
+        // A book of the grid has no heart beside it: the mark is in its menu, with the rest.
+        rule.onNodeWithContentDescription(string(R.string.book_actions, "Gridded")).performClick()
+        inMenu(R.string.shelf_favorites).performClick()
+        rule.waitUntil(TIMEOUT) { runBlocking { library.book("Gridded") }?.favorite == true }
+        rule.onNodeWithContentDescription(string(R.string.book_actions, "Gridded")).performClick()
+        inMenu(R.string.shelf_read).performClick()
+        rule.waitUntil(TIMEOUT) { runBlocking { library.book("Gridded") }?.status == ReadingStatus.Read }
+
+        rule.onNodeWithContentDescription(string(R.string.action_view_list)).performClick()
+        rule.waitUntil(TIMEOUT) { rule.onAllNodesWithTag("books").fetchSemanticsNodes().isNotEmpty() }
+        rule.onNodeWithContentDescription(string(R.string.favorite_remove, "Gridded")).assertExists()
+        rule.waitUntil(TIMEOUT) { !runBlocking { LibraryPreferences.get(activity).prefs.first() }.grid }
     }
 
     @Test

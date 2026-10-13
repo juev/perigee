@@ -212,4 +212,6 @@
     <string name="action_licenses">Лицензии</string>
     <string name="licenses_title">Лицензии</string>
     <string name="licenses_gpl">GNU General Public License, версия 3</string>
+    <string name="action_view_grid">Показать сеткой обложек</string>
+    <string name="action_view_list">Показать списком</string>
 </resources>

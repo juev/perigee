@@ -98,6 +98,8 @@ data class LibraryState(
     val loaded: Boolean = false,
     val shelf: Shelf = Shelf.All,
     val sort: BookSort = BookSort.Recent,
+    /** Books are shown as a grid of covers, not as a list. */
+    val grid: Boolean = false,
     val query: String = "",
     /** The author, series or collection that was picked on a grouped shelf. */
     val group: Group? = null,
@@ -182,7 +184,7 @@ class LibraryViewModel(
             }
         }
         LibraryState(
-            loaded = true, shelf = prefs.shelf, sort = prefs.sort, query = looking.query, group = group,
+            loaded = true, shelf = prefs.shelf, sort = prefs.sort, grid = prefs.grid, query = looking.query, group = group,
             listing = withContext(Dispatchers.Default) {
                 listing(stored.books, prefs.shelf, prefs.sort, looking.query, group?.key, stored.collections, stored.members)
             },
@@ -330,6 +332,10 @@ class LibraryViewModel(
     fun setShelf(shelf: Shelf) {
         looking.update { it.copy(group = null) }
         viewModelScope.launch { preferences.update { it.copy(shelf = shelf) } }
+    }
+
+    fun setGrid(grid: Boolean) {
+        viewModelScope.launch { preferences.update { it.copy(grid = grid) } }
     }
 
     fun setSort(sort: BookSort) {

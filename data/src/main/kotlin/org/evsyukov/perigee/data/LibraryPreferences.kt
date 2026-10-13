@@ -27,6 +27,8 @@ enum class BookSort {
 data class LibraryPrefs(
     val shelf: Shelf = Shelf.All,
     val sort: BookSort = BookSort.Recent,
+    /** Books are shown as a grid of covers, not as a list. */
+    val grid: Boolean = false,
     /** The folder downloaded books are put into, by its tree URI; null keeps them in the app's own storage. */
     val downloadsFolder: String? = null,
     /** The reader was asked where downloads should go, whatever they answered. */
@@ -43,6 +45,7 @@ class LibraryPreferences private constructor(private val store: DataStore<Prefer
             val changed = change(read(stored))
             stored[SHELF] = changed.shelf.name
             stored[SORT] = changed.sort.name
+            stored[GRID] = changed.grid
             if (changed.downloadsFolder == null) stored.remove(DOWNLOADS) else stored[DOWNLOADS] = changed.downloadsFolder
             stored[DOWNLOADS_ASKED] = changed.downloadsAsked
         }
@@ -54,6 +57,7 @@ class LibraryPreferences private constructor(private val store: DataStore<Prefer
         return LibraryPrefs(
             shelf = Shelf.entries.firstOrNull { it.name == p[SHELF] } ?: d.shelf,
             sort = BookSort.entries.firstOrNull { it.name == p[SORT] } ?: d.sort,
+            grid = p[GRID] ?: d.grid,
             downloadsFolder = p[DOWNLOADS],
             downloadsAsked = p[DOWNLOADS_ASKED] ?: d.downloadsAsked,
         )
@@ -62,6 +66,7 @@ class LibraryPreferences private constructor(private val store: DataStore<Prefer
     companion object {
         private val SHELF = stringPreferencesKey("shelf")
         private val SORT = stringPreferencesKey("sort")
+        private val GRID = booleanPreferencesKey("grid")
         private val DOWNLOADS = stringPreferencesKey("downloads_folder")
         private val DOWNLOADS_ASKED = booleanPreferencesKey("downloads_asked")
 

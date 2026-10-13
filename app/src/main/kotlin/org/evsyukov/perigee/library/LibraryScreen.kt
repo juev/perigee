@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -25,6 +26,10 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -82,7 +87,6 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.pluralStringResource
-import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.TextFieldValue
@@ -103,7 +107,8 @@ import org.evsyukov.perigee.data.Covers
 import org.evsyukov.perigee.data.Folder
 import org.evsyukov.perigee.data.ReadingStatus
 import org.evsyukov.perigee.data.Shelf
-
+import org.evsyukov.perigee.ui.GridIcon
+import org.evsyukov.perigee.ui.RowsIcon
 /**
  * The reader's books by shelf. [onOpen] is given the file of the book that
  * was picked; [onOpenFile] asks for a single file from outside the library;
@@ -179,6 +184,11 @@ fun LibraryScreen(
                         actions = {
                             IconButton(onClick = { searching = true }) {
                                 Icon(Icons.Filled.Search, stringResource(R.string.action_search))
+                            }
+                            if (state.grid) {
+                                IconButton(onClick = { model.setGrid(false) }) { Icon(RowsIcon, stringResource(R.string.action_view_list)) }
+                            } else {
+                                IconButton(onClick = { model.setGrid(true) }) { Icon(GridIcon, stringResource(R.string.action_view_grid)) }
                             }
                             SortButton(state.sort, model::setSort)
                             LibraryMenu(
@@ -521,6 +531,26 @@ private fun Books(
     onRating: (Book, Int) -> Unit,
     onCollections: (Book) -> Unit,
 ) {
+    if (state.grid) {
+        val around = PaddingValues(
+            start = 12.dp, end = 12.dp, top = padding.calculateTopPadding() + 4.dp, bottom = padding.calculateBottomPadding() + 12.dp,
+        )
+        LazyVerticalGrid(
+            GridCells.Adaptive(104.dp), Modifier.fillMaxSize().testTag("books-grid"), contentPadding = around,
+            horizontalArrangement = Arrangement.spacedBy(4.dp), verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            if (books.isEmpty()) {
+                item("empty", span = { GridItemSpan(maxLineSpan) }) { Nothing(R.string.shelf_empty) }
+            }
+            items(books, key = { it.id }) { book ->
+                BookCell(
+                    book, covers, state.signedIn, state.sending[book.id], if (state.canSend(book)) onSend else null,
+                    onOpen, onFavorite, onStatus, onRating, onCollections,
+                )
+            }
+        }
+        return
+    }
     LazyColumn(Modifier.fillMaxSize().testTag("books"), contentPadding = padding) {
         if (books.isEmpty()) {
             item("empty") { Nothing(R.string.shelf_empty) }
@@ -612,71 +642,158 @@ private fun BookRow(
                 Icon(Icons.Filled.FavoriteBorder, stringResource(R.string.favorite_add, book.title))
             }
         }
-        var open by remember { mutableStateOf(false) }
-        Box {
-            IconButton(onClick = { open = true }) {
-                Icon(Icons.Filled.MoreVert, stringResource(R.string.book_actions, book.title))
-            }
-            DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
-                val statuses = listOf(
-                    ReadingStatus.ToRead to R.string.shelf_to_read,
-                    ReadingStatus.Reading to R.string.shelf_reading,
-                    ReadingStatus.Read to R.string.shelf_read,
+        BookActions(book, onSend, onStatus, onRating, onCollections, onFavorite = null)
+    }
+}
+
+/**
+ * The button of a book's menu and the menu: status, stars, collections,
+ * sending to the server. [onFavorite] puts the favourite mark into the menu,
+ * for where the book has no heart of its own beside it.
+ */
+@Composable
+private fun BookActions(
+    book: Book,
+    /** Null when the book cannot be sent to the server. */
+    onSend: ((Book) -> Unit)?,
+    onStatus: (Book, ReadingStatus) -> Unit,
+    onRating: (Book, Int) -> Unit,
+    onCollections: (Book) -> Unit,
+    onFavorite: ((Book) -> Unit)?,
+    modifier: Modifier = Modifier,
+) {
+    var open by remember { mutableStateOf(false) }
+    Box(modifier) {
+        IconButton(onClick = { open = true }) {
+            Icon(Icons.Filled.MoreVert, stringResource(R.string.book_actions, book.title))
+        }
+        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            if (onFavorite != null) {
+                DropdownMenuItem(
+                    text = { Text(stringResource(R.string.shelf_favorites)) },
+                    leadingIcon = { Tick(book.favorite) },
+                    onClick = {
+                        open = false
+                        onFavorite(book)
+                    },
                 )
-                for ((status, label) in statuses) {
-                    DropdownMenuItem(
-                        text = { Text(stringResource(label)) },
-                        leadingIcon = { Tick(book.status == status) },
-                        onClick = {
-                            open = false
-                            onStatus(book, status)
-                        },
-                    )
-                }
                 HorizontalDivider()
-                Row(Modifier.padding(horizontal = 4.dp)) {
-                    for (stars in 1..5) {
-                        IconButton(onClick = { onRating(book, stars) }) {
-                            Icon(
-                                Icons.Filled.Star, pluralStringResource(R.plurals.rate_stars, stars, stars),
-                                tint = if (stars <= (book.rating ?: 0)) {
-                                    MaterialTheme.colorScheme.primary
-                                } else {
-                                    MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f)
-                                },
-                            )
-                        }
+            }
+            val statuses = listOf(
+                ReadingStatus.ToRead to R.string.shelf_to_read,
+                ReadingStatus.Reading to R.string.shelf_reading,
+                ReadingStatus.Read to R.string.shelf_read,
+            )
+            for ((status, label) in statuses) {
+                DropdownMenuItem(
+                    text = { Text(stringResource(label)) },
+                    leadingIcon = { Tick(book.status == status) },
+                    onClick = {
+                        open = false
+                        onStatus(book, status)
+                    },
+                )
+            }
+            HorizontalDivider()
+            Row(Modifier.padding(horizontal = 4.dp)) {
+                for (stars in 1..5) {
+                    IconButton(onClick = { onRating(book, stars) }) {
+                        Icon(
+                            Icons.Filled.Star, pluralStringResource(R.plurals.rate_stars, stars, stars),
+                            tint = if (stars <= (book.rating ?: 0)) {
+                                MaterialTheme.colorScheme.primary
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f)
+                            },
+                        )
                     }
                 }
-                HorizontalDivider()
+            }
+            HorizontalDivider()
+            DropdownMenuItem(
+                text = { Text(stringResource(R.string.action_collections)) },
+                leadingIcon = { Tick(false) },
+                onClick = {
+                    open = false
+                    onCollections(book)
+                },
+            )
+            if (onSend != null) {
                 DropdownMenuItem(
-                    text = { Text(stringResource(R.string.action_collections)) },
+                    text = { Text(stringResource(R.string.action_send_to_server)) },
                     leadingIcon = { Tick(false) },
                     onClick = {
                         open = false
-                        onCollections(book)
+                        onSend(book)
                     },
                 )
-                if (onSend != null) {
-                    DropdownMenuItem(
-                        text = { Text(stringResource(R.string.action_send_to_server)) },
-                        leadingIcon = { Tick(false) },
-                        onClick = {
-                            open = false
-                            onSend(book)
-                        },
-                    )
-                }
             }
         }
     }
 }
 
+/** A book in the grid: its cover, how far it is read, its title and author. */
+@Composable
+private fun BookCell(
+    book: Book,
+    covers: Covers,
+    signedIn: Boolean,
+    sending: Sending?,
+    /** Null when the book cannot be sent to the server. */
+    onSend: ((Book) -> Unit)?,
+    onOpen: (Book) -> Unit,
+    onFavorite: (Book) -> Unit,
+    onStatus: (Book, ReadingStatus) -> Unit,
+    onRating: (Book, Int) -> Unit,
+    onCollections: (Book) -> Unit,
+) {
+    Column(Modifier.clip(RoundedCornerShape(8.dp)).clickable { onOpen(book) }.padding(4.dp)) {
+        Box {
+            Cover(book, covers, Modifier.fillMaxWidth().aspectRatio(COVER_RATIO), titled = true)
+            if (book.favorite) {
+                Icon(
+                    Icons.Filled.Favorite, null, tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.align(Alignment.TopStart).padding(4.dp).size(18.dp),
+                )
+            }
+        }
+        if (book.openedAt > 0) {
+            LinearProgressIndicator(
+                progress = { book.progress }, drawStopIndicator = {},
+                modifier = Modifier.fillMaxWidth().padding(top = 4.dp).height(3.dp),
+            )
+        }
+        Row(verticalAlignment = Alignment.Top) {
+            Column(Modifier.weight(1f).padding(top = 6.dp), verticalArrangement = Arrangement.spacedBy(1.dp)) {
+                Text(book.title, style = MaterialTheme.typography.labelLarge, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                val faint = MaterialTheme.colorScheme.onSurfaceVariant
+                if (book.author.isNotEmpty()) {
+                    Text(book.authorLine, style = MaterialTheme.typography.bodySmall, color = faint, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+                val server = serverLine(book, signedIn, sending)
+                if (server != null) {
+                    Text(server, style = MaterialTheme.typography.labelSmall, color = faint, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+                if (sending is Sending.Failed && book.serverFileId == null) {
+                    Text(
+                        stringResource(failureText(sending.why)), style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.error, maxLines = 3, overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
+            BookActions(book, onSend, onStatus, onRating, onCollections, onFavorite, Modifier.size(36.dp))
+        }
+    }
+}
+
+// A cover is drawn as a book stands: two wide to three high.
+private const val COVER_RATIO = 2f / 3f
+
 // Covers scrolled past stay decoded for the way back.
 private val coverCache = LruCache<String, ImageBitmap>(96)
 
 @Composable
-private fun Cover(book: Book, covers: Covers, modifier: Modifier) {
+private fun Cover(book: Book, covers: Covers, modifier: Modifier, titled: Boolean = false) {
     val picture by produceState(coverCache.get(book.id), book.id, book.hasCover) {
         if (value == null && book.hasCover) {
             value = withContext(Dispatchers.IO) {
@@ -689,13 +806,21 @@ private fun Cover(book: Book, covers: Covers, modifier: Modifier) {
     if (shown != null) {
         Image(shown, null, modifier.clip(shape), contentScale = ContentScale.Crop)
     } else {
-        // A book without a cover is told by its first letter, as on a plain binding.
+        // A book without a cover is told by its first letter, as on a plain binding;
+        // where the cover is large enough, by its title.
         Box(modifier.clip(shape).background(PLAIN_COVERS[(book.id.hashCode() and 0x7FFFFFFF) % PLAIN_COVERS.size]), Alignment.Center) {
-            Text(
-                book.title.trim().take(1).uppercase(),
-                style = MaterialTheme.typography.titleLarge,
-                color = Color.White,
-            )
+            if (titled) {
+                Text(
+                    book.title, style = MaterialTheme.typography.labelLarge, color = Color.White, textAlign = TextAlign.Center,
+                    maxLines = 5, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(8.dp),
+                )
+            } else {
+                Text(
+                    book.title.trim().take(1).uppercase(),
+                    style = MaterialTheme.typography.titleLarge,
+                    color = Color.White,
+                )
+            }
         }
     }
 }
