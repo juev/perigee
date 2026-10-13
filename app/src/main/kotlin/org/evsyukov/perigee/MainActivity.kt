@@ -9,12 +9,8 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
-import androidx.compose.material3.darkColorScheme
-import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -35,6 +31,7 @@ import org.evsyukov.perigee.reader.ReaderScreen
 import org.evsyukov.perigee.reader.VolumeKeyHost
 import org.evsyukov.perigee.server.ServerScreen
 import org.evsyukov.perigee.server.SyncWork
+import org.evsyukov.perigee.ui.PerigeeTheme
 
 class MainActivity : ComponentActivity(), VolumeKeyHost {
     override var onVolumeKey: ((down: Boolean) -> Unit)? = null
@@ -43,7 +40,7 @@ class MainActivity : ComponentActivity(), VolumeKeyHost {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
-            MaterialTheme(if (isSystemInDarkTheme()) darkColorScheme() else lightColorScheme()) {
+            PerigeeTheme {
                 Surface(Modifier.fillMaxSize()) {
                     val scope = rememberCoroutineScope()
                     var bookPath by rememberSaveable { mutableStateOf<String?>(null) }
