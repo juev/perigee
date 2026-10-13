@@ -83,6 +83,8 @@ class ServerScreenTest {
         rule.waitUntil(TIMEOUT) { rule.onAllNodesWithText(text).fetchSemanticsNodes().isEmpty() }
 
     private fun fillIn(address: String, user: String, password: String) {
+        // The form comes once the account has been looked up.
+        rule.waitUntil(TIMEOUT) { rule.onAllNodesWithTag("server-address").fetchSemanticsNodes().isNotEmpty() }
         rule.onNodeWithTag("server-address").performTextReplacement(address)
         rule.onNodeWithTag("server-user").performTextReplacement(user)
         rule.onNodeWithTag("server-password").performTextReplacement(password)
@@ -240,6 +242,8 @@ class ServerScreenTest {
         show()
         signIn()
         waitForText(string(R.string.server_unsupported, "v4.0.0"))
+        // The books are fetched after the server has said what it is.
+        waitForText("Listed Title")
         rule.onNodeWithText("Listed Title").assertIsDisplayed()
         assertTrue("its devices' channel is left alone", server.seen.none { "/koreader/" in it.path })
     }

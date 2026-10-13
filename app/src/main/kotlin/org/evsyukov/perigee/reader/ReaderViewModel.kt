@@ -201,10 +201,10 @@ class ReaderViewModel(application: Application) : AndroidViewModel(application) 
      * way to another is not read, and one left open for long was not read all
      * that time; the bounds are those KOReader counts by.
      */
-    private suspend fun stopLooking() {
+    private suspend fun stopLooking(now: Long = clock()) {
         val was = looking ?: return
         looking = null
-        val seconds = ((clock() - was.since) / 1000).toInt()
+        val seconds = ((now - was.since) / 1000).toInt()
         if (seconds < MIN_PAGE_SECONDS) return
         library.addPageRead(was.bookId, was.page + 1, was.pageCount, was.since / 1000, seconds.coerceAtMost(MAX_PAGE_SECONDS))
     }
@@ -463,6 +463,8 @@ class ReaderViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     private suspend fun show(page: Page, turned: Int = 0) {
+        // The page is looked at from the moment it is shown, not from when the place is written down.
+        val now = clock()
         // The page and its bookmark appear together: the ribbon of the page
         // before must not stay on the new one for a moment.
         val bookmark = bookmarkOn(page)
@@ -477,8 +479,8 @@ class ReaderViewModel(application: Application) : AndroidViewModel(application) 
         library.savePosition(book.id, open.position, page.progress)
         val was = looking
         if (was == null || was.page != page.index || was.pageCount != page.pageCount) {
-            stopLooking()
-            looking = Looking(book.id, page.index, page.pageCount, clock())
+            stopLooking(now)
+            looking = Looking(book.id, page.index, page.pageCount, now)
         }
     }
 
