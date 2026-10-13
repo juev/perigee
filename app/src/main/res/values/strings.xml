@@ -1,15 +1,75 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Perigee</string>
+    <string name="app_name" translatable="false">Perigee</string>
     <string name="open_book">Open a book</string>
     <string name="cannot_open">This file cannot be opened.</string>
     <string name="close_book">Close</string>
-    <string name="page_of">%1$d / %2$d</string>
+    <string name="page_of">%1$d of %2$d</string>
+    <string name="page_description">Page %1$d of %2$d</string>
+
+    <string name="action_back">Back</string>
+    <string name="action_search">Search</string>
+    <string name="action_contents">Contents</string>
+    <string name="action_settings">Settings</string>
+    <string name="action_bookmark_add">Add a bookmark</string>
+    <string name="action_bookmark_remove">Remove the bookmark</string>
+    <string name="action_go_back">Return to where you were</string>
+    <string name="action_delete">Delete</string>
+    <string name="action_copy">Copy</string>
+    <string name="action_share">Share</string>
+    <string name="action_translate">Translate, dictionary</string>
+    <string name="action_web_search">Search the web</string>
+    <string name="action_note">Note</string>
+    <string name="action_save">Save</string>
+    <string name="action_cancel">Cancel</string>
+    <string name="action_decrease">Less</string>
+    <string name="action_increase">More</string>
+    <string name="quote_color">Highlight colour %1$d</string>
+    <string name="note_hint">Your note</string>
+    <string name="progress_line">Position in the book</string>
+
+    <string name="settings_title">Reading settings</string>
+    <string name="setting_page_turn">Turn pages</string>
+    <string name="page_turn_horizontal">Horizontally</string>
+    <string name="page_turn_vertical">Vertically</string>
+    <string name="setting_tap_scheme">Turn by touch</string>
+    <string name="tap_scheme_left_right">Right part forward, left part back</string>
+    <string name="tap_scheme_top_bottom">Bottom part forward, top part back</string>
+    <string name="tap_scheme_any_forward">Any part forward</string>
+    <string name="tap_scheme_off">Off, swipes only</string>
+    <string name="setting_color_scheme">Colour scheme</string>
+    <string name="scheme_day">Day</string>
+    <string name="scheme_night">Night</string>
+    <string name="scheme_sepia">Sepia</string>
     <string name="setting_font">Font</string>
-    <string name="setting_font_size">Size: %1$d</string>
-    <string name="setting_line_spacing">Line spacing: %1$d%%</string>
-    <string name="setting_margins">Margins: %1$d</string>
+    <string name="setting_font_size">Font size</string>
+    <string name="setting_font_weight">Font boldness</string>
+    <string name="setting_line_spacing">Line spacing</string>
+    <string name="setting_alignment">Align text</string>
+    <string name="align_justify">Justified</string>
+    <string name="align_left">Left</string>
+    <string name="align_center">Centre</string>
+    <string name="align_right">Right</string>
     <string name="setting_hyphenation">Hyphenation</string>
-    <string name="setting_justify">Justify</string>
+    <string name="setting_paragraph_spacing">Paragraph spacing</string>
+    <string name="setting_paragraph_indent">Paragraph indent</string>
+    <string name="setting_page_margins">Page margins</string>
     <string name="setting_two_pages">Two pages in landscape</string>
+    <string name="setting_volume_keys">Volume keys turn pages</string>
+    <string name="setting_brightness_gesture">Brightness by sliding along the left edge</string>
+    <string name="setting_day_night_corner">Day and night by touching the top left corner</string>
+    <string name="setting_bookmark_corner">Bookmark by touching the top right corner</string>
+    <string name="percent" translatable="false">%1$d%%</string>
+
+    <string name="tab_contents">Contents</string>
+    <string name="tab_bookmarks">Bookmarks</string>
+    <string name="tab_quotes">Quotes</string>
+    <string name="empty_contents">This book has no table of contents.</string>
+    <string name="empty_bookmarks">No bookmarks yet. Touch the top right corner of a page to add one.</string>
+    <string name="empty_quotes">No quotes yet. Hold a word and drag to select text.</string>
+
+    <string name="search_hint">Find in the book</string>
+    <string name="search_nothing">Nothing found.</string>
+    <string name="search_found">Found: %1$d</string>
+    <string name="search_page">p. %1$d</string>
 </resources>

@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="open_book">Открыть книгу</string>
+    <string name="cannot_open">Этот файл не удаётся открыть.</string>
+    <string name="close_book">Закрыть</string>
+    <string name="page_of">%1$d из %2$d</string>
+    <string name="page_description">Страница %1$d из %2$d</string>
+
+    <string name="action_back">Назад</string>
+    <string name="action_search">Поиск</string>
+    <string name="action_contents">Оглавление</string>
+    <string name="action_settings">Настройки</string>
+    <string name="action_bookmark_add">Добавить закладку</string>
+    <string name="action_bookmark_remove">Убрать закладку</string>
+    <string name="action_go_back">Вернуться туда, где были</string>
+    <string name="action_delete">Удалить</string>
+    <string name="action_copy">Копировать</string>
+    <string name="action_share">Поделиться</string>
+    <string name="action_translate">Перевод, словарь</string>
+    <string name="action_web_search">Искать в интернете</string>
+    <string name="action_note">Заметка</string>
+    <string name="action_save">Сохранить</string>
+    <string name="action_cancel">Отмена</string>
+    <string name="action_decrease">Меньше</string>
+    <string name="action_increase">Больше</string>
+    <string name="quote_color">Цвет выделения %1$d</string>
+    <string name="note_hint">Ваша заметка</string>
+    <string name="progress_line">Позиция в книге</string>
+
+    <string name="settings_title">Настройки чтения</string>
+    <string name="setting_page_turn">Листать страницы</string>
+    <string name="page_turn_horizontal">Горизонтально</string>
+    <string name="page_turn_vertical">Вертикально</string>
+    <string name="setting_tap_scheme">Листание касанием</string>
+    <string name="tap_scheme_left_right">Правая часть — вперёд, левая — назад</string>
+    <string name="tap_scheme_top_bottom">Нижняя часть — вперёд, верхняя — назад</string>
+    <string name="tap_scheme_any_forward">Любая часть — вперёд</string>
+    <string name="tap_scheme_off">Отключить, только жесты</string>
+    <string name="setting_color_scheme">Цветовая схема</string>
+    <string name="scheme_day">День</string>
+    <string name="scheme_night">Ночь</string>
+    <string name="scheme_sepia">Сепия</string>
+    <string name="setting_font">Шрифт</string>
+    <string name="setting_font_size">Размер шрифта</string>
+    <string name="setting_font_weight">Жирность шрифта</string>
+    <string name="setting_line_spacing">Междустрочный интервал</string>
+    <string name="setting_alignment">Выравнивать текст по</string>
+    <string name="align_justify">Ширине</string>
+    <string name="align_left">Левому краю</string>
+    <string name="align_center">Центру</string>
+    <string name="align_right">Правому краю</string>
+    <string name="setting_hyphenation">Перенос слов</string>
+    <string name="setting_paragraph_spacing">Интервал абзаца</string>
+    <string name="setting_paragraph_indent">Отступ абзаца</string>
+    <string name="setting_page_margins">Поля страниц</string>
+    <string name="setting_two_pages">Две страницы в альбомной ориентации</string>
+    <string name="setting_volume_keys">Листать кнопками громкости</string>
+    <string name="setting_brightness_gesture">Яркость движением по левому краю</string>
+    <string name="setting_day_night_corner">День и ночь касанием левого верхнего угла</string>
+    <string name="setting_bookmark_corner">Закладка касанием правого верхнего угла</string>
+
+    <string name="tab_contents">Оглавление</string>
+    <string name="tab_bookmarks">Закладки</string>
+    <string name="tab_quotes">Цитаты</string>
+    <string name="empty_contents">В этой книге нет оглавления.</string>
+    <string name="empty_bookmarks">Закладок пока нет. Коснитесь правого верхнего угла страницы, чтобы добавить.</string>
+    <string name="empty_quotes">Цитат пока нет. Удерживайте слово и ведите пальцем, чтобы выделить текст.</string>
+
+    <string name="search_hint">Найти в книге</string>
+    <string name="search_nothing">Ничего не найдено.</string>
+    <string name="search_found">Найдено: %1$d</string>
+    <string name="search_page">с. %1$d</string>
+</resources>
