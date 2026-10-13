@@ -21,9 +21,8 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
-import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.WindowInsets
@@ -86,6 +85,9 @@ import org.evsyukov.perigee.engine.Page
 
 /** What the reader opened on top of the page. */
 private enum class Panel { None, Menu, Settings, Contents, Search }
+
+/** What a finger moving over the page turned out to be doing. */
+private enum class Drag { Undecided, Brightness, Done }
 
 /** What a touch on an empty part of the page does. */
 internal enum class Zone { Forward, Back, Menu, DayNight, Bookmark, None }
@@ -222,39 +224,38 @@ fun ReaderScreen(file: File, onClose: () -> Unit, viewModel: ReaderViewModel = v
                                 )
                             }
                             .pointerInput(Unit) {
-                                var dragged = 0f
-                                detectHorizontalDragGestures(
-                                    onDragStart = { dragged = 0f },
-                                    onHorizontalDrag = { _, amount -> dragged += amount },
-                                    onDragEnd = {
-                                        if (currentPrefs.pageTurn == PageTurn.Horizontal && abs(dragged) > SWIPE.toPx()) {
-                                            // The finger pulls the next page in from the right.
-                                            viewModel.turn(if (dragged < 0) 1 else -1)
-                                        }
-                                    },
-                                )
-                            }
-                            .pointerInput(Unit) {
-                                var dragged = 0f
-                                var onEdge = false
+                                var moved = Offset.Zero
+                                var gesture = Drag.Undecided
+                                var startedOnEdge = false
                                 var startBrightness = 0f
-                                detectVerticalDragGestures(
+                                detectDragGestures(
                                     onDragStart = { at ->
-                                        dragged = 0f
-                                        onEdge = currentPrefs.brightnessGesture && at.x < size.width * EDGE_SHARE
+                                        moved = Offset.Zero
+                                        gesture = Drag.Undecided
+                                        startedOnEdge = at.x < size.width * EDGE_SHARE
                                         startBrightness = currentPrefs.brightness ?: 0.5f
                                     },
-                                    onVerticalDrag = { _, amount ->
-                                        dragged += amount
-                                        if (onEdge) {
-                                            // The whole height of the screen is the whole range.
-                                            val level = (startBrightness - dragged / size.height).coerceIn(MIN_BRIGHTNESS, 1f)
-                                            viewModel.updatePrefs { it.copy(brightness = level) }
+                                    onDrag = { _, amount ->
+                                        moved += amount
+                                        val vertical = abs(moved.y) > abs(moved.x)
+                                        if (gesture == Drag.Undecided && maxOf(abs(moved.x), abs(moved.y)) > SWIPE.toPx()) {
+                                            // One finger movement is one thing: the way it went first decides.
+                                            val turnsVertically = currentPrefs.pageTurn == PageTurn.Vertical
+                                            gesture = when {
+                                                startedOnEdge && vertical && currentPrefs.brightnessGesture -> Drag.Brightness
+                                                vertical == turnsVertically -> {
+                                                    // The page turns as the finger passes the threshold, not when it lifts.
+                                                    val along = if (turnsVertically) moved.y else moved.x
+                                                    viewModel.turn(if (along < 0) 1 else -1)
+                                                    Drag.Done
+                                                }
+                                                else -> Drag.Done
+                                            }
                                         }
-                                    },
-                                    onDragEnd = {
-                                        if (!onEdge && currentPrefs.pageTurn == PageTurn.Vertical && abs(dragged) > SWIPE.toPx()) {
-                                            viewModel.turn(if (dragged < 0) 1 else -1)
+                                        if (gesture == Drag.Brightness) {
+                                            // The whole height of the screen is the whole range.
+                                            val level = (startBrightness - moved.y / size.height).coerceIn(MIN_BRIGHTNESS, 1f)
+                                            viewModel.updatePrefs { it.copy(brightness = level) }
                                         }
                                     },
                                 )

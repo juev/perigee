@@ -398,20 +398,30 @@ class ReaderViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     private suspend fun show(page: Page, turned: Int = 0) {
+        // The page and its bookmark appear together: the ribbon of the page
+        // before must not stay on the new one for a moment.
+        val bookmark = bookmarkOn(page)
         _state.update {
-            it.copy(page = page, turned = turned, canGoBack = history.isNotEmpty(), selection = null, quoteTouch = null)
+            it.copy(
+                page = page, turned = turned, pageBookmark = bookmark, canGoBack = history.isNotEmpty(),
+                selection = null, quoteTouch = null,
+            )
         }
-        markBookmark(page)
         val open = reader ?: return
         _state.value.book?.let { library.savePosition(it.id, open.position, page.progress) }
     }
 
     private suspend fun markBookmark(page: Page) {
-        val open = reader ?: return
+        val bookmark = bookmarkOn(page)
+        _state.update { if (it.page === page) it.copy(pageBookmark = bookmark) else it }
+    }
+
+    private suspend fun bookmarkOn(page: Page): Bookmark? {
+        val open = reader ?: return null
         val bookmarks = _state.value.bookmarks
+        if (bookmarks.isEmpty()) return null
         val screen = page.index until page.index + screenPages()
-        val onPage = open.read { document -> bookmarks.firstOrNull { document.pageOf(it.xpointer) in screen } }
-        _state.update { if (it.page === page) it.copy(pageBookmark = onPage) else it }
+        return open.read { document -> bookmarks.firstOrNull { document.pageOf(it.xpointer) in screen } }
     }
 
     private fun screenPages(): Int = viewport?.let { if (twoUp(_prefs.value, it)) 2 else 1 } ?: 1
