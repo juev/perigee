@@ -28,6 +28,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.evsyukov.perigee.data.Library
 import org.evsyukov.perigee.library.LibraryScreen
+import org.evsyukov.perigee.opds.OpdsScreen
 import org.evsyukov.perigee.reader.ReaderScreen
 import org.evsyukov.perigee.reader.VolumeKeyHost
 
@@ -42,6 +43,8 @@ class MainActivity : ComponentActivity(), VolumeKeyHost {
                 Surface(Modifier.fillMaxSize()) {
                     val scope = rememberCoroutineScope()
                     var bookPath by rememberSaveable { mutableStateOf<String?>(null) }
+                    // Closing a book that came from a catalog returns to the catalog.
+                    var catalogs by rememberSaveable { mutableStateOf(false) }
                     // Until the last book is looked up there is nothing to show, not even the library.
                     var ready by rememberSaveable { mutableStateOf(false) }
                     LaunchedEffect(Unit) {
@@ -57,9 +60,14 @@ class MainActivity : ComponentActivity(), VolumeKeyHost {
                     val path = bookPath
                     when {
                         !ready -> Unit
+                        path == null && catalogs -> OpdsScreen(
+                            onOpen = { bookPath = it.path },
+                            onClose = { catalogs = false },
+                        )
                         path == null -> LibraryScreen(
                             onOpen = { bookPath = it.path },
                             onOpenFile = { picker.launch(arrayOf("*/*")) },
+                            onCatalogs = { catalogs = true },
                         )
                         else -> ReaderScreen(File(path), onClose = { bookPath = null })
                     }

@@ -1,7 +1,6 @@
 package org.evsyukov.perigee.data
 
 import android.content.Context
-import androidx.room.Room
 import androidx.room.withTransaction
 import java.io.File
 import kotlinx.coroutines.Dispatchers
@@ -45,6 +44,20 @@ class Library internal constructor(private val database: ReadingDatabase, privat
     suspend fun setFavorite(bookId: String, favorite: Boolean) = dao.setFavorite(bookId, favorite)
 
     suspend fun setStatus(bookId: String, status: ReadingStatus) = dao.setStatus(bookId, status)
+
+    /**
+     * A file in the app's storage, as one downloaded from a catalog, joins the
+     * library without being opened. A book that was there already keeps what
+     * the reader left in it and is read from this file from now on.
+     */
+    suspend fun keep(file: File, book: LocalBook): Book = database.withTransaction {
+        dao.insert(Book(book.id, file.path, book.title, author = "", xpointer = null, progress = 0f, openedAt = 0, addedAt = now()))
+        dao.keep(
+            book.id, file.path, book.format, book.title, book.authors.joinToString("\n"), book.language, book.series,
+            book.seriesNumber, book.hasCover,
+        )
+        checkNotNull(dao.book(book.id))
+    }
 
     fun folders(): Flow<List<Folder>> = dao.folders()
 
@@ -142,10 +155,7 @@ class Library internal constructor(private val database: ReadingDatabase, privat
         private var instance: Library? = null
 
         fun get(context: Context): Library = instance ?: synchronized(this) {
-            instance ?: Library(
-                Room.databaseBuilder(context.applicationContext, ReadingDatabase::class.java, "reading.db").build(),
-                System::currentTimeMillis,
-            ).also { instance = it }
+            instance ?: Library(ReadingDatabase.get(context), System::currentTimeMillis).also { instance = it }
         }
 
         /** File name endings the engine reads, longest first. */
@@ -160,9 +170,7 @@ class Library internal constructor(private val database: ReadingDatabase, privat
         }
 
         /** A library that forgets everything when the process ends, for tests. */
-        fun inMemory(context: Context, now: () -> Long = System::currentTimeMillis): Library = Library(
-            Room.inMemoryDatabaseBuilder(context.applicationContext, ReadingDatabase::class.java).build(),
-            now,
-        )
+        fun inMemory(context: Context, now: () -> Long = System::currentTimeMillis): Library =
+            Library(ReadingDatabase.inMemory(context), now)
     }
 }

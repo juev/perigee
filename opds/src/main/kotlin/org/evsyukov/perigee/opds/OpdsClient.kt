@@ -1,6 +1,7 @@
 package org.evsyukov.perigee.opds
 
 import android.util.Base64
+import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.IOException
 import java.net.HttpURLConnection
@@ -80,8 +81,14 @@ class OpdsClient(val root: String, private val user: String = "", private val pa
         try {
             get(url, "image/*") { connection ->
                 connection.inputStream.use { input ->
-                    val bytes = input.readNBytes(limit + 1)
-                    bytes.takeIf { it.size <= limit }
+                    val bytes = ByteArrayOutputStream()
+                    val buffer = ByteArray(16 * 1024)
+                    while (bytes.size() <= limit) {
+                        val read = input.read(buffer)
+                        if (read < 0) break
+                        bytes.write(buffer, 0, read)
+                    }
+                    bytes.toByteArray().takeIf { it.size <= limit }
                 }
             }
         } catch (e: IOException) {

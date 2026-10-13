@@ -38,6 +38,7 @@ class MigrationTest {
             )
         }
         helper.runMigrationsAndValidate(NAME, 2, true).close()
+        helper.runMigrationsAndValidate(NAME, 3, true).close()
 
         val database = Room.databaseBuilder(instrumentation.targetContext, ReadingDatabase::class.java, NAME).build()
         try {

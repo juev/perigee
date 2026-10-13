@@ -115,4 +115,28 @@
     <string name="action_rename">Переименовать</string>
     <string name="action_create">Создать</string>
     <string name="action_done">Готово</string>
+
+    <string name="catalogs_title">Каталоги</string>
+    <string name="action_catalogs">Каталоги (OPDS)</string>
+    <string name="catalogs_empty">Каталог — это библиотека в сети, из которой можно скачивать книги: ваш собственный сервер или общедоступный. Добавьте его по адресу OPDS.</string>
+    <string name="catalog_add">Добавить каталог</string>
+    <string name="catalog_remove">Убрать каталог «%1$s»</string>
+    <string name="catalog_address">Адрес</string>
+    <string name="catalog_user">Имя пользователя, если каталог его спрашивает</string>
+    <string name="catalog_password">Пароль</string>
+    <string name="catalog_check_and_add">Проверить и добавить</string>
+    <string name="catalog_bad_address">По такому адресу каталога быть не может.</string>
+    <string name="catalog_unauthorized">Каталог не принимает это имя пользователя и пароль.</string>
+    <string name="catalog_not_a_catalog">По этому адресу нет каталога OPDS.</string>
+    <string name="catalog_unreachable">Каталог не отвечает. Проверьте адрес и сеть.</string>
+    <string name="catalog_password_lost">Пароль этого каталога больше не удаётся прочитать. Уберите каталог и добавьте его заново.</string>
+    <string name="catalog_not_a_book">Этот файл — не книга, которую читает приложение.</string>
+    <string name="catalog_page_empty">Здесь ничего нет.</string>
+    <string name="catalog_no_readable_file">Нет файла в формате, который читает приложение.</string>
+    <string name="catalog_download">Скачать %1$s</string>
+    <string name="catalog_downloading">Скачиваем %1$s…</string>
+    <string name="catalog_downloaded">В библиотеке.</string>
+    <string name="catalog_read">Читать</string>
+    <string name="catalog_search_hint">Найти в каталоге</string>
+    <string name="action_retry">Повторить</string>
 </resources>

@@ -35,6 +35,19 @@ internal class BookOrbitServer(private val baseUrl: String) {
         check(response.code in 200..201 || response.code == 409) { "credentials failed: $response" }
     }
 
+    /** OPDS is off on a new server and has credentials of its own, any number per user. */
+    fun ensureOpds() {
+        val enabled = jwt("PATCH", "/app-settings/opds_enabled", JSONObject().put("value", "true"))
+        check(enabled.code == 200) { "enabling OPDS failed: $enabled" }
+        val user = jwt(
+            "POST", "/opds-users",
+            JSONObject().put("username", OPDS_USERNAME).put("password", OPDS_PASSWORD),
+        )
+        check(user.code in 200..201 || user.code == 409) { "OPDS user failed: $user" }
+    }
+
+    val opdsUrl: String get() = "$baseUrl/api/v1/opds"
+
     fun jwt(method: String, path: String, body: JSONObject? = null) =
         request(method, path, body, mapOf("authorization" to "Bearer $accessToken"))
 
@@ -87,6 +100,8 @@ internal class BookOrbitServer(private val baseUrl: String) {
         const val PASSWORD = "Contract-Test-1"
         const val KO_USERNAME = "reader-ko"
         const val KO_PASSWORD = "ko-secret-1"
+        const val OPDS_USERNAME = "reader-opds"
+        const val OPDS_PASSWORD = "opds-secret-1"
 
         fun md5(bytes: ByteArray): String =
             MessageDigest.getInstance("MD5").digest(bytes).joinToString("") { "%02x".format(it) }

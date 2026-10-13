@@ -79,7 +79,7 @@ class LibraryScreenTest {
             Covers(File(activity.cacheDir, "screen-covers")),
         ) { source }
         rule.setContent {
-            MaterialTheme { LibraryScreen(onOpen = { opened = it }, onOpenFile = { askedForFile = true }, model = model) }
+            MaterialTheme { LibraryScreen(onOpen = { opened = it }, onOpenFile = { askedForFile = true }, onCatalogs = {}, model = model) }
         }
     }
 

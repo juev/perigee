@@ -1,11 +1,13 @@
 package org.evsyukov.perigee.data
 
+import android.content.Context
 import androidx.room.AutoMigration
 import androidx.room.Dao
 import androidx.room.Database
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
+import androidx.room.Room
 import androidx.room.RoomDatabase
 import kotlinx.coroutines.flow.Flow
 
@@ -78,6 +80,31 @@ internal interface ReadingDao {
         author: String, language: String, series: String, seriesNumber: String, hasCover: Boolean,
     )
 
+    /** A file in the app's storage is this book, whatever was known of it before. */
+    @Query(
+        "UPDATE books SET path = :path, format = :format, title = :title, author = :author, language = :language, " +
+            "series = :series, seriesNumber = :seriesNumber, hasCover = :hasCover WHERE id = :id",
+    )
+    suspend fun keep(
+        id: String, path: String, format: String, title: String, author: String, language: String, series: String,
+        seriesNumber: String, hasCover: Boolean,
+    )
+
+    @Query("SELECT * FROM catalogs ORDER BY title COLLATE NOCASE")
+    fun catalogs(): Flow<List<Catalog>>
+
+    @Query("SELECT * FROM catalogs WHERE url = :url")
+    suspend fun catalog(url: String): Catalog?
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insert(catalog: Catalog): Long
+
+    @Query("UPDATE catalogs SET title = :title, user = :user, secret = :secret WHERE url = :url")
+    suspend fun updateCatalog(url: String, title: String, user: String, secret: String)
+
+    @Query("DELETE FROM catalogs WHERE id = :id")
+    suspend fun deleteCatalog(id: Long)
+
     @Query("SELECT * FROM collections ORDER BY name COLLATE NOCASE")
     fun collections(): Flow<List<BookCollection>>
 
@@ -128,10 +155,28 @@ internal interface ReadingDao {
 }
 
 @Database(
-    entities = [Book::class, Bookmark::class, Quote::class, Folder::class, BookCollection::class, CollectionBook::class],
-    version = 2,
-    autoMigrations = [AutoMigration(from = 1, to = 2)],
+    entities = [
+        Book::class, Bookmark::class, Quote::class, Folder::class, BookCollection::class, CollectionBook::class,
+        Catalog::class,
+    ],
+    version = 3,
+    autoMigrations = [AutoMigration(from = 1, to = 2), AutoMigration(from = 2, to = 3)],
 )
 internal abstract class ReadingDatabase : RoomDatabase() {
     abstract fun dao(): ReadingDao
+
+    companion object {
+        @Volatile
+        private var instance: ReadingDatabase? = null
+
+        /** The one database of the app. */
+        fun get(context: Context): ReadingDatabase = instance ?: synchronized(this) {
+            instance ?: Room.databaseBuilder(context.applicationContext, ReadingDatabase::class.java, "reading.db").build()
+                .also { instance = it }
+        }
+
+        /** A database that forgets everything when the process ends, for tests. */
+        fun inMemory(context: Context): ReadingDatabase =
+            Room.inMemoryDatabaseBuilder(context.applicationContext, ReadingDatabase::class.java).build()
+    }
 }

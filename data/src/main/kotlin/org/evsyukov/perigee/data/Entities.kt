@@ -132,3 +132,29 @@ data class Quote(
     val createdAt: Long,
     val updatedAt: Long,
 )
+
+/** What a book file says about itself, for a file that is already in the app's storage. */
+data class LocalBook(
+    val id: String,
+    val format: String,
+    val title: String,
+    val authors: List<String>,
+    val language: String,
+    val series: String,
+    val seriesNumber: String,
+    val hasCover: Boolean,
+)
+
+/** An OPDS catalog the reader added. */
+@Entity(tableName = "catalogs", indices = [Index("url", unique = true)])
+data class Catalog(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    /** The address of the catalog's first page. */
+    val url: String,
+    val title: String,
+    /** Empty for a catalog open to everyone. */
+    val user: String,
+    /** The password, sealed with a key that never leaves the device; see [Secrets]. */
+    val secret: String,
+    val addedAt: Long,
+)

@@ -3,17 +3,14 @@ package org.evsyukov.perigee.library
 import android.content.Context
 import android.net.Uri
 import java.io.File
-import java.io.FileInputStream
 import java.io.IOException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import org.evsyukov.perigee.data.Covers
-import org.evsyukov.perigee.data.FileHash
 import org.evsyukov.perigee.data.Folder
 import org.evsyukov.perigee.data.FoundBook
 import org.evsyukov.perigee.data.Library
-import org.evsyukov.perigee.engine.Engine
 
 /** What a look through a folder changed. */
 data class ScanResult(val found: Int, val lost: Int, val unreadable: Int)
@@ -77,15 +74,10 @@ class LibraryScanner(
         try {
             val descriptor = context.contentResolver.openFileDescriptor(Uri.parse(file.uri), "r") ?: return null
             return descriptor.use {
-                // Not closed here: the stream shares the descriptor that is closed above.
-                val id = FileHash.partialMd5(FileInputStream(it.fileDescriptor).channel)
-                val said = Engine.describe(context, it, file.name) ?: return null
+                val book = readBook(context, covers, it, file.name, format) ?: return null
                 FoundBook(
-                    id, file.uri, file.size, file.modified, format,
-                    title = said.title.ifBlank { file.name.dropLast(format.length + 1) },
-                    authors = said.authors, language = said.language, series = said.series,
-                    seriesNumber = said.seriesNumber,
-                    hasCover = said.cover?.let { image -> covers.save(id, image) } ?: false,
+                    book.id, file.uri, file.size, file.modified, format, book.title, book.authors, book.language,
+                    book.series, book.seriesNumber, book.hasCover,
                 )
             }
         } catch (e: IOException) {
