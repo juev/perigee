@@ -162,13 +162,14 @@ fun ReaderScreen(file: File, onClose: () -> Unit, viewModel: ReaderViewModel = v
         // The area the page gets; known once the screen is measured.
         var area by remember { mutableStateOf(IntSize.Zero) }
         val densityDpi = LocalConfiguration.current.densityDpi
-        LaunchedEffect(viewModel, area, density.density) {
+        val clearAbove = with(density) { cutout.calculateTopPadding().roundToPx() }
+        LaunchedEffect(viewModel, area, density.density, clearAbove) {
             if (area != IntSize.Zero) {
                 // The area settles over a few frames, as the cutout inset arrives or a
                 // rotation finishes. Laying a book out takes seconds: wait for the last size.
                 delay(VIEWPORT_SETTLE_MILLIS)
                 viewModel.setViewport(
-                    Viewport(area.width, area.height, density.density, densityDpi),
+                    Viewport(area.width, area.height, density.density, densityDpi, clearAbove),
                 )
             }
         }
@@ -408,10 +409,10 @@ private fun Marks(state: ReaderState, offsetX: Int, ink: Color) {
 private fun ProgressLine(progress: Float, chapters: List<Float>, color: Color, modifier: Modifier) {
     Canvas(modifier.fillMaxSize().padding(horizontal = 8.dp)) {
         val y = size.height - 3.dp.toPx()
-        drawLine(color.copy(alpha = 0.2f), Offset(0f, y), Offset(size.width, y), 1.dp.toPx())
-        drawLine(color.copy(alpha = 0.55f), Offset(0f, y), Offset(size.width * progress, y), 2.dp.toPx())
+        drawLine(color.copy(alpha = 0.3f), Offset(0f, y), Offset(size.width, y), 1.dp.toPx())
+        drawLine(color.copy(alpha = 0.75f), Offset(0f, y), Offset(size.width * progress, y), 2.5.dp.toPx())
         for (chapter in chapters) {
-            drawCircle(color.copy(alpha = 0.45f), 1.5.dp.toPx(), Offset(size.width * chapter, y))
+            drawCircle(color.copy(alpha = 0.6f), 1.5.dp.toPx(), Offset(size.width * chapter, y))
         }
     }
 }

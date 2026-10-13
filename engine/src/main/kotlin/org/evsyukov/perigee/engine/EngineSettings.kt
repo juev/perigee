@@ -33,7 +33,8 @@ data class EngineSettings(
     val fontWeight: Int = 400,
     val lineSpacingPercent: Int = 100,
     val marginHorizontal: Int = 24,
-    val marginVertical: Int = 24,
+    val marginTop: Int = 24,
+    val marginBottom: Int = 24,
     val textAlign: TextAlign = TextAlign.Justify,
     val hyphenation: Boolean = true,
     /** Gap between paragraphs in percent of the font size; null leaves it to the book. */

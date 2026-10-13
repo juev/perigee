@@ -74,7 +74,7 @@ Not done yet: no fallback face is configured, so a character missing from the ch
 | Hyphenation | `hyphenation` | By the dictionary of the book's language. |
 | Paragraph spacing | `paragraphSpacingPercent` | In percent of the font size; `null` leaves it to the book. |
 | Paragraph indent | `paragraphIndent` | On or off; `null` leaves it to the book. |
-| Page margins | `marginHorizontal`, `marginVertical` | |
+| Page margins | `marginHorizontal`, `marginTop`, `marginBottom` | |
 | Footnotes | `footnotes` | Notes at the bottom of the page that cites them. |
 | Two pages | `twoPages` | Side by side; the screen decides when to use it. |
 
@@ -135,7 +135,7 @@ A thin line at the bottom edge of the page shows the position in the book, with 
 
 In ReadEra's order: turn pages, colour scheme, font, font size, boldness, line spacing, alignment, hyphenation, paragraph spacing, paragraph indent, page margins; then two pages in landscape, the turn scheme and the gesture options. Sizes are stored in dp.
 
-Differences from ReadEra, all open to change: the schemes are Day, Night and Sepia only; margins are a switch between wide (24 dp) and narrow (8 dp), narrow by default, with widths chosen here; font size is in dp, not ReadEra's units.
+Differences from ReadEra, all open to change: the schemes are Day, Night and Sepia only; margins are a switch between wide (32 dp at the sides, 36 dp at the top and bottom) and narrow (8 dp and 12 dp), narrow by default, with widths chosen here; the strip the page leaves clear under a camera cutout counts as top margin, so the text starts right under it with narrow margins and 20 dp lower with wide ones; font size is in dp, not ReadEra's units.
 
 ## Tests
 

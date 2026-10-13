@@ -43,7 +43,11 @@ import org.evsyukov.perigee.server.Server
 import org.evsyukov.perigee.server.SyncWork
 
 /** The size of the area the page is shown in, in pixels, and the screen density. */
-data class Viewport(val width: Int, val height: Int, val density: Float, val densityDpi: Int)
+data class Viewport(
+    val width: Int, val height: Int, val density: Float, val densityDpi: Int,
+    /** The strip above the area that the page keeps clear of, as under a camera cutout, in pixels. */
+    val clearAbove: Int = 0,
+)
 
 /** Text the reader is selecting, with where it lies on the page shown. */
 data class Selection(val range: TextRange, val rects: List<Rect>, val anchorX: Int, val anchorY: Int)
@@ -519,6 +523,14 @@ class ReaderViewModel(application: Application) : AndroidViewModel(application) 
         fun twoUp(prefs: ReaderPrefs, viewport: Viewport) =
             prefs.twoPagesInLandscape && viewport.width > viewport.height
 
+        // Margins in dp: at the sides, and at the top and bottom edges of the screen; narrow and wide.
+        private const val SIDE_NARROW = 8
+        private const val SIDE_WIDE = 32
+        private const val EDGE_NARROW = 12
+        private const val EDGE_WIDE = 36
+        private const val BELOW_STRIP_NARROW = 2
+        private const val BELOW_STRIP_WIDE = 20
+
         /**
          * Page size and engine settings for the reader's preferences.
          *
@@ -531,7 +543,8 @@ class ReaderViewModel(application: Application) : AndroidViewModel(application) 
         fun laidOut(prefs: ReaderPrefs, viewport: Viewport): Triple<Int, Int, EngineSettings> {
             fun px(dp: Int) = (dp * viewport.density).toInt()
             val twoPages = twoUp(prefs, viewport)
-            val side = px(if (prefs.pageMargins) 24 else 8)
+            val side = px(if (prefs.pageMargins) SIDE_WIDE else SIDE_NARROW)
+            val edge = px(if (prefs.pageMargins) EDGE_WIDE else EDGE_NARROW)
             val overdraw = if (twoPages) side else 0
             val settings = EngineSettings(
                 fontFace = prefs.fontFace,
@@ -539,7 +552,10 @@ class ReaderViewModel(application: Application) : AndroidViewModel(application) 
                 fontWeight = prefs.fontWeight,
                 lineSpacingPercent = prefs.lineSpacingPercent,
                 marginHorizontal = side + overdraw,
-                marginVertical = px(if (prefs.pageMargins) 28 else 12),
+                // A strip left clear above the page, as under a camera cutout, is margin already: only what
+                // it falls short of is added, and a little so that the text does not sit on its very edge.
+                marginTop = maxOf(edge - viewport.clearAbove, px(if (prefs.pageMargins) BELOW_STRIP_WIDE else BELOW_STRIP_NARROW)),
+                marginBottom = edge,
                 textAlign = when (prefs.alignment) {
                     Alignment.Justify -> TextAlign.Justify
                     Alignment.Left -> TextAlign.Left

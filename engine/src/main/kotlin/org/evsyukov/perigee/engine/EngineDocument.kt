@@ -79,7 +79,8 @@ class EngineDocument private constructor(
     fun apply(settings: EngineSettings) {
         NativeEngine.applySettings(
             checked(), stylesheet.path, settings.extraCss, settings.fontFace, settings.fontSize,
-            settings.fontWeight, settings.lineSpacingPercent, settings.marginHorizontal, settings.marginVertical,
+            settings.fontWeight, settings.lineSpacingPercent, settings.marginHorizontal, settings.marginTop,
+            settings.marginBottom,
             settings.hyphenation, settings.footnotes, settings.twoPages,
             settings.colors.text, settings.colors.background, renderDpi,
         )

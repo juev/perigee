@@ -195,7 +195,7 @@ Java_org_evsyukov_perigee_engine_NativeEngine_create(JNIEnv*, jobject, jint widt
 JNIEXPORT void JNICALL
 Java_org_evsyukov_perigee_engine_NativeEngine_applySettings(
         JNIEnv* env, jobject, jlong handle, jstring cssFile, jstring extraCss, jstring fontFace,
-        jint fontSize, jint fontWeight, jint lineSpacingPercent, jint marginHorizontal, jint marginVertical,
+        jint fontSize, jint fontWeight, jint lineSpacingPercent, jint marginHorizontal, jint marginTop, jint marginBottom,
         jboolean hyphenation, jboolean footnotes, jboolean twoPages, jint textColor, jint backgroundColor,
         jint renderDpi) {
     LVDocView* view = viewOf(handle);
@@ -216,7 +216,7 @@ Java_org_evsyukov_perigee_engine_NativeEngine_applySettings(
     view->setFontSize(fontSize);
     view->setTextColor(static_cast<lUInt32>(textColor) & 0xFFFFFF);
     view->setBackgroundColor(static_cast<lUInt32>(backgroundColor) & 0xFFFFFF);
-    view->setPageMargins(lvRect(marginHorizontal, marginVertical, marginHorizontal, marginVertical));
+    view->setPageMargins(lvRect(marginHorizontal, marginTop, marginHorizontal, marginBottom));
     view->setVisiblePageCount(twoPages ? 2 : 1, false);
 
     lString8 css;

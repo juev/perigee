@@ -22,7 +22,7 @@ internal object NativeEngine {
 
     external fun applySettings(
         handle: Long, cssFile: String, extraCss: String, fontFace: String, fontSize: Int, fontWeight: Int,
-        lineSpacingPercent: Int, marginHorizontal: Int, marginVertical: Int,
+        lineSpacingPercent: Int, marginHorizontal: Int, marginTop: Int, marginBottom: Int,
         hyphenation: Boolean, footnotes: Boolean, twoPages: Boolean, textColor: Int, backgroundColor: Int,
         renderDpi: Int,
     )

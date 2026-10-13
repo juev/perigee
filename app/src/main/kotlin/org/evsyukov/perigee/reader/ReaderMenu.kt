@@ -39,6 +39,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -144,6 +145,8 @@ internal fun ReaderMenu(
                     onValueChange = { dragged = it },
                     onValueChangeFinished = { onSeek(dragged) },
                     modifier = Modifier.semantics { contentDescription = label },
+                    // The stock track for what is not read yet is nearly the colour of the bar it lies on.
+                    colors = SliderDefaults.colors(inactiveTrackColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f)),
                 )
             }
         }
