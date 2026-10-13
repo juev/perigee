@@ -31,6 +31,7 @@ import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -55,6 +56,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -67,6 +69,7 @@ import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -756,6 +759,13 @@ private fun BookCell(
                     modifier = Modifier.align(Alignment.TopStart).padding(4.dp).size(18.dp),
                 )
             }
+            // On the cover, so that the title under it has the whole width; darkened behind to be seen on any cover.
+            CompositionLocalProvider(LocalContentColor provides Color.White) {
+                BookActions(
+                    book, onSend, onStatus, onRating, onCollections, onFavorite,
+                    Modifier.align(Alignment.TopEnd).padding(4.dp).size(32.dp).background(Color.Black.copy(alpha = 0.4f), CircleShape),
+                )
+            }
         }
         if (book.openedAt > 0) {
             LinearProgressIndicator(
@@ -763,25 +773,22 @@ private fun BookCell(
                 modifier = Modifier.fillMaxWidth().padding(top = 4.dp).height(3.dp),
             )
         }
-        Row(verticalAlignment = Alignment.Top) {
-            Column(Modifier.weight(1f).padding(top = 6.dp), verticalArrangement = Arrangement.spacedBy(1.dp)) {
-                Text(book.title, style = MaterialTheme.typography.labelLarge, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                val faint = MaterialTheme.colorScheme.onSurfaceVariant
-                if (book.author.isNotEmpty()) {
-                    Text(book.authorLine, style = MaterialTheme.typography.bodySmall, color = faint, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                }
-                val server = serverLine(book, signedIn, sending)
-                if (server != null) {
-                    Text(server, style = MaterialTheme.typography.labelSmall, color = faint, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                }
-                if (sending is Sending.Failed && book.serverFileId == null) {
-                    Text(
-                        stringResource(failureText(sending.why)), style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.error, maxLines = 3, overflow = TextOverflow.Ellipsis,
-                    )
-                }
+        Column(Modifier.fillMaxWidth().padding(top = 6.dp), verticalArrangement = Arrangement.spacedBy(1.dp)) {
+            Text(book.title, style = MaterialTheme.typography.labelLarge, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            val faint = MaterialTheme.colorScheme.onSurfaceVariant
+            if (book.author.isNotEmpty()) {
+                Text(book.authorLine, style = MaterialTheme.typography.bodySmall, color = faint, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
-            BookActions(book, onSend, onStatus, onRating, onCollections, onFavorite, Modifier.size(36.dp))
+            val server = serverLine(book, signedIn, sending)
+            if (server != null) {
+                Text(server, style = MaterialTheme.typography.labelSmall, color = faint, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+            if (sending is Sending.Failed && book.serverFileId == null) {
+                Text(
+                    stringResource(failureText(sending.why)), style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.error, maxLines = 3, overflow = TextOverflow.Ellipsis,
+                )
+            }
         }
     }
 }
