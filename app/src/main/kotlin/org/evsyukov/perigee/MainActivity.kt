@@ -27,6 +27,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.evsyukov.perigee.data.Library
+import org.evsyukov.perigee.legal.LicensesScreen
 import org.evsyukov.perigee.library.LibraryScreen
 import org.evsyukov.perigee.library.unpacked
 import org.evsyukov.perigee.opds.OpdsScreen
@@ -49,6 +50,7 @@ class MainActivity : ComponentActivity(), VolumeKeyHost {
                     // Closing a book that came from a catalog or the server returns there.
                     var catalogs by rememberSaveable { mutableStateOf(false) }
                     var server by rememberSaveable { mutableStateOf(false) }
+                    var licenses by rememberSaveable { mutableStateOf(false) }
                     // Until the last book is looked up there is nothing to show, not even the library.
                     var ready by rememberSaveable { mutableStateOf(false) }
                     LaunchedEffect(Unit) {
@@ -74,11 +76,13 @@ class MainActivity : ComponentActivity(), VolumeKeyHost {
                             onOpen = { bookPath = it.path },
                             onClose = { server = false },
                         )
+                        path == null && licenses -> LicensesScreen(onClose = { licenses = false })
                         path == null -> LibraryScreen(
                             onOpen = { bookPath = it.path },
                             onOpenFile = { picker.launch(arrayOf("*/*")) },
                             onCatalogs = { catalogs = true },
                             onServer = { server = true },
+                            onLicenses = { licenses = true },
                         )
                         else -> ReaderScreen(File(path), onClose = { bookPath = null })
                     }

@@ -21,7 +21,7 @@ Works today:
 
 - Syncing with bookOrbit: the place you got to, both ways, with a later place read elsewhere offered rather than jumped to; highlights with notes and bookmarks, both ways; status and rating; time spent reading for the server's statistics.
 
-Not there yet: release builds. A spike has shown that exact positions and highlights can be exchanged with bookOrbit for EPUB; see [docs/spikes/position-contract.md](docs/spikes/position-contract.md).
+Not there yet: releases in the stores. A spike has shown that exact positions and highlights can be exchanged with bookOrbit for EPUB; see [docs/spikes/position-contract.md](docs/spikes/position-contract.md).
 
 The engine reads EPUB, FB2, FB3, MOBI (not KF8/AZW3), TXT, RTF, DOC, DOCX, ODT, HTML and CHM. The tests cover EPUB and FB2; the other formats have not been checked in Perigee.
 
@@ -40,7 +40,7 @@ You need:
 ```sh
 git clone --recurse-submodules https://github.com/juev/perigee.git
 cd perigee
-./gradlew :app:assembleDebug
+./gradlew :app:assembleFdroidDebug
 ```
 
 The engine and its dependencies are built from source for arm64-v8a, armeabi-v7a and x86_64, so the first build takes a while.
@@ -48,7 +48,13 @@ The engine and its dependencies are built from source for arm64-v8a, armeabi-v7a
 Install on a connected device:
 
 ```sh
-./gradlew :app:installDebug
+./gradlew :app:installFdroidDebug
+```
+
+There are two builds of the app, `fdroid` and `play`, one for each store. Their code is the same so far. The packages for the stores, unsigned:
+
+```sh
+./gradlew :app:assembleFdroidRelease :app:bundlePlayRelease
 ```
 
 ## Tests
@@ -56,9 +62,11 @@ Install on a connected device:
 Most tests run on a device or an emulator:
 
 ```sh
-./gradlew build lint testDebugUnitTest
-./gradlew :engine:connectedDebugAndroidTest :data:connectedDebugAndroidTest :app:connectedDebugAndroidTest
+./gradlew build lint
+./gradlew connectedAndroidTest
 ```
+
+`build` runs the tests that need no device. `connectedAndroidTest` runs the rest on the `fdroid` build; the contract tests in it are skipped unless they are told where the server is.
 
 With more than one device attached, pick one with `ANDROID_SERIAL`.
 
@@ -92,7 +100,7 @@ It is distributed in the hope that it will be useful, but without any warranty; 
 
 Third-party code:
 
+- What is built into the app, and under which license, is listed in [NOTICE](NOTICE); the license texts are in [licenses](licenses). The app shows both under "Licenses" in the menu of the library.
 - crengine is licensed under the GNU GPL. Its upstream, CoolReader, states "version 2 of the License, or (at your option) any later version"; the KOReader fork carries no statement of its own beyond "GNU GPL license, version 2" in its README.
-- antiword (GPL-2.0-or-later) and chmlib (LGPL-2.1) come with the crengine tree.
-- FreeType, HarfBuzz, FriBidi, libunibreak, utf8proc, xxHash, Zstandard, libpng, libjpeg-turbo and libwebp are downloaded at build time and linked into the engine; each is under its own license. zlib comes from the Android NDK.
+- FreeType, HarfBuzz, FriBidi, libunibreak, utf8proc, xxHash, Zstandard, libpng, libjpeg-turbo and libwebp are downloaded at build time and linked into the engine. zlib comes from the Android NDK.
 - The PT Serif fonts in the engine's test assets are under the SIL Open Font License, included next to them.

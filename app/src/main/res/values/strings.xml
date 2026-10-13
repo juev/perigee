@@ -207,4 +207,7 @@
     <string name="send_where_title">Where on the server?</string>
     <string name="send_where_text">Books you send will go there from now on.</string>
     <string name="send_place_folder">%1$s, folder %2$s</string>
+    <string name="action_licenses">Licenses</string>
+    <string name="licenses_title">Licenses</string>
+    <string name="licenses_gpl">GNU General Public License, version 3</string>
 </resources>

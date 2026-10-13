@@ -108,7 +108,8 @@ import org.evsyukov.perigee.data.Shelf
  * The reader's books by shelf. [onOpen] is given the file of the book that
  * was picked; [onOpenFile] asks for a single file from outside the library;
  * [onCatalogs] leaves for the catalogs books are downloaded from, [onServer]
- * for the server the reader keeps books on.
+ * for the server the reader keeps books on, [onLicenses] for the licenses of
+ * the app and of what it is built from.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -117,6 +118,7 @@ fun LibraryScreen(
     onOpenFile: () -> Unit,
     onCatalogs: () -> Unit,
     onServer: () -> Unit,
+    onLicenses: () -> Unit,
     model: LibraryViewModel = viewModel(),
 ) {
     val state by model.state.collectAsStateWithLifecycle()
@@ -181,7 +183,7 @@ fun LibraryScreen(
                             SortButton(state.sort, model::setSort)
                             LibraryMenu(
                                 onFolders = { showFolders = true }, onRescan = model::rescan, onCatalogs = onCatalogs,
-                                onServer = onServer, onOpenFile = onOpenFile,
+                                onServer = onServer, onOpenFile = onOpenFile, onLicenses = onLicenses,
                             )
                         },
                     )
@@ -390,6 +392,7 @@ private fun Tick(shown: Boolean) {
 @Composable
 private fun LibraryMenu(
     onFolders: () -> Unit, onRescan: () -> Unit, onCatalogs: () -> Unit, onServer: () -> Unit, onOpenFile: () -> Unit,
+    onLicenses: () -> Unit,
 ) {
     var open by remember { mutableStateOf(false) }
     Box {
@@ -398,6 +401,7 @@ private fun LibraryMenu(
             val items = listOf(
                 R.string.action_folders to onFolders, R.string.action_rescan to onRescan,
                 R.string.action_catalogs to onCatalogs, R.string.action_server to onServer, R.string.open_book to onOpenFile,
+                R.string.action_licenses to onLicenses,
             )
             for ((label, action) in items) {
                 DropdownMenuItem(

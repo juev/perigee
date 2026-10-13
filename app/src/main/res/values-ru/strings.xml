@@ -209,4 +209,7 @@
     <string name="send_where_title">Куда на сервере?</string>
     <string name="send_where_text">Дальше отправленные книги будут попадать туда же.</string>
     <string name="send_place_folder">%1$s, папка %2$s</string>
+    <string name="action_licenses">Лицензии</string>
+    <string name="licenses_title">Лицензии</string>
+    <string name="licenses_gpl">GNU General Public License, версия 3</string>
 </resources>

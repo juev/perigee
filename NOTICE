@@ -1,0 +1,71 @@
+Perigee, an e-book reader for Android
+Copyright (C) 2026 Evsyukov Denis
+
+This program is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
+
+This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+
+The source code is at https://github.com/juev/perigee
+
+Perigee is not affiliated with bookOrbit or KOReader. It talks to a bookOrbit server over the network and contains none of its code.
+
+COMPONENTS BUILT INTO THE APP
+
+The license of each component is in the "licenses" directory of the source tree and on the "Licenses" screen of the app.
+
+crengine, the layout engine
+https://github.com/koreader/crengine, commit ab1981c
+Copyright (C) Vadim Lopatin and the CoolReader and KOReader contributors
+GNU General Public License, used here under version 3.
+
+Where that license comes from. The README of this fork says: "All source codes (except thirdparty directory) are provided under the terms of GNU GPL license, version 2". Its source files name no version and the tree has no license file. The upstream project, CoolReader (https://github.com/buggins/coolreader), states in its README "either version 2 of the License, or (at your option) any later version", and its contributors, KOReader developers among them, agreed on "version 2 or later" in issue 338, "License collision". Perigee relies on that and uses the engine under version 3. The KOReader fork has made no statement of its own.
+
+antiword, reads Microsoft Word documents
+Comes with the crengine tree. Copyright (C) A.J. van Os
+GNU General Public License, version 2 or later.
+
+chmlib, reads CHM files
+Comes with the crengine tree. Copyright (C) Jed Wing
+GNU Lesser General Public License, version 2.1 or later.
+
+Hyphenation patterns
+Come with the crengine tree (cr3gui/data/hyph). Most are converted from the TeX patterns of https://github.com/hyphenation/tex-hyphen; a file that names its origin or license does so in its header.
+
+FreeType 2.14.3
+Portions of this software are copyright (C) The FreeType Project (https://freetype.org). All rights reserved.
+The FreeType License.
+
+HarfBuzz 14.5.1
+The "Old MIT" license.
+
+GNU FriBidi 1.0.17
+GNU Lesser General Public License, version 2.1 or later.
+
+libunibreak 7.0
+The zlib license.
+
+utf8proc 2.12.0
+The MIT license; its Unicode data is under the Unicode data license.
+
+xxHash 0.8.4
+The BSD 2-Clause license.
+
+Zstandard 1.5.7
+Offered under the BSD license or the GNU General Public License, version 2; used here under the BSD license.
+
+libpng 1.6.59
+The PNG Reference Library License, version 2.
+
+libjpeg-turbo 3.2.0
+The IJG license and the Modified BSD license.
+This software is based in part on the work of the Independent JPEG Group.
+
+libwebp 1.6.0
+The BSD 3-Clause license.
+
+zlib and the C++ runtime
+Come with the Android NDK 28.2.13676358. zlib is under the zlib license; libc++ is under the Apache License 2.0 with LLVM exceptions.
+
+AndroidX (Activity, Compose, Core, DataStore, Lifecycle, Room, WorkManager), Kotlin and kotlinx.coroutines
+Copyright (C) The Android Open Source Project, JetBrains s.r.o. and contributors
+The Apache License, version 2.0.

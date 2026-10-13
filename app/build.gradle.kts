@@ -14,6 +14,9 @@ android {
         versionCode = 1
         versionName = "0.0.1"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        // The engine is built for these three; a library that also comes for
+        // another one must not make the app look installable there.
+        ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64") }
     }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
@@ -22,6 +25,64 @@ android {
     buildFeatures {
         compose = true
     }
+    // One build per store. The code is the same; the stores differ in what
+    // they accept, and a difference, when one comes, has a place to live.
+    flavorDimensions += "store"
+    productFlavors {
+        create("fdroid") { dimension = "store" }
+        create("play") { dimension = "store" }
+    }
+    // The list of dependencies the build tools put into the package is sealed
+    // with a key of Google's: F-Droid cannot read it and turns the build down.
+    dependenciesInfo {
+        includeInApk = false
+        includeInBundle = false
+    }
+}
+
+// The license texts the app shows are the files of the source tree.
+abstract class LegalAssetsTask : DefaultTask() {
+    @get:InputFile
+    @get:PathSensitive(PathSensitivity.NONE)
+    abstract val notice: RegularFileProperty
+
+    @get:InputFile
+    @get:PathSensitive(PathSensitivity.NONE)
+    abstract val license: RegularFileProperty
+
+    @get:InputDirectory
+    @get:PathSensitive(PathSensitivity.RELATIVE)
+    abstract val licenses: DirectoryProperty
+
+    @get:OutputDirectory
+    abstract val outputDir: DirectoryProperty
+
+    @get:Inject
+    abstract val fs: FileSystemOperations
+
+    @TaskAction
+    fun copy() {
+        fs.sync {
+            from(notice) { into("legal") }
+            from(license) { into("legal") }
+            from(licenses) { into("legal/licenses") }
+            into(outputDir)
+        }
+    }
+}
+
+val legalAssets = tasks.register<LegalAssetsTask>("legalAssets") {
+    notice.set(rootProject.layout.projectDirectory.file("NOTICE"))
+    license.set(rootProject.layout.projectDirectory.file("LICENSE"))
+    licenses.set(rootProject.layout.projectDirectory.dir("licenses"))
+}
+
+androidComponents {
+    onVariants { variant ->
+        variant.sources.assets?.addGeneratedSourceDirectory(legalAssets, LegalAssetsTask::outputDir)
+    }
+    // The flavors hold the same code: the tests on a device run on one of them.
+    beforeVariants(selector().withFlavor("store" to "play")) { it.androidTest.enable = false }
 }
 
 kotlin {
@@ -53,4 +114,12 @@ dependencies {
     debugImplementation("androidx.compose.ui:ui-test-manifest")
     androidTestImplementation("androidx.test.ext:junit:1.2.1")
     androidTestImplementation("androidx.test:runner:1.6.2")
+}
+
+// LicensesTest reads these from the source tree: a change in them is a reason to run it again.
+tasks.withType<Test>().configureEach {
+    inputs.file(rootProject.layout.projectDirectory.file("NOTICE")).withPathSensitivity(PathSensitivity.NONE)
+    inputs.dir(rootProject.layout.projectDirectory.dir("licenses")).withPathSensitivity(PathSensitivity.RELATIVE)
+    inputs.file(rootProject.layout.projectDirectory.file("engine/src/main/cpp/cmake/deps.cmake"))
+        .withPathSensitivity(PathSensitivity.NONE)
 }
