@@ -92,6 +92,10 @@ python3 contract/up.py
 
 Specifications are in [docs/specs](docs/specs): [reader.md](docs/specs/reader.md) for the engine API and the reading screen, [library.md](docs/specs/library.md), [opds.md](docs/specs/opds.md), and [sync-bookorbit.md](docs/specs/sync-bookorbit.md) for the server.
 
+## Privacy
+
+The app talks only to the servers you add; what it sends to them is in [docs/privacy.md](docs/privacy.md). The texts for the stores are in `fastlane/metadata`.
+
 ## License
 
 Perigee is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version. See [LICENSE](LICENSE).

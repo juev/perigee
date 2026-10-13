@@ -1,0 +1,25 @@
+Perigee is a reader for text e-books. Pages are laid out by crengine, the engine of KOReader: hyphenation by the dictionary of the book's language, justified text, hanging punctuation, footnotes at the bottom of the page, two pages side by side in landscape.
+
+Reading
+• Page turning by touch zones, swipes and volume keys
+• Day, night and sepia; font, size, boldness, line spacing, alignment, paragraph indent and spacing, margins
+• Table of contents, bookmarks, highlights with notes, search in the book, return from a jump
+• Copying, sharing, translating and looking up the selected text in the apps you have
+
+Library
+• The books in the folders you pick, with covers, authors and series
+• Shelves: reading, to read, have read, favourites; collections; search and sorting
+• OPDS catalogues: browsing, search, downloads
+• Works without a network and without an account
+
+Syncing with a bookOrbit server of your own
+• The place you got to, both ways; a later place read on another device is offered, not jumped to
+• Highlights with notes and bookmarks, both ways
+• Status, rating and time spent reading
+• The server's books: browsing, search, downloads; sending your books to the server
+
+Formats: EPUB, FB2 (also in a zip archive), FB3, MOBI (not KF8/AZW3), TXT, RTF, DOC, DOCX, ODT, HTML, CHM. PDF and DjVu are not supported.
+
+Exact positions are shared with the bookOrbit web reader for EPUB; for other formats they are exact between devices running crengine and approximate in the web reader.
+
+No ads, no analytics. The app talks only to the servers you add. Perigee is free software under the GNU GPL, version 3 or later, and is not affiliated with bookOrbit or KOReader.
