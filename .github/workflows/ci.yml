@@ -65,9 +65,9 @@ jobs:
             */build/test-results
 
   device:
-    name: Tests on a device, bookOrbit ${{ matrix.server }}
+    name: Tests on a device, ${{ matrix.name }}
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 60
     # A new release of the server that breaks the contract must not turn every
     # commit red; the weekly run is where it fails for real.
     continue-on-error: ${{ matrix.server == 'latest' && github.event_name != 'schedule' }}
@@ -75,12 +75,21 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # The version the app is written against: every test, the contract among them.
-          - server: 3.3.0
-            tasks: connectedAndroidTest
-          # The latest release: the contract only.
-          - server: latest
+          # The screens of the app; they talk to a stand-in server of their own.
+          - name: app
+            tasks: ":app:connectedFdroidDebugAndroidTest"
+          # Everything under the app, and the contract with the version of the
+          # server the app is written against.
+          - name: modules, bookOrbit 3.3.0
+            server: 3.3.0
+            tasks: ":engine:connectedDebugAndroidTest :data:connectedDebugAndroidTest :opds:connectedDebugAndroidTest :sync:connectedDebugAndroidTest :contract:connectedDebugAndroidTest"
+          # The latest release of the server: the contract only.
+          - name: bookOrbit latest
+            server: latest
             tasks: ":contract:connectedDebugAndroidTest"
+    env:
+      # The emulator is x86_64: the engine is built for it alone.
+      ORG_GRADLE_PROJECT_perigeeAbis: x86_64
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -99,6 +108,7 @@ jobs:
           key: engine-deps-${{ hashFiles('engine/src/main/cpp/cmake/deps.cmake') }}
       - uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
       - name: Start the bookOrbit server
+        if: matrix.server
         env:
           BOOKORBIT_VERSION: ${{ matrix.server }}
         run: python3 contract/up.py
@@ -108,8 +118,8 @@ jobs:
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
       # Built before the emulator is up, so that it does not sit idle through the engine's build.
-      - name: Build the tests
-        run: ./gradlew assembleAndroidTest
+      - name: Build the engine
+        run: ./gradlew :engine:assembleDebug
       - uses: ReactiveCircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0
         with:
           api-level: 36
@@ -120,12 +130,12 @@ jobs:
           # The emulator reaches the server on the runner at 10.0.2.2.
           script: ./gradlew ${{ matrix.tasks }} --continue -Pandroid.testInstrumentationRunnerArguments.bookorbitUrl=http://10.0.2.2:3070
       - name: Server log
-        if: failure()
+        if: failure() && matrix.server
         run: docker compose -f contract/docker-compose.yml logs --tail 300 app
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: failure()
         with:
-          name: device-reports-${{ matrix.server }}
+          name: device-reports-${{ strategy.job-index }}
           path: |
             */build/reports/androidTests
             */build/outputs/androidTest-results

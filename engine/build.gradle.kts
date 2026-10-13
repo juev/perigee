@@ -2,6 +2,10 @@ plugins {
     id("com.android.library")
 }
 
+// The ABIs the engine is built for. A build that needs one of them only, as a
+// run on an emulator does, names it: -PperigeeAbis=x86_64
+val abis = (findProperty("perigeeAbis") as String?)?.split(",") ?: listOf("arm64-v8a", "armeabi-v7a", "x86_64")
+
 android {
     namespace = "org.evsyukov.perigee.engine"
     compileSdk = 36
@@ -10,7 +14,7 @@ android {
     defaultConfig {
         minSdk = 30
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-        ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64") }
+        ndk { abiFilters += abis }
         externalNativeBuild {
             cmake {
                 arguments += listOf("-DANDROID_STL=c++_static")

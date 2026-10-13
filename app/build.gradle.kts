@@ -3,6 +3,9 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
+// The same list as in :engine.
+val abis = (findProperty("perigeeAbis") as String?)?.split(",") ?: listOf("arm64-v8a", "armeabi-v7a", "x86_64")
+
 android {
     namespace = "org.evsyukov.perigee"
     compileSdk = 36
@@ -16,7 +19,7 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         // The engine is built for these three; a library that also comes for
         // another one must not make the app look installable there.
-        ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64") }
+        ndk { abiFilters += abis }
     }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
