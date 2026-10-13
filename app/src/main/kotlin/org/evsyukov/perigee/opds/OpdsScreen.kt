@@ -1,6 +1,9 @@
 package org.evsyukov.perigee.opds
 
+import android.content.Intent
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -48,6 +51,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -57,6 +61,7 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.ImeAction
@@ -68,8 +73,10 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import java.io.File
+import kotlinx.coroutines.launch
 import org.evsyukov.perigee.R
 import org.evsyukov.perigee.data.Catalog
+import org.evsyukov.perigee.library.folderName
 
 /**
  * The reader's OPDS catalogs. [onOpen] is given the file of a downloaded book
@@ -141,6 +148,31 @@ fun OpdsScreen(onOpen: (File) -> Unit, onClose: () -> Unit, model: OpdsViewModel
             failure != null && page == null -> Failed(padding, failure, model::retry)
             page != null -> Entries(padding, page, state, model, onOpen)
         }
+    }
+
+    val context = LocalContext.current
+    val downloadsPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+        if (uri == null) {
+            model.dismissAsking()
+        } else {
+            context.contentResolver.takePersistableUriPermission(
+                uri, Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION,
+            )
+            model.downloadInto(uri.toString(), folderName(context, uri))
+        }
+    }
+    if (state.asking != null) {
+        AlertDialog(
+            onDismissRequest = model::dismissAsking,
+            title = { Text(stringResource(R.string.downloads_ask_title)) },
+            text = { Text(stringResource(R.string.downloads_ask_text)) },
+            confirmButton = {
+                TextButton(onClick = { downloadsPicker.launch(null) }) { Text(stringResource(R.string.downloads_choose_folder)) }
+            },
+            dismissButton = {
+                TextButton(onClick = model::downloadIntoApp) { Text(stringResource(R.string.downloads_keep_in_app)) }
+            },
+        )
     }
 
     if (adding) {
@@ -296,7 +328,10 @@ private fun DownloadLine(entry: OpdsEntry, link: OpdsLink, download: Download?, 
             }
             is Download.Done -> {
                 Text(stringResource(R.string.catalog_downloaded), style = MaterialTheme.typography.bodySmall)
-                TextButton(onClick = { onOpen(download.file) }) { Text(stringResource(R.string.catalog_read)) }
+                val scope = rememberCoroutineScope()
+                TextButton(onClick = { scope.launch { model.fileOf(download.bookId)?.let(onOpen) } }) {
+                    Text(stringResource(R.string.catalog_read))
+                }
             }
             is Download.Failed -> {
                 Text(failureText(download.why), Modifier.weight(1f), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)

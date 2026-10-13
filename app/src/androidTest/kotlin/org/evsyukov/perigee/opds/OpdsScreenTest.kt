@@ -1,5 +1,6 @@
 package org.evsyukov.perigee.opds
 
+import android.net.Uri
 import androidx.activity.ComponentActivity
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.ui.test.assertIsDisplayed
@@ -22,12 +23,20 @@ import kotlinx.coroutines.runBlocking
 import org.evsyukov.perigee.R
 import org.evsyukov.perigee.data.Catalogs
 import org.evsyukov.perigee.data.Covers
+import org.evsyukov.perigee.data.FileHash
+import org.evsyukov.perigee.data.FoundBook
 import org.evsyukov.perigee.data.Library
+import org.evsyukov.perigee.data.LibraryPreferences
+import org.evsyukov.perigee.data.LibraryPrefs
+import org.evsyukov.perigee.library.BookSink
+import org.evsyukov.perigee.library.SourceFile
 import org.evsyukov.perigee.reader.TestBook
 import org.junit.After
+import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
+import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -53,8 +62,31 @@ class OpdsScreenTest {
 
     private fun string(id: Int, vararg args: Any) = activity.getString(id, *args)
 
+    private val preferences by lazy { LibraryPreferences.get(activity) }
+    private val downloads by lazy { File(activity.cacheDir, "opds-downloads-folder").apply { deleteRecursively() } }
+    private val downloadsUri get() = Uri.fromFile(downloads).toString()
+    private var folderWritable = true
+
+    /** A plain directory standing in for the folder the reader picked for downloads. */
+    private val sink = BookSink { name, from ->
+        if (!folderWritable) return@BookSink null
+        downloads.mkdirs()
+        val file = File(downloads, name).also { from.copyTo(it) }
+        SourceFile(Uri.fromFile(file).toString(), name, file.length(), file.lastModified())
+    }
+
+    /** As after the reader was asked where downloads go; [folder] is what they chose, null for the app itself. */
+    private fun downloadsGo(folder: String?) = runBlocking {
+        preferences.update { LibraryPrefs(downloadsFolder = folder, downloadsAsked = true) }
+    }
+
+    @Before
+    fun downloadsStayInTheApp() = downloadsGo(null)
+
     private fun show() {
-        val model = OpdsViewModel(activity.application, catalogs, library, Covers(File(activity.cacheDir, "opds-covers")))
+        val model = OpdsViewModel(
+            activity.application, catalogs, library, Covers(File(activity.cacheDir, "opds-covers")), preferences,
+        ) { sink }
         rule.setContent { MaterialTheme { OpdsScreen(onOpen = { opened = it }, onClose = { closed = true }, model = model) } }
     }
 
@@ -142,7 +174,90 @@ class OpdsScreenTest {
 
         // Both books of the test catalog are one file, so both lines now offer it.
         rule.onAllNodesWithText(string(R.string.catalog_read)).onFirst().performClick()
+        rule.waitUntil(TIMEOUT) { opened != null }
         assertEquals(book.path, opened?.path)
+    }
+
+    private fun toTheBooks() {
+        openCatalog()
+        rule.onNodeWithText("All Books").performClick()
+        waitForText("Listed Title")
+    }
+
+    private fun downloadFirst() = rule.onAllNodesWithText(string(R.string.catalog_download, "FB2")).onFirst().performClick()
+
+    @Test
+    fun firstDownloadAsksWhereBooksShouldGo() {
+        runBlocking { preferences.update { LibraryPrefs() } }
+        toTheBooks()
+        downloadFirst()
+        waitForText(string(R.string.downloads_ask_title))
+        assertTrue("nothing is downloaded before the answer", runBlocking { library.books().first().isEmpty() })
+
+        rule.onNodeWithText(string(R.string.downloads_keep_in_app)).performClick()
+        waitForText(string(R.string.catalog_downloaded))
+        val book = runBlocking { library.books().first().single() }
+        assertTrue(book.path.startsWith(activity.filesDir.path))
+        assertTrue("the question is not asked twice", runBlocking { preferences.prefs.first().downloadsAsked })
+    }
+
+    @Test
+    fun downloadGoesIntoTheFolderTheReaderChose() {
+        downloadsGo(downloadsUri)
+        toTheBooks()
+        downloadFirst()
+        waitForText(string(R.string.catalog_downloaded))
+
+        assertEquals("an ordinary file under the book's own name", listOf("Listed Title.fb2"), downloads.list().orEmpty().toList())
+        val book = runBlocking { library.books().first().single() }
+        assertEquals("Title In The File", book.title)
+        assertEquals(Uri.fromFile(File(downloads, "Listed Title.fb2")).toString(), book.uri)
+        assertEquals("no copy in the app until the book is opened", "", book.path)
+        val folder = runBlocking { library.folders().first().single() }
+        assertEquals("the folder is one the library looks through", downloadsUri, folder.uri)
+        assertEquals(listOf(book.uri), runBlocking { library.filesIn(folder.id).map { it.uri } })
+
+        rule.onAllNodesWithText(string(R.string.catalog_read)).onFirst().performClick()
+        rule.waitUntil(TIMEOUT) { opened != null }
+        assertArrayEquals(File(downloads, "Listed Title.fb2").readBytes(), opened!!.readBytes())
+    }
+
+    @Test
+    fun bookThatLiesInAFolderIsNotPutThereTwice() {
+        downloadsGo(downloadsUri)
+        openCatalog()
+        // The same file under another entry of the catalog.
+        rule.onNodeWithContentDescription(string(R.string.action_search)).performClick()
+        rule.onNodeWithTag("catalog-search").performTextInput("again")
+        rule.onNodeWithTag("catalog-search").performImeAction()
+        waitForText("Found for again")
+        runBlocking {
+            val folder = library.addFolder(downloadsUri, "Downloads")
+            val file = TestBook.write(File(activity.cacheDir, "catalog-book.fb2"), "Title In The File", author = "File Author")
+            library.found(
+                folder.id,
+                FoundBook(
+                    FileHash.partialMd5(file), "file:///elsewhere/mine.fb2", 1, 1, "fb2", "Title In The File",
+                    listOf("File Author"), "en", "", "", hasCover = false,
+                ),
+            )
+        }
+        downloadFirst()
+        waitForText(string(R.string.catalog_downloaded))
+        assertTrue("nothing was written: ${downloads.list().orEmpty().toList()}", downloads.list().isNullOrEmpty())
+        assertEquals("file:///elsewhere/mine.fb2", runBlocking { library.books().first().single().uri })
+    }
+
+    @Test
+    fun bookIsKeptInTheAppWhenTheFolderCannotBeWrittenTo() {
+        downloadsGo(downloadsUri)
+        folderWritable = false
+        toTheBooks()
+        downloadFirst()
+        waitForText(string(R.string.catalog_downloaded))
+        val book = runBlocking { library.books().first().single() }
+        assertTrue(File(book.path).isFile)
+        assertEquals(null, book.uri)
     }
 
     @Test

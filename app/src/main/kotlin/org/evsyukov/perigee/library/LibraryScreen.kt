@@ -1,10 +1,8 @@
 package org.evsyukov.perigee.library
 
-import android.content.Context
 import android.content.Intent
 import android.graphics.BitmapFactory
 import android.net.Uri
-import android.provider.DocumentsContract
 import android.util.LruCache
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -133,6 +131,14 @@ fun LibraryScreen(
             model.addFolder(uri.toString(), folderName(context, uri))
         }
     }
+    val downloadsPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+        if (uri != null) {
+            context.contentResolver.takePersistableUriPermission(
+                uri, Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION,
+            )
+            model.setDownloadsFolder(uri.toString(), folderName(context, uri))
+        }
+    }
     val unavailable = stringResource(R.string.book_unavailable)
     val open: (Book) -> Unit = { book ->
         scope.launch {
@@ -209,13 +215,15 @@ fun LibraryScreen(
     if (showFolders) {
         FoldersDialog(
             state.folders,
+            downloads = state.downloadsFolder,
             onAdd = { folderPicker.launch(null) },
+            onDownloads = { downloadsPicker.launch(null) },
             onRemove = { folder ->
                 model.removeFolder(folder)
                 runCatching {
-                    context.contentResolver.releasePersistableUriPermission(
-                        Uri.parse(folder.uri), Intent.FLAG_GRANT_READ_URI_PERMISSION,
-                    )
+                    val grant = Intent.FLAG_GRANT_READ_URI_PERMISSION or
+                        if (folder.uri == state.downloadsFolder) Intent.FLAG_GRANT_WRITE_URI_PERMISSION else 0
+                    context.contentResolver.releasePersistableUriPermission(Uri.parse(folder.uri), grant)
                 }
             },
             onClose = { showFolders = false },
@@ -590,7 +598,14 @@ private val PLAIN_COVERS = listOf(
 )
 
 @Composable
-private fun FoldersDialog(folders: List<Folder>, onAdd: () -> Unit, onRemove: (Folder) -> Unit, onClose: () -> Unit) {
+private fun FoldersDialog(
+    folders: List<Folder>,
+    downloads: String?,
+    onAdd: () -> Unit,
+    onDownloads: () -> Unit,
+    onRemove: (Folder) -> Unit,
+    onClose: () -> Unit,
+) {
     AlertDialog(
         onDismissRequest = onClose,
         title = { Text(stringResource(R.string.action_folders)) },
@@ -599,12 +614,30 @@ private fun FoldersDialog(folders: List<Folder>, onAdd: () -> Unit, onRemove: (F
                 if (folders.isEmpty()) Text(stringResource(R.string.folders_empty))
                 for (folder in folders) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(folder.name, Modifier.weight(1f), maxLines = 2, overflow = TextOverflow.Ellipsis)
+                        Column(Modifier.weight(1f)) {
+                            Text(folder.name, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                            if (folder.uri == downloads) {
+                                Text(
+                                    stringResource(R.string.folder_for_downloads),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        }
                         IconButton(onClick = { onRemove(folder) }) {
                             Icon(Icons.Filled.Delete, stringResource(R.string.action_remove_folder, folder.name))
                         }
                     }
                 }
+                if (downloads == null) {
+                    Text(
+                        stringResource(R.string.downloads_in_app),
+                        Modifier.padding(top = 12.dp),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                TextButton(onClick = onDownloads) { Text(stringResource(R.string.action_downloads_folder)) }
             }
         },
         confirmButton = { TextButton(onClick = onAdd) { Text(stringResource(R.string.action_add_folder)) } },
@@ -682,16 +715,4 @@ private fun NameDialog(title: String, initial: String, onDone: (String) -> Unit,
         },
         dismissButton = { TextButton(onClick = onClose) { Text(stringResource(R.string.action_cancel)) } },
     )
-}
-
-/** What the system calls a picked folder; the last part of its address when it will not say. */
-private fun folderName(context: Context, tree: Uri): String {
-    val id = DocumentsContract.getTreeDocumentId(tree)
-    val named = runCatching {
-        context.contentResolver.query(
-            DocumentsContract.buildDocumentUriUsingTree(tree, id),
-            arrayOf(DocumentsContract.Document.COLUMN_DISPLAY_NAME), null, null, null,
-        )?.use { if (it.moveToFirst()) it.getString(0) else null }
-    }.getOrNull()
-    return named?.takeIf { it.isNotBlank() } ?: id.substringAfterLast(':').substringAfterLast('/').ifEmpty { id }
 }

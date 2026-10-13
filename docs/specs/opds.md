@@ -22,7 +22,12 @@ A page may give a search address template outright (`rel="search"`, an Atom type
 
 ### Downloads
 
-A file is downloaded into a folder of its own in the cache, read by the engine (`readBook`: title, authors, series, cover, fingerprint), moved to `files/books/<fingerprint>.<format>` and registered with `Library.keep`. It joins the library unopened, titled by what the file says, not by what the catalog listed. A book that was in the library already keeps the reader's place and marks. A file the engine cannot read is deleted and reported as not a book. A name the server suggests cannot lead out of the download folder.
+A file is downloaded into a folder of its own in the cache and read by the engine (`readBook`: title, authors, series, cover, fingerprint). A file the engine cannot read is deleted and reported as not a book. A name the server suggests cannot lead out of the download folder. The book joins the library unopened, titled by what the file says, not by what the catalog listed.
+
+Where the file is kept is the reader's choice, asked for at the first download and changed under "Folders with books":
+
+- **A folder of the reader's choice.** The book is written there as an ordinary file, under the name the server gives or the catalog's title, and registered as found in that folder. The folder is one the library looks through like any other, so the book stays the reader's: seen by other apps, left in place when the app is removed, gone from the library when the file is deleted. A book that lies in some folder of the library already is not written again. When the folder cannot be written to, the book is kept in the app rather than lost.
+- **The app's own storage.** The file is moved to `files/books/<fingerprint>.<format>` and registered with `Library.keep`. A book that was in the library already keeps the reader's place and marks.
 
 ## Screen
 
@@ -37,15 +42,16 @@ A file is downloaded into a folder of its own in the cache, read by the engine (
 - `:opds` `OpdsParserTest` — pages recorded on 2026-10-13 from bookOrbit 3.3.0 and from Project Gutenberg (`opds/src/androidTest/assets/feeds`), plus hand-written pages for paid links, broken links and things that are not catalogs.
 - `:opds` `OpdsClientTest` — against servers the test runs itself: credentials, refusals, redirects within and across servers, search by template and by description, download names, oversized pictures.
 - `:data` `CatalogsTest` — sealed passwords, adding twice, removal, a downloaded file joining the library.
-- `:app` `OpdsScreenTest` — the screen against a small catalog served by the test: adding with each kind of failure, browsing, the next part of a page, search, download into the library, a broken section.
+- `:app` `OpdsScreenTest` — the screen against a small catalog served by the test: adding with each kind of failure, browsing, the next part of a page, search, a broken section, and downloads: the question at the first one, into the app, into a folder, a book that is in a folder already, a folder that cannot be written to. The folder is a plain directory there.
 - `:contract` `OpdsContractTest` — the client against the catalog of a real bookOrbit 3.3.0 in docker: browsing, pages, search, download checked by the engine, refused passwords. The server has OPDS off by default and separate OPDS users; the test switches it on (`PATCH app-settings/opds_enabled`) and makes a user (`POST opds-users`).
 
-Checked by hand on the emulator against the same server: adding the catalog, browsing, downloading an EPUB, reading it, finding it in the library.
+Checked by hand on the emulator against the same server: adding the catalog, browsing, downloading an EPUB, reading it, finding it in the library; and downloading an FB2 into a folder picked through the system's dialog, where it appeared as a file and in the library.
 
 ## Not done
 
 - OPDS 2.0 (JSON) catalogs.
 - Download progress, cancelling, and a limit on file size.
+- A message when the downloads folder could not be written to and the book went into the app instead.
 - Facets, and files a catalog offers only after a purchase or a loan.
 - Editing a catalog; it is removed and added again.
 - A warning when a password is sent over plain HTTP.

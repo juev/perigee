@@ -3,6 +3,7 @@ package org.evsyukov.perigee.data
 import android.content.Context
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
@@ -23,7 +24,14 @@ enum class BookSort {
 }
 
 /** How the reader left the library screen. */
-data class LibraryPrefs(val shelf: Shelf = Shelf.All, val sort: BookSort = BookSort.Recent)
+data class LibraryPrefs(
+    val shelf: Shelf = Shelf.All,
+    val sort: BookSort = BookSort.Recent,
+    /** The folder downloaded books are put into, by its tree URI; null keeps them in the app's own storage. */
+    val downloadsFolder: String? = null,
+    /** The reader was asked where downloads should go, whatever they answered. */
+    val downloadsAsked: Boolean = false,
+)
 
 private val Context.libraryStore: DataStore<Preferences> by preferencesDataStore("library")
 
@@ -35,6 +43,8 @@ class LibraryPreferences private constructor(private val store: DataStore<Prefer
             val changed = change(read(stored))
             stored[SHELF] = changed.shelf.name
             stored[SORT] = changed.sort.name
+            if (changed.downloadsFolder == null) stored.remove(DOWNLOADS) else stored[DOWNLOADS] = changed.downloadsFolder
+            stored[DOWNLOADS_ASKED] = changed.downloadsAsked
         }
     }
 
@@ -44,12 +54,16 @@ class LibraryPreferences private constructor(private val store: DataStore<Prefer
         return LibraryPrefs(
             shelf = Shelf.entries.firstOrNull { it.name == p[SHELF] } ?: d.shelf,
             sort = BookSort.entries.firstOrNull { it.name == p[SORT] } ?: d.sort,
+            downloadsFolder = p[DOWNLOADS],
+            downloadsAsked = p[DOWNLOADS_ASKED] ?: d.downloadsAsked,
         )
     }
 
     companion object {
         private val SHELF = stringPreferencesKey("shelf")
         private val SORT = stringPreferencesKey("sort")
+        private val DOWNLOADS = stringPreferencesKey("downloads_folder")
+        private val DOWNLOADS_ASKED = booleanPreferencesKey("downloads_asked")
 
         @Volatile
         private var instance: LibraryPreferences? = null

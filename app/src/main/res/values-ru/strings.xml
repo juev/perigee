@@ -139,4 +139,12 @@
     <string name="catalog_read">Читать</string>
     <string name="catalog_search_hint">Найти в каталоге</string>
     <string name="action_retry">Повторить</string>
+
+    <string name="folder_for_downloads">Сюда кладутся скачанные книги</string>
+    <string name="downloads_in_app">Скачанные книги хранятся внутри приложения.</string>
+    <string name="action_downloads_folder">Выбрать папку для загрузок</string>
+    <string name="downloads_ask_title">Где хранить скачанные книги?</string>
+    <string name="downloads_ask_text">В выбранной вами папке это обычные файлы: их видят другие приложения, и после удаления Perigee они остаются. Внутри приложения их не видно, и удаляются они вместе с ним.</string>
+    <string name="downloads_choose_folder">Выбрать папку</string>
+    <string name="downloads_keep_in_app">Хранить в приложении</string>
 </resources>

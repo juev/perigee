@@ -5,6 +5,7 @@ Requirement R4 of `plan.md`. The library works with no network and no account. W
 ## Where books come from
 
 - **Folders.** The reader picks folders through the system's folder dialog (Storage Access Framework); the app keeps read access to them across restarts. Every folder is looked through together with the folders inside it.
+- **Downloads.** Books downloaded from catalogs go into the folder the reader chose for them, which is one of the folders above, or into the app's storage; see `opds.md`.
 - **Single files.** "Open a book" picks one file from anywhere. It is copied into the app's storage and listed like the rest.
 
 A file is a book when its name ends in one of `Library.FORMATS`: `epub`, `fb2`, `fb2.zip`, `fb3`, `mobi`, `prc`, `pdb`, `txt`, `rtf`, `doc`, `docx`, `odt`, `html`, `htm`, `chm`. Other files are passed by.

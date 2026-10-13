@@ -5,7 +5,6 @@ import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import java.io.File
-import java.io.IOException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancelAndJoin
@@ -46,6 +45,8 @@ data class LibraryState(
     val collections: List<BookCollection> = emptyList(),
     val members: List<CollectionBook> = emptyList(),
     val scanning: Boolean = false,
+    /** Tree URI of the folder downloaded books are put into; null when they stay in the app's storage. */
+    val downloadsFolder: String? = null,
 )
 
 /** The library screen: shelves of books, the folders they come from, collections. */
@@ -94,7 +95,7 @@ class LibraryViewModel(
                 listing(stored.books, prefs.shelf, prefs.sort, looking.query, group?.key, stored.collections, stored.members)
             },
             empty = stored.books.isEmpty(), folders = stored.folders, collections = stored.collections,
-            members = stored.members, scanning = looking.scanning,
+            members = stored.members, scanning = looking.scanning, downloadsFolder = prefs.downloadsFolder,
         )
     }.stateIn(viewModelScope, SharingStarted.Eagerly, LibraryState())
 
@@ -129,7 +130,17 @@ class LibraryViewModel(
     /** Adds a folder the reader picked and looks through it. */
     fun addFolder(uri: String, name: String) = rescan { library.addFolder(uri, name) }
 
-    fun removeFolder(folder: Folder) = rescan { library.removeFolder(folder.id) }
+    fun removeFolder(folder: Folder) = rescan {
+        library.removeFolder(folder.id)
+        // Downloads go back to the app's own storage rather than to a folder that is no longer looked at.
+        preferences.update { if (it.downloadsFolder == folder.uri) it.copy(downloadsFolder = null) else it }
+    }
+
+    /** Makes a folder the one downloaded books are put into; it is a folder of the library like the rest. */
+    fun setDownloadsFolder(uri: String, name: String) = rescan {
+        library.addFolder(uri, name)
+        preferences.update { it.copy(downloadsFolder = uri, downloadsAsked = true) }
+    }
 
     /** Looks through every folder for new, changed and removed books. */
     fun rescan() = rescan {}
@@ -181,31 +192,6 @@ class LibraryViewModel(
         }
     }
 
-    /**
-     * The file to open a book from. The engine opens files by path, so a book
-     * that lies in a folder of the library is copied into the app's storage
-     * the first time it is opened. Null when the book cannot be got at.
-     */
-    suspend fun fileOf(book: Book): File? = withContext(Dispatchers.IO) {
-        val copy = File(book.path)
-        if (book.path.isNotEmpty() && copy.isFile) return@withContext copy
-        val uri = book.uri ?: return@withContext null
-        val app = getApplication<Application>()
-        val target = File(File(app.filesDir, "books").apply { mkdirs() }, "${book.id}.${book.format.ifEmpty { "book" }}")
-        val partial = File(target.path + ".part")
-        try {
-            val input = app.contentResolver.openInputStream(Uri.parse(uri)) ?: return@withContext null
-            input.use { from -> partial.outputStream().use { from.copyTo(it) } }
-            // Only a whole copy takes the name the book is opened by.
-            if (!partial.renameTo(target)) return@withContext null
-        } catch (e: IOException) {
-            partial.delete()
-            return@withContext null
-        } catch (e: SecurityException) {
-            partial.delete()
-            return@withContext null
-        }
-        library.setLocalCopy(book.id, target)
-        target
-    }
+    /** The file to open a book from, see [localCopy]. */
+    suspend fun fileOf(book: Book): File? = localCopy(getApplication(), library, book)
 }

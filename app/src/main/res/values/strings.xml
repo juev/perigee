@@ -139,4 +139,12 @@
     <string name="catalog_read">Read</string>
     <string name="catalog_search_hint">Find in the catalog</string>
     <string name="action_retry">Try again</string>
+
+    <string name="folder_for_downloads">Downloaded books are put here</string>
+    <string name="downloads_in_app">Downloaded books are kept in the app\'s own storage.</string>
+    <string name="action_downloads_folder">Choose a folder for downloads</string>
+    <string name="downloads_ask_title">Where to keep downloaded books?</string>
+    <string name="downloads_ask_text">In a folder of your choice they are ordinary files: other apps can see them, and they stay when this app is removed. Kept in the app, they are out of sight and go with it.</string>
+    <string name="downloads_choose_folder">Choose a folder</string>
+    <string name="downloads_keep_in_app">Keep in the app</string>
 </resources>
