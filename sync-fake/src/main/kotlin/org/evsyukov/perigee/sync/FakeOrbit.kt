@@ -36,9 +36,88 @@ class FakeOrbit : AutoCloseable {
     /** How many books the server says it has; the number it gives when null. */
     var total: Int? = null
 
+    /** While set, the list of books is handed out a page at a time, as the real server does; otherwise whole to every asking. */
+    var paged = false
+
+    private fun page(body: JSONObject): JSONArray {
+        if (!paged) return books
+        val pagination = body.getJSONObject("pagination")
+        val from = pagination.getInt("page") * pagination.getInt("size")
+        val part = JSONArray()
+        for (i in from until minOf(books.length(), from + pagination.getInt("size"))) part.put(books.get(i))
+        return part
+    }
+
     /** What the list of books is answered with instead, while not null. */
     var queryAnswer: Answer? = null
     val downloads = HashMap<Long, Answer>()
+
+    /** Whether the reader may put books into libraries, the largest file taken, and the libraries there are. */
+    var uploadAllowed = true
+    var maxUploadBytes = 500L * 1024 * 1024
+    var libraries = JSONArray("""[{"id":1,"name":"Books","allowedFormats":[],"organizationMode":"book_per_file","folders":[{"id":10,"name":"books"}]}]""")
+
+    /** What a file sent is answered with instead, while not null. */
+    var uploadAnswer: Answer? = null
+
+    /** A file the server took. */
+    class Upload(val libraryId: Long, val folderId: Long?, val name: String, val bytes: ByteArray, val bookId: Long)
+
+    val uploads = ArrayList<Upload>()
+
+    /** Done once a file is taken, before the answer goes, as to have the server fail right after. */
+    var afterUpload: () -> Unit = {}
+
+    private fun upload(request: Seen, path: String): Answer {
+        if (!uploadAllowed) return error(403, "Missing permission: library_upload")
+        uploadAnswer?.let { return it }
+        val libraryId = path.removePrefix("/libraries/").substringBefore('/').toLong()
+        val folderId = path.substringAfter("folderId=", "").toLongOrNull()
+        val library = (0 until libraries.length()).map { libraries.getJSONObject(it) }.firstOrNull { it.getLong("id") == libraryId }
+            ?: return error(404, "Library not found")
+        if (folderId != null) {
+            val folders = library.getJSONArray("folders")
+            if ((0 until folders.length()).none { folders.getJSONObject(it).getLong("id") == folderId }) {
+                return error(400, "Folder does not belong to this library")
+            }
+        }
+        val (name, bytes) = filePart(request) ?: return error(400, "No file provided")
+        val format = name.substringAfterLast('.', "").lowercase()
+        if (format !in FORMATS) return error(400, "Unsupported file type .$format", "UPLOAD_FORMAT_UNSUPPORTED")
+        val allowed = library.getJSONArray("allowedFormats")
+        if (allowed.length() > 0 && (0 until allowed.length()).none { allowed.getString(it) == format }) {
+            return error(400, "This library does not allow .$format files", "UPLOAD_FORMAT_NOT_ALLOWED")
+        }
+        if (bytes.size > maxUploadBytes) return error(413, "File exceeds the upload limit", "UPLOAD_TOO_LARGE")
+        if (bytes.isEmpty()) return error(400, "File must not be empty", "UPLOAD_EMPTY")
+        // Filed by its name: the same name again is the same place.
+        if (uploads.any { it.libraryId == libraryId && it.name == name }) {
+            return error(409, "A file named \"$name\" already exists at the target location", "UPLOAD_DESTINATION_CONFLICT")
+        }
+        val bookId = marks.incrementAndGet().toLong()
+        uploads += Upload(libraryId, folderId, name, bytes, bookId)
+        files[partialMd5(bytes)] = bookId to bookId * 10
+        afterUpload()
+        return Answer(201, JSONObject().put("bookId", bookId).put("filename", name).put("format", format).put("sizeBytes", bytes.size).toString())
+    }
+
+    /** The name and contents of the file a form carries. */
+    private fun filePart(request: Seen): Pair<String, ByteArray>? {
+        val boundary = request.headers["content-type"]?.substringAfter("boundary=", "")?.takeIf { it.isNotEmpty() } ?: return null
+        val body = request.bytes
+        val headEnd = indexOf(body, "\r\n\r\n".toByteArray(), 0).takeIf { it >= 0 } ?: return null
+        val head = body.copyOfRange(0, headEnd).decodeToString()
+        val name = Regex("filename=\"([^\"]*)\"").find(head)?.groupValues?.get(1) ?: return null
+        val end = indexOf(body, "\r\n--$boundary--".toByteArray(), headEnd).takeIf { it >= 0 } ?: return null
+        return name to body.copyOfRange(headEnd + 4, end)
+    }
+
+    private fun indexOf(bytes: ByteArray, part: ByteArray, from: Int): Int {
+        for (i in from..bytes.size - part.size) {
+            if ((part.indices).all { bytes[i + it] == part[it] }) return i
+        }
+        return -1
+    }
 
     /** The latest place of each file, by its fingerprint, as the server answers a device with it. */
     val places = HashMap<String, JSONObject>()
@@ -263,7 +342,8 @@ class FakeOrbit : AutoCloseable {
 
     private fun respond(request: Seen): Answer {
         val path = request.path.removePrefix("/api/v1")
-        val body = if (request.body.isBlank()) JSONObject() else JSONObject(request.body)
+        val form = request.headers["content-type"].orEmpty().startsWith("multipart/")
+        val body = if (form || request.body.isBlank()) JSONObject() else JSONObject(request.body)
         if (path == "/auth/login-options") {
             return Answer(200, JSONObject().put("passwordLoginEnabled", passwordLogin).put("oidcProviders", JSONArray()).toString())
         }
@@ -334,6 +414,13 @@ class FakeOrbit : AutoCloseable {
         if (request.headers["authorization"]?.removePrefix("Bearer ") !in access) return error(401, "Unauthorized")
         return when {
             path == "/app-info" -> Answer(200, JSONObject().put("version", version).put("features", JSONArray()).toString())
+            path == "/uploads/capabilities" -> Answer(
+                200,
+                JSONObject().put("maxFileSizeBytes", maxUploadBytes).put("chunkSizeBytes", 16 * 1024 * 1024)
+                    .put("supportedFormats", JSONArray(FORMATS)).put("canUploadToLibrary", uploadAllowed).put("canUseBookDock", false)
+                    .put("libraries", if (uploadAllowed) libraries else JSONArray()).toString(),
+            )
+            path.startsWith("/libraries/") && request.method == "POST" -> upload(request, path)
             path == "/koreader/credentials" && !deviceAllowed -> error(403, "Missing permission: koreader_sync")
             path == "/koreader/credentials" && request.method == "GET" ->
                 Answer(200, deviceUser?.let { JSONObject().put("username", it).put("syncEnabled", true).toString() }.orEmpty())
@@ -353,7 +440,7 @@ class FakeOrbit : AutoCloseable {
                     Answer(201, "{\"success\":true}")
                 }
             }
-            path == "/books/query" -> queryAnswer ?: Answer(201, JSONObject().put("items", books).put("total", total ?: books.length()).put("page", body.getJSONObject("pagination").getInt("page")).toString())
+            path == "/books/query" -> queryAnswer ?: Answer(201, JSONObject().put("items", page(body)).put("total", total ?: books.length()).put("page", body.getJSONObject("pagination").getInt("page")).toString())
             path.startsWith("/books/files/") -> downloads[path.removePrefix("/books/files/").removeSuffix("/download").toLong()] ?: error(404, "No file")
             path.endsWith("/thumbnail") -> Answer(200, byteArrayOf(1, 2, 3), "image/jpeg")
             else -> error(404, "Cannot ${request.method} $path")
@@ -363,6 +450,20 @@ class FakeOrbit : AutoCloseable {
     override fun close() = server.close()
 
     companion object {
+        /** What the real server takes, of the formats the app reads. */
+        val FORMATS = listOf("epub", "kepub", "pdf", "mobi", "azw3", "fb2")
+
+        /** The fingerprint the server knows a file by: KOReader's, of samples a kilobyte long spread through the file. */
+        fun partialMd5(bytes: ByteArray): String {
+            val digest = java.security.MessageDigest.getInstance("MD5")
+            for (i in -1..10) {
+                val offset = if (i < 0) 0L else 1024L shl (2 * i)
+                if (offset >= bytes.size) break
+                digest.update(bytes, offset.toInt(), minOf(1024, bytes.size - offset.toInt()))
+            }
+            return digest.digest().joinToString("") { "%02x".format(it) }
+        }
+
         /** The key the devices' channel takes for a password. */
         fun md5(text: String): String =
             java.security.MessageDigest.getInstance("MD5").digest(text.toByteArray()).joinToString("") { "%02x".format(it) }

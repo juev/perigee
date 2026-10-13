@@ -43,6 +43,7 @@ class MigrationTest {
         helper.runMigrationsAndValidate(NAME, 4, true).close()
         helper.runMigrationsAndValidate(NAME, 5, true).close()
         helper.runMigrationsAndValidate(NAME, 6, true).close()
+        helper.runMigrationsAndValidate(NAME, 7, true).close()
 
         val database = Room.databaseBuilder(instrumentation.targetContext, ReadingDatabase::class.java, NAME).build()
         try {
@@ -57,6 +58,7 @@ class MigrationTest {
             assertFalse(book.favorite)
             assertEquals(ReadingStatus.None, book.status)
             assertNull(book.serverFileId)
+            assertNull(book.serverLikeId)
             assertFalse("a place from before is not news to a server", book.placeUnsent)
             assertFalse(book.stateUnsent)
             assertNull(book.rating)

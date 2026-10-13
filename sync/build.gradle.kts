@@ -25,6 +25,7 @@ kotlin {
 dependencies {
     api(project(":data"))
     api("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
+    testImplementation("junit:junit:4.13.2")
     androidTestImplementation(project(":sync-fake"))
     androidTestImplementation("androidx.test.ext:junit:1.2.1")
     androidTestImplementation("androidx.test:runner:1.6.2")

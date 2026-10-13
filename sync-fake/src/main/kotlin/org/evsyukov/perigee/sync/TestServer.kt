@@ -7,7 +7,11 @@ import java.util.concurrent.CopyOnWriteArrayList
 import kotlin.concurrent.thread
 
 /** One request as the server saw it. Header names are in lower case. */
-data class Seen(val method: String, val path: String, val headers: Map<String, String>, val body: String)
+data class Seen(val method: String, val path: String, val headers: Map<String, String>, val body: String) {
+    /** The body as it came, for one that is not text, as a file sent in a form. */
+    var bytes: ByteArray = body.toByteArray()
+        internal set
+}
 
 class Answer(
     val code: Int = 200, val body: ByteArray = ByteArray(0), val type: String = "application/json",
@@ -50,7 +54,7 @@ class TestServer(private val answers: (Seen) -> Answer) : AutoCloseable {
             if (n < 0) break
             read += n
         }
-        val request = Seen(first[0], first.getOrElse(1) { "" }, headers, body.decodeToString())
+        val request = Seen(first[0], first.getOrElse(1) { "" }, headers, body.decodeToString()).also { it.bytes = body }
         seen += request
         val answer = answers(request)
         client.getOutputStream().apply {

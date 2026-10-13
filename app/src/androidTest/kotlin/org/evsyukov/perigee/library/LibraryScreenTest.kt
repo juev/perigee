@@ -16,17 +16,26 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performTextInput
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.platform.app.InstrumentationRegistry
 import java.io.File
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.evsyukov.perigee.R
+import org.evsyukov.perigee.data.Accounts
 import org.evsyukov.perigee.data.Covers
+import org.evsyukov.perigee.data.FileHash
 import org.evsyukov.perigee.data.FoundBook
 import org.evsyukov.perigee.data.Library
 import org.evsyukov.perigee.data.LibraryPreferences
 import org.evsyukov.perigee.data.LibraryPrefs
+import org.evsyukov.perigee.data.LocalBook
 import org.evsyukov.perigee.data.ReadingStatus
 import org.evsyukov.perigee.reader.TestBook
+import org.evsyukov.perigee.sync.Answer
+import org.evsyukov.perigee.sync.BookOrbit
+import org.evsyukov.perigee.sync.FakeOrbit
+import org.json.JSONArray
+import org.junit.After
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -77,11 +86,45 @@ class LibraryScreenTest {
     private val scansDone = java.util.concurrent.atomic.AtomicInteger()
     private val changes = java.util.concurrent.atomic.AtomicInteger()
 
+    /** A stand-in for the server, started only by the tests that sign in to it. */
+    private val server = lazy { FakeOrbit() }
+    private val accounts by lazy { Accounts.of(library) }
+    private val orbit by lazy { BookOrbit(accounts, library, "0.0.1") }
+
+    @After
+    fun stopServer() {
+        if (server.isInitialized()) server.value.close()
+    }
+
+    /** Signs in to the stand-in server and asks it about the books there are, as a start of the app would have. */
+    private fun signIn() = runBlocking<Unit> {
+        orbit.signIn(server.value.url, "reader", "right-password")
+        orbit.matchLibrary(all = true)
+    }
+
+    /** A book with a file of its own in the app, as one that was downloaded. */
+    private fun keep(title: String, format: String = "fb2"): String = runBlocking {
+        val file = TestBook.write(File(activity.cacheDir, "$title.$format"), title)
+        library.keep(file, LocalBook(FileHash.partialMd5(file), format, title, listOf("Test Author"), "en", "", "", false)).id
+    }
+
+    /** A menu is a window of its own: the Back key closes it, the activity's own way back does not reach it. */
+    private fun closeMenu() {
+        InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(android.view.KeyEvent.KEYCODE_BACK)
+        rule.waitForIdle()
+    }
+
+    private fun sendFromMenu(title: String) {
+        rule.onNodeWithContentDescription(string(R.string.book_actions, title)).performClick()
+        inMenu(R.string.action_send_to_server).performClick()
+    }
+
     private fun show() {
         val model = LibraryViewModel(
             activity.application, library, LibraryPreferences.get(activity),
             Covers(File(activity.cacheDir, "screen-covers")), afterScan = { scansDone.incrementAndGet() },
             afterChange = { changes.incrementAndGet() },
+            orbit = orbit, accounts = accounts,
         ) { source }
         rule.setContent {
             MaterialTheme {
@@ -135,6 +178,155 @@ class LibraryScreenTest {
         waitForText("Synced Book")
         rule.onNodeWithText("FB2 · ${string(R.string.book_on_server)}").assertIsDisplayed()
         rule.onNodeWithText("FB2").assertIsDisplayed()
+    }
+
+    @Test
+    fun bookIsSentToTheServerFromItsMenu() {
+        val id = keep("Sent Book")
+        signIn()
+        show()
+        waitForText("FB2 · ${string(R.string.book_not_on_server)}")
+
+        sendFromMenu("Sent Book")
+
+        waitForText("FB2 · ${string(R.string.book_on_server)}")
+        val sent = server.value.uploads.single()
+        assertEquals("Sent Book.fb2", sent.name)
+        assertEquals("the one library there is, without a question", 1L, sent.libraryId)
+        assertEquals(sent.bookId, runBlocking { library.book(id) }?.serverBookId)
+        rule.waitUntil(TIMEOUT) { changes.get() == 1 }
+        // What the server has is not offered to be sent.
+        rule.onNodeWithContentDescription(string(R.string.book_actions, "Sent Book")).performClick()
+        inMenu(R.string.action_collections).assertIsDisplayed()
+        inMenu(R.string.action_send_to_server).assertDoesNotExist()
+    }
+
+    @Test
+    fun sendingIsOfferedOnlyForWhatTheServerTakesFromTheReader() {
+        keep("Fb2 Book")
+        keep("Text Book", format = "txt")
+        show()
+        waitForText("Fb2 Book")
+        // Signed in nowhere: nothing is said of a server, and nothing is offered.
+        rule.onNodeWithContentDescription(string(R.string.book_actions, "Fb2 Book")).performClick()
+        inMenu(R.string.action_collections).assertIsDisplayed()
+        inMenu(R.string.action_send_to_server).assertDoesNotExist()
+        closeMenu()
+        assertTrue(rule.onAllNodesWithText(string(R.string.book_not_on_server), substring = true).fetchSemanticsNodes().isEmpty())
+
+        signIn()
+        waitForText("TXT · ${string(R.string.book_not_on_server)}")
+        rule.onNodeWithContentDescription(string(R.string.book_actions, "Text Book")).performClick()
+        inMenu(R.string.action_collections).assertIsDisplayed()
+        inMenu(R.string.action_send_to_server).assertDoesNotExist()
+        closeMenu()
+        rule.onNodeWithContentDescription(string(R.string.book_actions, "Fb2 Book")).performClick()
+        inMenu(R.string.action_send_to_server).assertIsDisplayed()
+    }
+
+    @Test
+    fun readerWhoMayNotAddBooksIsNotOfferedTo() {
+        keep("Fb2 Book")
+        server.value.uploadAllowed = false
+        signIn()
+        show()
+        waitForText("FB2 · ${string(R.string.book_not_on_server)}")
+
+        rule.onNodeWithContentDescription(string(R.string.book_actions, "Fb2 Book")).performClick()
+        inMenu(R.string.action_collections).assertIsDisplayed()
+        inMenu(R.string.action_send_to_server).assertDoesNotExist()
+    }
+
+    @Test
+    fun bookLikeOneOnTheServerIsAskedAboutBeforeItIsSent() {
+        keep("Another Edition")
+        server.value.books = JSONArray(
+            """[{"id":7,"title":"another  EDITION","authors":["Author Test"],"seriesName":null,"seriesIndex":null,"hasCover":false,
+                "files":[{"id":70,"format":"epub","role":"primary","sizeBytes":100}]}]""",
+        )
+        signIn()
+        show()
+        waitForText("FB2 · ${string(R.string.book_like_on_server)}")
+
+        sendFromMenu("Another Edition")
+        waitForText(string(R.string.send_alike_text, "another  EDITION — Author Test"))
+        rule.onNodeWithText(string(R.string.action_cancel)).performClick()
+        waitForNoText(string(R.string.send_alike_title))
+        assertTrue("the reader thought better of it", server.value.uploads.isEmpty())
+
+        sendFromMenu("Another Edition")
+        waitForText(string(R.string.send_alike_title))
+        rule.onNodeWithText(string(R.string.send_anyway)).performClick()
+
+        waitForText("FB2 · ${string(R.string.book_on_server)}")
+        assertEquals(1, server.value.uploads.size)
+    }
+
+    @Test
+    fun whereToSendIsAskedOnceAndRemembered() {
+        keep("First Book")
+        keep("Second Book")
+        server.value.libraries = JSONArray(
+            """[{"id":1,"name":"Fiction","allowedFormats":[],"organizationMode":"book_per_file","folders":[{"id":10,"name":"books"}]},
+                {"id":2,"name":"Shared","allowedFormats":[],"organizationMode":"book_per_folder",
+                 "folders":[{"id":20,"name":"new"},{"id":21,"name":"old"}]},
+                {"id":3,"name":"Comics","allowedFormats":["cbz"],"organizationMode":"book_per_file","folders":[{"id":30,"name":"comics"}]}]""",
+        )
+        signIn()
+        show()
+        waitForText("First Book")
+
+        sendFromMenu("First Book")
+        waitForText(string(R.string.send_where_title))
+        rule.onNodeWithText("Fiction").assertIsDisplayed()
+        rule.onNodeWithText(string(R.string.send_place_folder, "Shared", "new")).assertIsDisplayed()
+        assertTrue("a library that does not take the format is not offered", rule.onAllNodesWithText("Comics").fetchSemanticsNodes().isEmpty())
+        rule.onNodeWithText(string(R.string.send_place_folder, "Shared", "old")).performClick()
+
+        rule.waitUntil(TIMEOUT) { server.value.uploads.size == 1 }
+        assertEquals(2L, server.value.uploads[0].libraryId)
+        assertEquals(21L, server.value.uploads[0].folderId)
+
+        sendFromMenu("Second Book")
+        rule.waitUntil(TIMEOUT) { server.value.uploads.size == 2 }
+        assertEquals("the same place, without a question", 21L, server.value.uploads[1].folderId)
+        assertTrue(rule.onAllNodesWithText(string(R.string.send_where_title)).fetchSemanticsNodes().isEmpty())
+    }
+
+    @Test
+    fun bookTheServerDoesNotTakeSaysWhyAndCanBeSentAgain() {
+        val id = keep("Refused Book")
+        signIn()
+        server.value.uploadAnswer = Answer(
+            409, """{"statusCode":409,"message":"A file named \"Refused Book.fb2\" already exists","errorCode":"UPLOAD_DESTINATION_CONFLICT"}""",
+        )
+        show()
+        waitForText("Refused Book")
+
+        sendFromMenu("Refused Book")
+
+        waitForText(string(R.string.send_failed_name_taken))
+        assertEquals(null, runBlocking { library.book(id) }?.serverFileId)
+
+        server.value.uploadAnswer = null
+        sendFromMenu("Refused Book")
+        waitForText("FB2 · ${string(R.string.book_on_server)}")
+        waitForNoText(string(R.string.send_failed_name_taken))
+    }
+
+    @Test
+    fun serverThatDoesNotAnswerIsSaidAtTheBook() {
+        keep("Unlucky Book")
+        signIn()
+        show()
+        waitForText("FB2 · ${string(R.string.book_not_on_server)}")
+        // Asked what it takes while it answered; gone by the time the book is sent.
+        rule.onNodeWithContentDescription(string(R.string.book_actions, "Unlucky Book")).performClick()
+        inMenu(R.string.action_send_to_server).assertIsDisplayed()
+        server.value.close()
+        inMenu(R.string.action_send_to_server).performClick()
+
+        waitForText(string(R.string.send_failed_unreachable))
     }
 
     @Test

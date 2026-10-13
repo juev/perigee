@@ -63,6 +63,12 @@ data class Book(
     /** When a bookmark or a quote of the book was last added, changed or removed here, and which of those changes the server last heard of. */
     @ColumnInfo(defaultValue = "0") val marksChangedAt: Long = 0,
     @ColumnInfo(defaultValue = "0") val marksSyncedAt: Long = 0,
+    /**
+     * A book of the server that goes by the same title and authors while its file is another, and how the
+     * server names it; null when there is none. It is a hint for the reader, nothing is synced by it.
+     */
+    @ColumnInfo(defaultValue = "NULL") val serverLikeId: Long? = null,
+    @ColumnInfo(defaultValue = "") val serverLikeName: String = "",
 ) {
     /** Whether bookmarks or quotes changed here since the server last heard; one removed leaves no other trace. */
     val marksUnsent: Boolean get() = marksChangedAt > marksSyncedAt
@@ -225,6 +231,9 @@ data class Account(
     /** The version the server named when it was last asked. */
     val serverVersion: String,
     val addedAt: Long,
+    /** The library of the server, and the folder in it, the reader chose to send books to; null until they have. */
+    @ColumnInfo(defaultValue = "NULL") val uploadLibraryId: Long? = null,
+    @ColumnInfo(defaultValue = "NULL") val uploadFolderId: Long? = null,
 ) {
     companion object {
         const val SINGLE = 1L

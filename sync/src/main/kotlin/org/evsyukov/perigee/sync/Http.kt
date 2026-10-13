@@ -1,5 +1,6 @@
 package org.evsyukov.perigee.sync
 
+import java.io.File
 import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URL
@@ -41,10 +42,57 @@ internal class Http(base: String) {
                 connection.setRequestProperty("Content-Type", "application/json")
                 connection.outputStream.use { it.write(body.toString().toByteArray()) }
             }
-            val code = connection.responseCode
-            val stream = if (code < 400) connection.inputStream else connection.errorStream
-            Reply(code, stream?.use { it.readBytes().decodeToString() }.orEmpty())
+            answer(connection)
         }
+
+    /**
+     * Sends a file as the one part of a form, under [name]. [sent] is told how
+     * many bytes of the file have gone, as they go.
+     */
+    fun upload(path: String, headers: Map<String, String>, file: File, name: String, sent: (Long) -> Unit): Reply =
+        open("POST", path, headers) { connection ->
+            val boundary = "perigee-" + java.util.UUID.randomUUID()
+            // The name goes as it is, in UTF-8, as browsers send it; a quote or a line end would break the header.
+            val quoted = name.replace("\"", "%22").replace("\r", " ").replace("\n", " ")
+            val head = (
+                "--$boundary\r\nContent-Disposition: form-data; name=\"file\"; filename=\"$quoted\"\r\n" +
+                    "Content-Type: application/octet-stream\r\n\r\n"
+                ).toByteArray()
+            val tail = "\r\n--$boundary--\r\n".toByteArray()
+            connection.doOutput = true
+            // The server answers once it has filed the book away, not as the last byte arrives.
+            connection.readTimeout = UPLOAD_TIMEOUT_MS
+            connection.setRequestProperty("Content-Type", "multipart/form-data; boundary=$boundary")
+            // Streamed: a book is not worth holding whole in memory.
+            connection.setFixedLengthStreamingMode(head.size + file.length() + tail.size)
+            try {
+                connection.outputStream.use { out ->
+                    out.write(head)
+                    file.inputStream().use { input ->
+                        val buffer = ByteArray(64 * 1024)
+                        var total = 0L
+                        while (true) {
+                            val read = input.read(buffer)
+                            if (read < 0) break
+                            out.write(buffer, 0, read)
+                            total += read
+                            sent(total)
+                        }
+                    }
+                    out.write(tail)
+                }
+            } catch (e: IOException) {
+                // A server that refuses at once stops listening; what it said is worth more than the broken pipe.
+                return@open runCatching { answer(connection) }.getOrNull()?.takeIf { !it.ok } ?: throw e
+            }
+            answer(connection)
+        }
+
+    private fun answer(connection: HttpURLConnection): Reply {
+        val code = connection.responseCode
+        val stream = if (code < 400) connection.inputStream else connection.errorStream
+        return Reply(code, stream?.use { it.readBytes().decodeToString() }.orEmpty())
+    }
 
     /** A request whose answer is not JSON, as a file: [read] is given the connection once the answer has begun. */
     fun <T> open(method: String, path: String, headers: Map<String, String>, read: (HttpURLConnection) -> T): T {
@@ -65,6 +113,7 @@ internal class Http(base: String) {
 
     private companion object {
         const val TIMEOUT_MS = 20_000
+        const val UPLOAD_TIMEOUT_MS = 120_000
         const val USER_AGENT = "Perigee"
     }
 }

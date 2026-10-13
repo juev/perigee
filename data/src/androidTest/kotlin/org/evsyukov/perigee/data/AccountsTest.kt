@@ -85,6 +85,62 @@ class AccountsTest {
     }
 
     @Test
+    fun bookTheServerHasALikenessOfIsMarkedUntilItsOwnFileIsThere() = runBlocking {
+        val id = book("alike.epub")
+        val there = book("there-already.epub")
+        library.onServer(there, 8, 80)
+
+        library.likeOnServer(id, 7, "Alike — An Author")
+        library.likeOnServer(there, 9, "Never Mind")
+
+        assertEquals(7L, library.book(id)?.serverLikeId)
+        assertEquals("Alike — An Author", library.book(id)?.serverLikeName)
+        assertNull("a likeness is not the file: nothing is synced by it", library.book(id)?.serverFileId)
+        assertNull("a book whose own file is there has no need of a likeness", library.book(there)?.serverLikeId)
+        assertEquals(listOf(id), library.booksNotOnServer().map { it.id })
+
+        library.likeOnServer(id, null, "left over")
+        assertNull(library.book(id)?.serverLikeId)
+        assertEquals("", library.book(id)?.serverLikeName)
+
+        library.likeOnServer(id, 7, "Alike — An Author")
+        library.onServer(id, 11, 110)
+        assertNull("its own file got there", library.book(id)?.serverLikeId)
+        assertEquals("", library.book(id)?.serverLikeName)
+    }
+
+    @Test
+    fun bookIsAskedAboutAgainWhenToldSo() = runBlocking {
+        val id = book("sent.epub")
+        library.notOnServer(listOf(id))
+        assertEquals(emptyList<String>(), library.unmatched(all = false))
+
+        library.askServerAgain(id)
+
+        assertEquals(listOf(id), library.unmatched(all = false))
+    }
+
+    @Test
+    fun placeBooksAreSentToIsForgottenWithTheServer() = runBlocking {
+        accounts.signIn("https://books.example", "reader", "Reader", tokens, "v3.3.0")
+        assertNull(accounts.current()?.uploadLibraryId)
+        val id = book("alike.epub")
+        library.likeOnServer(id, 7, "Alike")
+
+        accounts.saveUploadPlace(3, 31)
+        assertEquals(3L, accounts.current()?.uploadLibraryId)
+        assertEquals(31L, accounts.current()?.uploadFolderId)
+        accounts.saveTokens(Tokens("access-2", 6_000, "refresh-2", 10_000))
+        assertEquals("a renewed session is the same account", 3L, accounts.current()?.uploadLibraryId)
+
+        accounts.signIn("https://other.example", "other", "Other", tokens, "v3.4.0")
+
+        assertNull(accounts.current()?.uploadLibraryId)
+        assertNull(accounts.current()?.uploadFolderId)
+        assertNull("another server has other books", library.book(id)?.serverLikeId)
+    }
+
+    @Test
     fun signingOutForgetsTheServerButKeepsTheBooks() = runBlocking {
         accounts.signIn("https://books.example", "reader", "Reader", tokens, "v3.3.0")
         val id = book("kept.epub")

@@ -76,6 +76,69 @@ data class SyncReport(
     )
 }
 
+/** A folder of a library of the server that books can be sent into. */
+data class UploadFolder(val id: Long, val name: String)
+
+/** A library of the server that books can be sent into. */
+data class UploadLibrary(
+    val id: Long,
+    val name: String,
+    /** Lower-case, as "epub"; empty when the library takes whatever the server does. */
+    val formats: Set<String>,
+    val folders: List<UploadFolder>,
+) {
+    fun takes(format: String): Boolean = formats.isEmpty() || format in formats
+}
+
+/** What the server takes from the reader. */
+data class UploadOptions(
+    /** Whether the reader's account may put books into libraries at all. */
+    val allowed: Boolean,
+    /** The largest file the server takes, in bytes. */
+    val maxBytes: Long,
+    /** Lower-case, as "epub". */
+    val formats: Set<String>,
+    val libraries: List<UploadLibrary>,
+) {
+    /** The libraries a file of this format can be sent into; none when the reader may not send, or nothing takes it. */
+    fun librariesFor(format: String): List<UploadLibrary> =
+        if (allowed && format in formats) libraries.filter { it.takes(format) } else emptyList()
+}
+
+/** Where on the server a book is sent: a library, and a folder of it when the reader chose one. */
+data class UploadPlace(val libraryId: Long, val folderId: Long? = null)
+
+/** What became of a book that was to be sent to the server. */
+enum class Uploaded {
+    Sent,
+
+    /** The server had the file already, so nothing was sent. */
+    WasThere,
+}
+
+/** Why the server did not take a file. */
+enum class UploadRefusal {
+    TooLarge,
+
+    /** The server, or the library chosen, does not take files of this format. */
+    Format,
+
+    /** The server keeps a file under the name this one would get: most likely the same book. */
+    NameTaken,
+
+    /** The server does not find the file to be what its name says. */
+    NotABook,
+
+    /** The server has no room left. */
+    NoRoom,
+
+    /** The library or folder chosen is not there any more. */
+    NoPlace,
+}
+
+/** The server did not take a file; [message] is its own word on it, when it gave one. */
+class UploadRefusedException(val why: UploadRefusal, message: String) : IOException(message.ifEmpty { "the server did not take the file: $why" })
+
 /** There is something at the address, but not a server the app knows. */
 class NotAServerException(url: String) : IOException("no server at $url")
 

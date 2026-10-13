@@ -178,7 +178,10 @@ internal interface ReadingDao {
     suspend fun deleteAccount()
 
     /** Nothing was sent to the next server yet, and nothing was heard from it. */
-    @Query("UPDATE books SET serverBookId = NULL, serverFileId = NULL, serverCheckedAt = 0, pushedAt = 0, statePushedAt = 0, remoteSeenAt = 0, marksSyncedAt = 0")
+    @Query(
+        "UPDATE books SET serverBookId = NULL, serverFileId = NULL, serverCheckedAt = 0, pushedAt = 0, statePushedAt = 0, " +
+            "remoteSeenAt = 0, marksSyncedAt = 0, serverLikeId = NULL, serverLikeName = ''",
+    )
     suspend fun forgetServer()
 
     /** The next server has every quote and bookmark still to hear of. */
@@ -225,6 +228,22 @@ internal interface ReadingDao {
 
     @Query("UPDATE books SET serverBookId = :serverBookId, serverFileId = :serverFileId, serverCheckedAt = :at WHERE id = :id")
     suspend fun setServerFile(id: String, serverBookId: Long?, serverFileId: Long?, at: Long)
+
+    /** A file the server has is that book, whatever looked like it before. */
+    @Query("UPDATE books SET serverLikeId = :serverBookId, serverLikeName = :name WHERE id = :id AND serverFileId IS NULL")
+    suspend fun setServerLike(id: String, serverBookId: Long?, name: String)
+
+    @Query("UPDATE books SET serverLikeId = NULL, serverLikeName = '' WHERE id = :id")
+    suspend fun clearServerLike(id: String)
+
+    @Query("UPDATE books SET serverCheckedAt = 0 WHERE id = :id")
+    suspend fun askServerAgain(id: String)
+
+    @Query("SELECT * FROM books WHERE serverFileId IS NULL AND (uri IS NOT NULL OR path != '')")
+    suspend fun booksNotOnServer(): List<Book>
+
+    @Query("UPDATE accounts SET uploadLibraryId = :libraryId, uploadFolderId = :folderId WHERE id = ${Account.SINGLE}")
+    suspend fun updateUploadPlace(libraryId: Long?, folderId: Long?)
 
     /** Books the server was never asked about, or not since [before]. */
     @Query("SELECT id FROM books WHERE serverFileId IS NULL AND serverCheckedAt < :before AND (uri IS NOT NULL OR path != '')")
@@ -288,10 +307,10 @@ internal interface ReadingDao {
         Book::class, Bookmark::class, Quote::class, Folder::class, BookCollection::class, CollectionBook::class,
         Catalog::class, Account::class, RemotePosition::class, PageRead::class,
     ],
-    version = 6,
+    version = 7,
     autoMigrations = [
         AutoMigration(from = 1, to = 2), AutoMigration(from = 2, to = 3), AutoMigration(from = 3, to = 4),
-        AutoMigration(from = 4, to = 5), AutoMigration(from = 5, to = 6),
+        AutoMigration(from = 4, to = 5), AutoMigration(from = 5, to = 6), AutoMigration(from = 6, to = 7),
     ],
 )
 internal abstract class ReadingDatabase : RoomDatabase() {

@@ -207,7 +207,8 @@ fun LibraryScreen(
                 onRemove = { model.removeCollection(it.key.toLong()) },
             )
             listing is Listing.Books -> Books(
-                padding, listing.books, model.covers,
+                padding, listing.books, model.covers, state,
+                onSend = model::send,
                 onOpen = open,
                 onFavorite = { model.setFavorite(it, !it.favorite) },
                 onStatus = model::setStatus,
@@ -243,6 +244,34 @@ fun LibraryScreen(
             onCreate = { name -> model.createCollection(name, shelved) },
             onClose = { collectionsOf = null },
         )
+    }
+    when (val question = state.question) {
+        is SendQuestion.Alike -> AlertDialog(
+            onDismissRequest = model::dontSend,
+            title = { Text(stringResource(R.string.send_alike_title)) },
+            text = { Text(stringResource(R.string.send_alike_text, question.book.serverLikeName)) },
+            confirmButton = { TextButton(onClick = { model.sendAnyway(question.book) }) { Text(stringResource(R.string.send_anyway)) } },
+            dismissButton = { TextButton(onClick = model::dontSend) { Text(stringResource(R.string.action_cancel)) } },
+        )
+        is SendQuestion.Where -> AlertDialog(
+            onDismissRequest = model::dontSend,
+            title = { Text(stringResource(R.string.send_where_title)) },
+            text = {
+                LazyColumn {
+                    item("why") { Text(stringResource(R.string.send_where_text), Modifier.padding(bottom = 8.dp)) }
+                    items(question.places) { offered ->
+                        Text(
+                            if (offered.folder.isEmpty()) offered.library else stringResource(R.string.send_place_folder, offered.library, offered.folder),
+                            Modifier.fillMaxWidth().clickable { model.sendTo(question.book, offered.place) }.padding(vertical = 12.dp),
+                            style = MaterialTheme.typography.bodyLarge,
+                        )
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = { TextButton(onClick = model::dontSend) { Text(stringResource(R.string.action_cancel)) } },
+        )
+        null -> Unit
     }
     naming?.let { asked ->
         NameDialog(
@@ -480,6 +509,8 @@ private fun Books(
     padding: PaddingValues,
     books: List<Book>,
     covers: Covers,
+    state: LibraryState,
+    onSend: (Book) -> Unit,
     onOpen: (Book) -> Unit,
     onFavorite: (Book) -> Unit,
     onStatus: (Book, ReadingStatus) -> Unit,
@@ -491,15 +522,47 @@ private fun Books(
             item("empty") { Nothing(R.string.shelf_empty) }
         }
         items(books, key = { it.id }) { book ->
-            BookRow(book, covers, onOpen, onFavorite, onStatus, onRating, onCollections)
+            BookRow(
+                book, covers, state.signedIn, state.sending[book.id], if (state.canSend(book)) onSend else null,
+                onOpen, onFavorite, onStatus, onRating, onCollections,
+            )
         }
     }
+}
+
+/** Where a book stands with the server, for a reader who is signed in to one; null when there is nothing to say. */
+@Composable
+private fun serverLine(book: Book, signedIn: Boolean, sending: Sending?): String? = when {
+    sending is Sending.Running -> stringResource(R.string.send_running, sending.percent)
+    book.serverFileId != null -> stringResource(R.string.book_on_server)
+    book.serverLikeId != null -> stringResource(R.string.book_like_on_server)
+    // Said only once the server was asked: before that it is not known.
+    signedIn && book.serverCheckedAt > 0 -> stringResource(R.string.book_not_on_server)
+    else -> null
+}
+
+private fun failureText(why: SendFailure): Int = when (why) {
+    SendFailure.TooLarge -> R.string.send_failed_too_large
+    SendFailure.Format -> R.string.send_failed_format
+    SendFailure.NameTaken -> R.string.send_failed_name_taken
+    SendFailure.NotABook -> R.string.send_failed_not_a_book
+    SendFailure.NoRoom -> R.string.send_failed_no_room
+    SendFailure.NoPlace -> R.string.send_failed_no_place
+    SendFailure.NotAllowed -> R.string.send_failed_not_allowed
+    SendFailure.NoSync -> R.string.send_failed_no_sync
+    SendFailure.SignedOut -> R.string.send_failed_signed_out
+    SendFailure.FileGone -> R.string.send_failed_file_gone
+    SendFailure.Unreachable -> R.string.send_failed_unreachable
 }
 
 @Composable
 private fun BookRow(
     book: Book,
     covers: Covers,
+    signedIn: Boolean,
+    sending: Sending?,
+    /** Null when the book cannot be sent to the server. */
+    onSend: ((Book) -> Unit)?,
     onOpen: (Book) -> Unit,
     onFavorite: (Book) -> Unit,
     onStatus: (Book, ReadingStatus) -> Unit,
@@ -529,11 +592,14 @@ private fun BookRow(
             Text(
                 listOfNotNull(
                     read, book.format.uppercase().ifEmpty { null }, book.rating?.let { "★".repeat(it) },
-                    if (book.serverFileId != null) stringResource(R.string.book_on_server) else null,
+                    serverLine(book, signedIn, sending),
                 ).joinToString(" · "),
                 style = MaterialTheme.typography.labelSmall,
                 color = faint,
             )
+            if (sending is Sending.Failed && book.serverFileId == null) {
+                Text(stringResource(failureText(sending.why)), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error)
+            }
         }
         IconButton(onClick = { onFavorite(book) }) {
             if (book.favorite) {
@@ -587,6 +653,16 @@ private fun BookRow(
                         onCollections(book)
                     },
                 )
+                if (onSend != null) {
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.action_send_to_server)) },
+                        leadingIcon = { Tick(false) },
+                        onClick = {
+                            open = false
+                            onSend(book)
+                        },
+                    )
+                }
             }
         }
     }

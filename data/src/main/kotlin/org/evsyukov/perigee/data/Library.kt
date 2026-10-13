@@ -63,8 +63,24 @@ class Library internal constructor(internal val database: ReadingDatabase, priva
     }
 
     /** The server has this file, as [serverFileId] of its book [serverBookId]. */
-    suspend fun onServer(bookId: String, serverBookId: Long, serverFileId: Long) =
+    suspend fun onServer(bookId: String, serverBookId: Long, serverFileId: Long) = database.withTransaction {
         dao.setServerFile(bookId, serverBookId, serverFileId, now())
+        dao.clearServerLike(bookId)
+    }
+
+    /** Books of the library the server is not known to have, as they are. */
+    suspend fun booksNotOnServer(): List<Book> = dao.booksNotOnServer()
+
+    /**
+     * The server has a book that goes by the same title and authors, [named]
+     * so there, while its file is another; null for [serverBookId] when it has
+     * none. Says nothing of a book whose own file the server has.
+     */
+    suspend fun likeOnServer(bookId: String, serverBookId: Long?, named: String = "") =
+        dao.setServerLike(bookId, serverBookId, if (serverBookId == null) "" else named)
+
+    /** The server is to be asked about the book again, as after its file was sent there. */
+    suspend fun askServerAgain(bookId: String) = dao.askServerAgain(bookId)
 
     /** The server was asked about these files and has none of them. */
     suspend fun notOnServer(bookIds: Collection<String>) = database.withTransaction {

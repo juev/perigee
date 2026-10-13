@@ -57,6 +57,9 @@ class BookOrbit(
     /** One round of syncing at a time. */
     private val syncing = Mutex()
 
+    /** One book sent at a time: the second asking for the same book finds it there. */
+    private val sending = Mutex()
+
     /**
      * Signs in with a user name and password, in place of whoever was signed
      * in before, and sets up the devices' channel as far as it can without the
@@ -210,9 +213,11 @@ class BookOrbit(
         }
     }
 
-    override suspend fun books(query: String, page: Int): RemotePage {
+    override suspend fun books(query: String, page: Int): RemotePage = books(query, page, PAGE_SIZE)
+
+    private suspend fun books(query: String, page: Int, size: Int): RemotePage {
         val body = JSONObject()
-            .put("pagination", JSONObject().put("page", page).put("size", PAGE_SIZE))
+            .put("pagination", JSONObject().put("page", page).put("size", size))
             .put("sort", JSONArray().put(JSONObject().put("field", "title").put("dir", "asc")))
         if (query.isNotBlank()) body.put("q", query.trim().take(MAX_QUERY))
         val reply = jwt("POST", "/books/query", body)
@@ -301,7 +306,120 @@ class BookOrbit(
         val found = match(asked)
         for ((hash, file) in found) library.onServer(hash, file.bookId, file.id)
         library.notOnServer(asked.filter { it.lowercase() !in found })
+        findLikes()
         return found.size
+    }
+
+    /**
+     * Looks among the server's books for ones that go by the title and authors
+     * of books here whose files the server has not, and marks those here. Such
+     * a book is only pointed out to the reader: it may be another edition, or
+     * another book altogether, and nothing is synced by it.
+     * @return how many books here have a likeness on the server
+     */
+    suspend fun findLikes(): Int {
+        val mine = library.booksNotOnServer()
+        if (mine.isEmpty()) return 0
+        val theirs = ArrayList<Pair<RemoteBook, Described>>()
+        for (page in 0 until MAX_CATALOG_PAGES) {
+            val part = books("", page, STATES_PAGE)
+            for (book in part.books) theirs += book to Described(book.title, book.authors, book.series, book.seriesNumber)
+            if (!part.hasMore(shown = theirs.size - part.books.size)) break
+        }
+        val likes = Likeness.pairs(mine.associate { it.id to Described(it.title, it.authors, it.series, it.seriesNumber) }, theirs)
+        for (book in mine) {
+            val like = likes[book.id]
+            val named = like?.let { listOf(it.title, it.authors.joinToString(", ")).filter(String::isNotBlank).joinToString(" — ") }.orEmpty()
+            if (like?.id != book.serverLikeId || named != book.serverLikeName) library.likeOnServer(book.id, like?.id, named)
+        }
+        return likes.size
+    }
+
+    /**
+     * What the server takes from the reader: whether they may send books, how
+     * large, in which formats, and into which libraries.
+     */
+    suspend fun uploadOptions(): UploadOptions {
+        val reply = jwt("GET", "/uploads/capabilities")
+        if (!reply.ok) throw failure(reply)
+        val json = reply.json() ?: throw ServerResponseException(reply.code, "nothing said of uploads")
+        val libraries = ArrayList<UploadLibrary>()
+        json.optJSONArray("libraries").each { library ->
+            val folders = ArrayList<UploadFolder>()
+            library.optJSONArray("folders").each { folders += UploadFolder(it.optLong("id"), it.textOf("name")) }
+            libraries += UploadLibrary(library.optLong("id"), library.textOf("name"), library.optJSONArray("allowedFormats").words(), folders)
+        }
+        return UploadOptions(
+            allowed = json.optBoolean("canUploadToLibrary"), maxBytes = json.optLong("maxFileSizeBytes"),
+            formats = json.optJSONArray("supportedFormats").words(), libraries = libraries,
+        )
+    }
+
+    /**
+     * Sends a book's [file] to the server, into [place], for the server to keep
+     * and the book to be synced with it from then on. The server is asked first
+     * whether it has the file: one that got there meanwhile is not sent again.
+     *
+     * The file goes under a name made of the book's title. The server files it
+     * away by what the file says of itself, and by this name when it says
+     * nothing, as FB2 does to this server.
+     *
+     * @param progress told how many bytes of the file have gone, as they go
+     * @throws UploadRefusedException when the server does not take the file
+     * @throws NotAllowedException when the reader may not send books, or not into this library
+     * @throws DeviceChannelException when the server cannot be asked which files it has
+     * @throws IOException when the server cannot be reached; nothing is known to have been sent
+     */
+    suspend fun upload(book: Book, file: File, place: UploadPlace, progress: (Long) -> Unit = {}): Uploaded = sending.withLock {
+        if (alreadyThere(book.id)) return Uploaded.WasThere
+        val options = uploadOptions()
+        if (!options.allowed) throw NotAllowedException("the account may not send books to the server")
+        if (book.format !in options.formats) throw UploadRefusedException(UploadRefusal.Format, "")
+        val target = options.libraries.firstOrNull { it.id == place.libraryId } ?: throw UploadRefusedException(UploadRefusal.NoPlace, "")
+        if (!target.takes(book.format)) throw UploadRefusedException(UploadRefusal.Format, "")
+        if (place.folderId != null && target.folders.none { it.id == place.folderId }) throw UploadRefusedException(UploadRefusal.NoPlace, "")
+        if (file.length() > options.maxBytes) throw UploadRefusedException(UploadRefusal.TooLarge, "")
+
+        val name = safeName(book.title).ifEmpty { "book" } + "." + book.format
+        val path = "/libraries/${place.libraryId}/upload" + place.folderId?.let { "?folderId=$it" }.orEmpty()
+        var token = access(stale = null)
+        var reply = io { Http(token.first).upload(path, bearer(token.second), file, name, progress) }
+        if (reply.code == 401) {
+            token = access(stale = token.second)
+            reply = io { Http(token.first).upload(path, bearer(token.second), file, name, progress) }
+            if (reply.code == 401) throw signedOut()
+        }
+        if (!reply.ok) throw refusal(reply)
+        // The server answers with the book; which file of it this is, it tells by the fingerprint.
+        val known = try {
+            alreadyThere(book.id)
+        } catch (e: IOException) {
+            // The file is there all the same; which one it is will be asked in the next round.
+            false
+        }
+        if (!known) library.askServerAgain(book.id)
+        Uploaded.Sent
+    }
+
+    /** Asks the server whether it has the file of a book, and remembers it when it has. */
+    private suspend fun alreadyThere(bookId: String): Boolean {
+        val file = match(listOf(bookId))[bookId.lowercase()] ?: return false
+        library.onServer(bookId, file.bookId, file.id)
+        return true
+    }
+
+    private fun refusal(reply: Reply): IOException = when {
+        reply.errorCode == "UPLOAD_TOO_LARGE" || reply.code == 413 -> UploadRefusedException(UploadRefusal.TooLarge, reply.message)
+        reply.errorCode == "UPLOAD_FORMAT_NOT_ALLOWED" || reply.errorCode == "UPLOAD_FORMAT_UNSUPPORTED" ->
+            UploadRefusedException(UploadRefusal.Format, reply.message)
+        reply.errorCode == "UPLOAD_DESTINATION_CONFLICT" || reply.errorCode == "UPLOAD_DUPLICATE" ->
+            UploadRefusedException(UploadRefusal.NameTaken, reply.message)
+        reply.errorCode == "UPLOAD_CONTENT_INVALID" || reply.errorCode == "UPLOAD_EMPTY" ->
+            UploadRefusedException(UploadRefusal.NotABook, reply.message)
+        reply.errorCode == "UPLOAD_STORAGE_FULL" || reply.code == 507 -> UploadRefusedException(UploadRefusal.NoRoom, reply.message)
+        // A library that is gone, or a folder that is not of it.
+        reply.code == 404 || (reply.code == 400 && reply.message.contains("folder", ignoreCase = true)) -> UploadRefusedException(UploadRefusal.NoPlace, reply.message)
+        else -> failure(reply)
     }
 
     /**
@@ -725,6 +843,9 @@ class BookOrbit(
         /** The shortest password the server takes for the devices' channel. */
         const val MIN_DEVICE_PASSWORD = 6
         private const val STATES_PAGE = 200
+
+        /** As far as the server's list of books is read to look for likenesses: twenty thousand books. */
+        private const val MAX_CATALOG_PAGES = 100
         private const val MAX_EXCHANGES = 40
         private const val CHANGES_PER_EXCHANGE = 50
         private const val MAX_QUOTE_KEYS = 5000
@@ -819,6 +940,12 @@ class BookOrbit(
             ByteArray(bytes).also(SecureRandom()::nextBytes).joinToString("") { "%02x".format(it) }
 
         private fun JSONObject.textOf(name: String): String = if (isNull(name)) "" else optString(name)
+
+        /** The words of a list, in lower case. */
+        private fun JSONArray?.words(): Set<String> {
+            if (this == null) return emptySet()
+            return (0 until length()).map { optString(it).trim().lowercase() }.filter { it.isNotEmpty() }.toSet()
+        }
 
         /** Reads at most [limit] bytes: a cover is not worth more memory than that. */
         private fun java.io.InputStream.readNBytesUpTo(limit: Int): ByteArray {
