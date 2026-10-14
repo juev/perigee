@@ -445,7 +445,10 @@ class LibraryScreenTest {
         onPage(hasText("Second of it.")).assertIsDisplayed()
         onPage(hasContentDescription(string(R.string.favorite_add, "Paged"))).performClick()
         rule.waitUntil(TIMEOUT) { runBlocking { library.book("Paged") }?.favorite == true }
-        onPage(hasContentDescription(string(R.string.favorite_remove, "Paged"))).assertIsDisplayed()
+        // The page shows the stored flag a moment after the library has it.
+        val remove = hasContentDescription(string(R.string.favorite_remove, "Paged")) and hasAnyAncestor(hasTestTag("book-page"))
+        rule.waitUntil(TIMEOUT) { rule.onAllNodes(remove).fetchSemanticsNodes().isNotEmpty() }
+        rule.onNode(remove).assertIsDisplayed()
         leavePage()
 
         openPageOf("Silent")

@@ -109,6 +109,8 @@ class ServerScreenTest {
     fun signingInSaysWhatIsWrongUntilItIsRight() {
         serverHas(book(7, "Listed Title", 70))
         show()
+        // The form comes once the account has been looked up.
+        waitForText(string(R.string.server_about))
         rule.onNodeWithText(string(R.string.server_about)).assertIsDisplayed()
 
         signIn(password = "wrong")
