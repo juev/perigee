@@ -264,7 +264,7 @@ class ReaderViewModel(application: Application) : AndroidViewModel(application) 
         if (_state.value.busy || turnsWaiting >= MAX_TURNS_WAITING) return
         turnsWaiting++
         // The reader is reading: the second copy waits for the next pause.
-        prepareSpareLater()
+        prepareSpareLater(SPARE_AFTER_TURN_MILLIS)
         viewModelScope.launch {
             try {
                 show(open.turn(screens), turned = screens.coerceIn(-1, 1))
@@ -426,19 +426,21 @@ class ReaderViewModel(application: Application) : AndroidViewModel(application) 
         } finally {
             _state.update { it.copy(busy = false) }
         }
-        prepareSpareLater()
+        // Just opened or turned, the reader looks for their place before turning a page: the copy for
+        // the screen turned back is laid out now, as a reader who turns the screen may soon turn it back.
+        prepareSpareLater(SPARE_AFTER_LAYOUT_MILLIS)
     }
 
     /**
-     * Once the reader has not turned a page for a while, a second copy of the
-     * book is laid out for the screen turned the other way, so that turning it
-     * shows the book at once. Laying it out holds the engine for as long as a
-     * rotation would, which is why it waits for a pause.
+     * A second copy of the book is laid out for the screen turned the other
+     * way, so that turning it shows the book at once. Laying it out holds the
+     * engine for as long as a rotation would: it waits [after] milliseconds,
+     * and starts waiting anew when the reader turns a page meanwhile.
      */
-    private fun prepareSpareLater() {
+    private fun prepareSpareLater(after: Long) {
         spareJob?.cancel()
         spareJob = viewModelScope.launch {
-            delay(SPARE_AFTER_MILLIS)
+            delay(after)
             val open = reader ?: return@launch
             val shown = viewport ?: return@launch
             val other = viewports.otherThan(shown) ?: return@launch
@@ -573,8 +575,9 @@ class ReaderViewModel(application: Application) : AndroidViewModel(application) 
 
         private const val TAG = "Perigee.Reader"
 
-        // How long the reader goes without turning a page before the second copy of the book is laid out.
-        private const val SPARE_AFTER_MILLIS = 3_000L
+        // How long after a layout, and after a turned page, the second copy of the book is laid out.
+        private const val SPARE_AFTER_LAYOUT_MILLIS = 300L
+        private const val SPARE_AFTER_TURN_MILLIS = 3_000L
 
         // Margins in dp: at the sides, at the top and at the bottom of the screen; narrow and wide. They are
         // those measured in ReadEra on a 560 dpi phone: its wide margins widen the sides (30 px to 120 px) and
