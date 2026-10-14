@@ -21,6 +21,9 @@ internal object NativeEngine {
     /** [cacheable] false keeps the view off the engine's cache, for a second copy of a book that is open already. */
     external fun create(width: Int, height: Int, cacheable: Boolean): Long
 
+    /** Text and page colours of the pages drawn from now on; the book is not laid out again. */
+    external fun setColors(handle: Long, textColor: Int, backgroundColor: Int)
+
     external fun applySettings(
         handle: Long, cssFile: String, extraCss: String, fontFace: String, fontSize: Int, fontWeight: Int,
         lineSpacingPercent: Int, marginHorizontal: Int, marginTop: Int, marginBottom: Int,

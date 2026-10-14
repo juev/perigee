@@ -7,6 +7,7 @@
 #include <sys/mman.h>
 #include <sys/stat.h>
 
+#include <algorithm>
 #include <climits>
 #include <string>
 #include <vector>
@@ -270,6 +271,21 @@ static bool needsFullShaping(const std::string& language) {
 // The stylesheet each view was last given, to tell a change of it.
 static std::unordered_map<LVDocView*, lString8> gStylesheets;
 
+/// The colours a book's pages are painted in. The engine always draws black on
+/// white: in crengine the text colour is part of the styles, and a new one has
+/// the whole book styled and laid out again. The greys of the page drawn are
+/// mapped onto the reader's colours instead, which takes no layout at all.
+struct Palette {
+    lUInt32 text = 0x000000;
+    lUInt32 background = 0xFFFFFF;
+    bool plain() const { return text == 0x000000 && background == 0xFFFFFF; }
+};
+static std::unordered_map<LVDocView*, Palette> gPalettes;
+
+/// A pixel this close to grey is part of the text or of the page, and takes the
+/// reader's colours; one further from grey is colour the book itself has, and is kept.
+static const int GREY_SPREAD = 12;
+
 JNIEXPORT jlong JNICALL
 Java_org_evsyukov_perigee_engine_NativeEngine_create(JNIEnv*, jobject, jint width, jint height, jboolean cacheable) {
     auto* view = new LVDocView(-1, true);  // bitsPerPixel=-1, noDefaultDocument=true
@@ -321,8 +337,9 @@ Java_org_evsyukov_perigee_engine_NativeEngine_applySettings(
     props->setInt(PROP_RENDER_DPI, renderDpi);
     view->propsApply(props);
     view->setFontSize(fontSize);
-    view->setTextColor(static_cast<lUInt32>(textColor) & 0xFFFFFF);
-    view->setBackgroundColor(static_cast<lUInt32>(backgroundColor) & 0xFFFFFF);
+    view->setTextColor(0x000000);
+    view->setBackgroundColor(0xFFFFFF);
+    gPalettes[view] = Palette{static_cast<lUInt32>(textColor) & 0xFFFFFF, static_cast<lUInt32>(backgroundColor) & 0xFFFFFF};
     view->setPageMargins(lvRect(marginHorizontal, marginTop, marginHorizontal, marginBottom));
     view->setVisiblePageCount(twoPages ? 2 : 1, false);
 
@@ -342,6 +359,12 @@ Java_org_evsyukov_perigee_engine_NativeEngine_applySettings(
         view->Render();
         if (!position.isNull()) view->goToBookmark(position);
     }
+}
+
+JNIEXPORT void JNICALL
+Java_org_evsyukov_perigee_engine_NativeEngine_setColors(JNIEnv*, jobject, jlong handle, jint textColor, jint backgroundColor) {
+    // Only the next pages drawn change: the book stays laid out as it is.
+    gPalettes[viewOf(handle)] = Palette{static_cast<lUInt32>(textColor) & 0xFFFFFF, static_cast<lUInt32>(backgroundColor) & 0xFFFFFF};
 }
 
 JNIEXPORT jboolean JNICALL
@@ -375,6 +398,7 @@ Java_org_evsyukov_perigee_engine_NativeEngine_close(JNIEnv*, jobject, jlong hand
     LVDocView* view = viewOf(handle);
     if (view->getDocument()) view->close();
     gStylesheets.erase(view);
+    gPalettes.erase(view);
     delete view;
 }
 
@@ -629,12 +653,33 @@ Java_org_evsyukov_perigee_engine_NativeEngine_renderPage(JNIEnv* env, jobject, j
         view->Draw(buf, false);
     }
     // crengine writes BGRA with inverted alpha; Android expects RGBA.
+    const Palette palette = gPalettes[view];
+    const bool plain = palette.plain();
+    // Grey level -> the reader's colour: 0 is the text, 255 the page.
+    uint8_t mapped[256][3];
+    for (int v = 0; v < 256; v++) {
+        for (int c = 0; c < 3; c++) {
+            const int shift = 16 - 8 * c;
+            const int ink = static_cast<int>((palette.text >> shift) & 0xFF);
+            const int paper = static_cast<int>((palette.background >> shift) & 0xFF);
+            mapped[v][c] = static_cast<uint8_t>(ink + (paper - ink) * v / 255);
+        }
+    }
     auto* p = static_cast<uint8_t*>(pixels);
     for (size_t n = static_cast<size_t>(w) * h; n > 0; n--, p += 4) {
         const uint8_t b = p[0];
         p[0] = p[2];
         p[2] = b;
         p[3] ^= 0xFFu;
+        if (plain) continue;
+        const int r = p[0], g = p[1], bl = p[2];
+        const int high = std::max(r, std::max(g, bl));
+        const int low = std::min(r, std::min(g, bl));
+        if (high - low > GREY_SPREAD) continue;
+        const uint8_t* to = mapped[(r + g + bl) / 3];
+        p[0] = to[0];
+        p[1] = to[1];
+        p[2] = to[2];
     }
     AndroidBitmap_unlockPixels(env, bitmap);
 }

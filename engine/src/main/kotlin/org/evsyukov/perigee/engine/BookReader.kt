@@ -25,7 +25,13 @@ class Page(
 )
 
 /** How a book is laid out: the settings and the page size. */
-data class Layout(val settings: EngineSettings, val width: Int, val height: Int)
+data class Layout(val settings: EngineSettings, val width: Int, val height: Int) {
+    /** Whether the pages fall the same way in [other], whatever colours either is painted in. */
+    fun fallsAs(other: Layout): Boolean = copy(settings = settings.copy(colors = other.settings.colors)) == other
+
+    /** Whether [other] is this layout painted in other colours. */
+    fun differsInColorsOnly(other: Layout): Boolean = this != other && fallsAs(other)
+}
 
 /**
  * A book being read: the safe way to use [EngineDocument] from any thread.
@@ -46,7 +52,12 @@ class BookReader private constructor(
     private val densityDpi: Int,
 ) {
     /** The second copy and the layout it has. */
-    private class Spare(val document: EngineDocument, val layout: Layout)
+    private class Spare(val document: EngineDocument, val layout: Layout) {
+        fun recolored(colors: PageColors): Spare {
+            document.recolor(colors)
+            return Spare(document, layout.copy(settings = layout.settings.copy(colors = colors)))
+        }
+    }
     private var spare: Spare? = null
 
     // Everything below is touched on the engine thread only.
@@ -108,11 +119,18 @@ class BookReader private constructor(
             val started = System.nanoTime()
             val wanted = Layout(settings, width, height)
             val ready = spare
-            val swapped = ready != null && ready.layout == wanted
+            val shown = Layout(this.settings, this.width, this.height)
+            val swapped = ready != null && ready.layout.fallsAs(wanted)
+            val recolored = !swapped && shown.differsInColorsOnly(wanted)
             if (ready != null && swapped) {
                 // Laid out for this already: the copies change places, and the one shown so far waits for the way back.
-                spare = Spare(document, Layout(this.settings, this.width, this.height))
+                if (ready.layout != wanted) ready.document.recolor(settings.colors)
+                spare = Spare(document, shown)
                 document = ready.document
+            } else if (recolored) {
+                // Only the colours changed: the pages are painted again where they are.
+                document.recolor(settings.colors)
+                ready?.let { spare = it.recolored(settings.colors) }
             } else {
                 document.apply(settings, width, height)
             }
@@ -120,7 +138,8 @@ class BookReader private constructor(
             this.width = width
             this.height = height
             relaidOut().also {
-                Log.d(TAG, "${if (swapped) "copy shown" else "laid out"} at ${width}x$height in ${millisSince(started)} ms")
+                val how = if (swapped) "copy shown" else if (recolored) "painted" else "laid out"
+                Log.d(TAG, "$how at ${width}x$height in ${millisSince(started)} ms")
             }
         }
 
@@ -134,6 +153,12 @@ class BookReader private constructor(
         if (layout == Layout(settings, width, height) || spare?.layout == layout) return@onEngine
         val started = System.nanoTime()
         val old = spare
+        if (old != null && old.layout.differsInColorsOnly(layout)) {
+            // A copy laid out for this already, in the colours before: painting it is enough.
+            spare = old.recolored(layout.settings.colors)
+            Log.d(TAG, "copy painted in ${millisSince(started)} ms")
+            return@onEngine
+        }
         spare = if (old != null) {
             old.document.apply(layout.settings, layout.width, layout.height)
             Spare(old.document, layout)

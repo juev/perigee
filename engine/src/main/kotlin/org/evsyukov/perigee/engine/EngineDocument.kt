@@ -87,6 +87,12 @@ class EngineDocument private constructor(
         colors = settings.colors
     }
 
+    /** Paints the pages in other [colors]; nothing moves, and the book is not laid out again. */
+    fun recolor(colors: PageColors) {
+        NativeEngine.setColors(checked(), colors.text, colors.background)
+        this.colors = colors
+    }
+
     /** Whether the book's text is shaped in full, ligatures and all, as its script needs. */
     internal val fullShaping: Boolean get() = NativeEngine.kerningMode(checked()) == 3
 

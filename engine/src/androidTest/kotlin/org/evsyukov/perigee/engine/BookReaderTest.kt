@@ -1,8 +1,12 @@
 package org.evsyukov.perigee.engine
 
 import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.Color
+import android.util.Base64
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import java.io.ByteArrayOutputStream
 import java.io.File
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -173,6 +177,44 @@ class BookReaderTest {
         assertEquals(PageColors.Day.background, before.bitmap.getPixel(0, 0) and 0xFFFFFF)
         val pixels = IntArray(WIDTH * HEIGHT).also { after.bitmap.getPixels(it, 0, WIDTH, 0, 0, WIDTH, HEIGHT) }
         assertTrue("the text is in the night's ink", pixels.any { it and 0xFFFFFF == PageColors.Night.text })
+    }
+
+    @Test
+    fun copyForTheOtherOrientationTakesNewColoursWithoutBeingLaidOutAgain() = reading { reader ->
+        val wide = Layout(EngineSettings(twoPages = true), HEIGHT, WIDTH)
+        reader.prepareSpare(wide)
+
+        reader.apply(EngineSettings(colors = PageColors.Night))
+
+        val wideAtNight = Layout(wide.settings.copy(colors = PageColors.Night), HEIGHT, WIDTH)
+        assertTrue("the copy is painted along with the page shown", reader.hasSpare(wideAtNight))
+        val turned = reader.apply(wideAtNight.settings, HEIGHT, WIDTH)
+        assertEquals(PageColors.Night.background, turned.bitmap.getPixel(0, 0) and 0xFFFFFF)
+    }
+
+    @Test
+    fun pictureKeepsItsColoursOnAPageOfAnotherScheme() = runBlocking(Dispatchers.Default) {
+        val red = Bitmap.createBitmap(60, 60, Bitmap.Config.ARGB_8888).apply { eraseColor(Color.RED) }
+        val png = ByteArrayOutputStream().also { red.compress(Bitmap.CompressFormat.PNG, 100, it) }.toByteArray()
+        val file = File(dir, "picture.fb2").apply {
+            writeText(
+                """<?xml version="1.0" encoding="UTF-8"?>
+<FictionBook xmlns="http://www.gribuser.ru/xml/fictionbook/2.0" xmlns:l="http://www.w3.org/1999/xlink">
+<description><title-info><book-title>Picture</book-title><lang>en</lang></title-info></description>
+<body><section><p>Before the picture.</p><image l:href="#red.png"/><p>After the picture.</p></section></body>
+<binary id="red.png" content-type="image/png">${Base64.encodeToString(png, Base64.NO_WRAP)}</binary>
+</FictionBook>""",
+            )
+        }
+        val reader = BookReader.open(context, file, WIDTH, HEIGHT, EngineSettings(colors = PageColors.Night), densityDpi = DENSITY)
+        try {
+            val page = reader.current()
+            val pixels = IntArray(WIDTH * HEIGHT).also { page.bitmap.getPixels(it, 0, WIDTH, 0, 0, WIDTH, HEIGHT) }
+            assertTrue("the picture is still red", pixels.any { it and 0xFFFFFF == 0xFF0000 })
+            assertTrue("the text is in the night's ink", pixels.any { it and 0xFFFFFF == PageColors.Night.text })
+        } finally {
+            reader.close()
+        }
     }
 
     @Test
