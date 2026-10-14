@@ -7,6 +7,7 @@
 #include <sys/mman.h>
 #include <sys/stat.h>
 
+#include <algorithm>
 #include <climits>
 #include <string>
 #include <vector>
@@ -275,7 +276,8 @@ static std::unordered_map<LVDocView*, lString8> gStylesheets;
 /// the whole book styled and laid out again. The page drawn is mapped onto the
 /// reader's colours instead, which takes no layout at all: each pixel takes the
 /// lightness the scheme gives its grey and keeps its own hue, so a blue link
-/// turns light blue at night, readable on the dark page.
+/// turns light blue at night, readable on the dark page. Pictures are left as
+/// they were drawn.
 struct Palette {
     lUInt32 text = 0x000000;
     lUInt32 background = 0xFFFFFF;
@@ -283,6 +285,24 @@ struct Palette {
 };
 static std::unordered_map<LVDocView*, Palette> gPalettes;
 
+/// A page that remembers where the book's pictures were drawn on it: the scheme
+/// is for the text and the page, and a picture keeps the colours it was drawn in.
+class PageDrawBuf : public LVColorDrawBuf {
+public:
+    PageDrawBuf(int dx, int dy, lUInt8* pixels) : LVColorDrawBuf(dx, dy, pixels, 32) {}
+
+    std::vector<lvRect> pictures;
+
+    using LVColorDrawBuf::Draw;
+
+    void Draw(LVImageSourceRef img, int x, int y, int width, int height, bool dither) override {
+        LVColorDrawBuf::Draw(img, x, y, width, height, dither);
+        lvRect drawn(x, y, x + width, y + height);
+        lvRect clip;
+        GetClipRect(&clip);
+        if (drawn.intersect(clip) && drawn.intersect(lvRect(0, 0, GetWidth(), GetHeight()))) pictures.push_back(drawn);
+    }
+};
 
 JNIEXPORT jlong JNICALL
 Java_org_evsyukov_perigee_engine_NativeEngine_create(JNIEnv*, jobject, jint width, jint height, jboolean cacheable) {
@@ -646,13 +666,23 @@ Java_org_evsyukov_perigee_engine_NativeEngine_renderPage(JNIEnv* env, jobject, j
     const int h = static_cast<int>(info.height);
     view->Resize(w, h);
     view->Render();
-    {
-        LVColorDrawBuf buf(w, h, static_cast<lUInt8*>(pixels), 32);
-        view->Draw(buf, false);
-    }
-    // crengine writes BGRA with inverted alpha; Android expects RGBA (bytes R, G, B, A: 0xAABBGGRR as a word).
     const Palette palette = gPalettes[view];
     const bool plain = palette.plain();
+    // The pixels of the page that belong to a picture: they are only converted, never mapped.
+    std::vector<bool> picture;
+    {
+        PageDrawBuf buf(w, h, static_cast<lUInt8*>(pixels));
+        view->Draw(buf, false);
+        if (!plain && !buf.pictures.empty()) {
+            picture.assign(static_cast<size_t>(w) * h, false);
+            for (const lvRect& rc : buf.pictures) {
+                for (int y = rc.top; y < rc.bottom; y++) {
+                    std::fill_n(picture.begin() + static_cast<ptrdiff_t>(y) * w + rc.left, rc.width(), true);
+                }
+            }
+        }
+    }
+    // crengine writes BGRA with inverted alpha; Android expects RGBA (bytes R, G, B, A: 0xAABBGGRR as a word).
     // Grey level -> the reader's colour, per channel (R, G, B): 0 is the text, 255 the page.
     int mapped[256][3];
     for (int v = 0; v < 256; v++) {
@@ -665,11 +695,12 @@ Java_org_evsyukov_perigee_engine_NativeEngine_renderPage(JNIEnv* env, jobject, j
     }
     auto clamp = [](int v) { return static_cast<uint32_t>(v < 0 ? 0 : (v > 255 ? 255 : v)); };
     auto* word = static_cast<uint32_t*>(pixels);
-    for (size_t n = static_cast<size_t>(w) * h; n > 0; n--, word++) {
+    const size_t count = static_cast<size_t>(w) * h;
+    for (size_t n = 0; n < count; n++, word++) {
         const uint32_t bgra = *word;
         const uint32_t b = bgra & 0xFF, g = (bgra >> 8) & 0xFF, r = (bgra >> 16) & 0xFF;
         const uint32_t rgba = (r | (g << 8) | (b << 16)) | ((bgra & 0xFF000000u) ^ 0xFF000000u);
-        if (plain) {
+        if (plain || (!picture.empty() && picture[n])) {
             *word = rgba;
             continue;
         }
