@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
@@ -23,6 +24,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material3.BottomSheetDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -51,6 +53,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
@@ -76,7 +79,11 @@ import org.evsyukov.perigee.engine.EngineSettings
 
 // ---------------------------------------------------------------- settings
 
-/** Reading settings, in the order and with the controls ReadEra has them. */
+/**
+ * Reading settings, in the order and with the controls ReadEra has them. The sheet
+ * keeps to the lower part of the screen and leaves the page undimmed above it, so
+ * each change shows on the page while the settings are still open.
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun SettingsSheet(
@@ -85,94 +92,115 @@ internal fun SettingsSheet(
     onChange: ((ReaderPrefs) -> ReaderPrefs) -> Unit,
     onDismiss: () -> Unit,
 ) {
-    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+        scrimColor = Color.Transparent,
+        // The handle and the navigation bar's room are inside the height the sheet keeps to, below.
+        dragHandle = null,
+        contentWindowInsets = { WindowInsets(0) },
+    ) {
+        // The settings scroll inside the sheet rather than grow it over the page.
         Column(
             Modifier
                 .fillMaxWidth()
-                .verticalScroll(rememberScrollState())
-                .navigationBarsPadding()
-                .padding(horizontal = 20.dp)
-                .padding(bottom = 16.dp)
-                .testTag("settings"),
-            verticalArrangement = Arrangement.spacedBy(6.dp),
+                .heightIn(max = LocalConfiguration.current.screenHeightDp.dp * SETTINGS_SHARE)
+                .testTag("settings-sheet"),
+            horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            Text(stringResource(R.string.settings_title), style = MaterialTheme.typography.titleMedium)
-            Choice(
-                R.string.setting_page_turn, prefs.pageTurn, PageTurn.entries,
-                label = { stringResource(if (it == PageTurn.Horizontal) R.string.page_turn_horizontal else R.string.page_turn_vertical) },
-            ) { chosen -> onChange { it.copy(pageTurn = chosen) } }
-            Choice(
-                R.string.setting_color_scheme, prefs.colorScheme, ColorScheme.entries,
-                label = {
-                    stringResource(
-                        when (it) {
-                            ColorScheme.Day -> R.string.scheme_day
-                            ColorScheme.Night -> R.string.scheme_night
-                            ColorScheme.Sepia -> R.string.scheme_sepia
-                        },
-                    )
-                },
-            ) { chosen -> onChange { it.withScheme(chosen) } }
-            Choice(R.string.setting_font, prefs.fontFace, fontFaces, label = { it }) { chosen ->
-                onChange { it.copy(fontFace = chosen) }
-            }
-            Stepper(
-                R.string.setting_font_size, prefs.fontSize.toString(), "font-size",
-                onLess = { onChange { it.copy(fontSize = (it.fontSize - 1).coerceIn(ReaderPrefs.FONT_SIZES)) } },
-                onMore = { onChange { it.copy(fontSize = (it.fontSize + 1).coerceIn(ReaderPrefs.FONT_SIZES)) } },
-            )
-            WeightSlider(prefs.fontWeight) { chosen -> onChange { it.copy(fontWeight = chosen) } }
-            Stepper(
-                R.string.setting_line_spacing, stringResource(R.string.percent, prefs.lineSpacingPercent), "line-spacing",
-                onLess = { onChange { it.copy(lineSpacingPercent = stepped(it.lineSpacingPercent, -1, ReaderPrefs.LINE_SPACINGS)) } },
-                onMore = { onChange { it.copy(lineSpacingPercent = stepped(it.lineSpacingPercent, 1, ReaderPrefs.LINE_SPACINGS)) } },
-            )
-            Choice(
-                R.string.setting_alignment, prefs.alignment, TextAlignment.entries,
-                label = {
-                    stringResource(
-                        when (it) {
-                            TextAlignment.Justify -> R.string.align_justify
-                            TextAlignment.Left -> R.string.align_left
-                            TextAlignment.Center -> R.string.align_center
-                            TextAlignment.Right -> R.string.align_right
-                        },
-                    )
-                },
-            ) { chosen -> onChange { it.copy(alignment = chosen) } }
-            Toggle(R.string.setting_hyphenation, prefs.hyphenation) { on -> onChange { it.copy(hyphenation = on) } }
-            Stepper(
-                R.string.setting_paragraph_spacing, stringResource(R.string.percent, prefs.paragraphSpacingPercent), "paragraph-spacing",
-                onLess = { onChange { it.copy(paragraphSpacingPercent = stepped(it.paragraphSpacingPercent, -1, ReaderPrefs.PARAGRAPH_SPACINGS)) } },
-                onMore = { onChange { it.copy(paragraphSpacingPercent = stepped(it.paragraphSpacingPercent, 1, ReaderPrefs.PARAGRAPH_SPACINGS)) } },
-            )
-            Toggle(R.string.setting_paragraph_indent, prefs.paragraphIndent) { on -> onChange { it.copy(paragraphIndent = on) } }
-            Toggle(R.string.setting_page_margins, prefs.pageMargins) { on -> onChange { it.copy(pageMargins = on) } }
-            Toggle(R.string.setting_two_pages, prefs.twoPagesInLandscape) { on -> onChange { it.copy(twoPagesInLandscape = on) } }
+            BottomSheetDefaults.DragHandle()
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .weight(1f, fill = false)
+                    .verticalScroll(rememberScrollState())
+                    .navigationBarsPadding()
+                    .padding(horizontal = 20.dp)
+                    .padding(bottom = 16.dp)
+                    .testTag("settings"),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                Text(stringResource(R.string.settings_title), style = MaterialTheme.typography.titleMedium)
+                Choice(
+                    R.string.setting_page_turn, prefs.pageTurn, PageTurn.entries,
+                    label = { stringResource(if (it == PageTurn.Horizontal) R.string.page_turn_horizontal else R.string.page_turn_vertical) },
+                ) { chosen -> onChange { it.copy(pageTurn = chosen) } }
+                Choice(
+                    R.string.setting_color_scheme, prefs.colorScheme, ColorScheme.entries,
+                    label = {
+                        stringResource(
+                            when (it) {
+                                ColorScheme.Day -> R.string.scheme_day
+                                ColorScheme.Night -> R.string.scheme_night
+                                ColorScheme.Sepia -> R.string.scheme_sepia
+                            },
+                        )
+                    },
+                ) { chosen -> onChange { it.withScheme(chosen) } }
+                Choice(R.string.setting_font, prefs.fontFace, fontFaces, label = { it }) { chosen ->
+                    onChange { it.copy(fontFace = chosen) }
+                }
+                Stepper(
+                    R.string.setting_font_size, prefs.fontSize.toString(), "font-size",
+                    onLess = { onChange { it.copy(fontSize = (it.fontSize - 1).coerceIn(ReaderPrefs.FONT_SIZES)) } },
+                    onMore = { onChange { it.copy(fontSize = (it.fontSize + 1).coerceIn(ReaderPrefs.FONT_SIZES)) } },
+                )
+                WeightSlider(prefs.fontWeight) { chosen -> onChange { it.copy(fontWeight = chosen) } }
+                Stepper(
+                    R.string.setting_line_spacing, stringResource(R.string.percent, prefs.lineSpacingPercent), "line-spacing",
+                    onLess = { onChange { it.copy(lineSpacingPercent = stepped(it.lineSpacingPercent, -1, ReaderPrefs.LINE_SPACINGS)) } },
+                    onMore = { onChange { it.copy(lineSpacingPercent = stepped(it.lineSpacingPercent, 1, ReaderPrefs.LINE_SPACINGS)) } },
+                )
+                Choice(
+                    R.string.setting_alignment, prefs.alignment, TextAlignment.entries,
+                    label = {
+                        stringResource(
+                            when (it) {
+                                TextAlignment.Justify -> R.string.align_justify
+                                TextAlignment.Left -> R.string.align_left
+                                TextAlignment.Center -> R.string.align_center
+                                TextAlignment.Right -> R.string.align_right
+                            },
+                        )
+                    },
+                ) { chosen -> onChange { it.copy(alignment = chosen) } }
+                Toggle(R.string.setting_hyphenation, prefs.hyphenation) { on -> onChange { it.copy(hyphenation = on) } }
+                Stepper(
+                    R.string.setting_paragraph_spacing, stringResource(R.string.percent, prefs.paragraphSpacingPercent), "paragraph-spacing",
+                    onLess = { onChange { it.copy(paragraphSpacingPercent = stepped(it.paragraphSpacingPercent, -1, ReaderPrefs.PARAGRAPH_SPACINGS)) } },
+                    onMore = { onChange { it.copy(paragraphSpacingPercent = stepped(it.paragraphSpacingPercent, 1, ReaderPrefs.PARAGRAPH_SPACINGS)) } },
+                )
+                Toggle(R.string.setting_paragraph_indent, prefs.paragraphIndent) { on -> onChange { it.copy(paragraphIndent = on) } }
+                Toggle(R.string.setting_page_margins, prefs.pageMargins) { on -> onChange { it.copy(pageMargins = on) } }
+                Toggle(R.string.setting_two_pages, prefs.twoPagesInLandscape) { on -> onChange { it.copy(twoPagesInLandscape = on) } }
 
-            Choice(
-                R.string.setting_tap_scheme, prefs.tapScheme, TapScheme.entries,
-                label = {
-                    stringResource(
-                        when (it) {
-                            TapScheme.LeftRight -> R.string.tap_scheme_left_right
-                            TapScheme.TopBottom -> R.string.tap_scheme_top_bottom
-                            TapScheme.AnyForward -> R.string.tap_scheme_any_forward
-                            TapScheme.Off -> R.string.tap_scheme_off
-                        },
-                    )
-                },
-            ) { chosen -> onChange { it.copy(tapScheme = chosen) } }
-            Toggle(R.string.setting_volume_keys, prefs.volumeKeysTurnPages) { on -> onChange { it.copy(volumeKeysTurnPages = on) } }
-            Toggle(R.string.setting_brightness_gesture, prefs.brightnessGesture) { on ->
-                // Switching the gesture off hands brightness back to the system.
-                onChange { it.copy(brightnessGesture = on, brightness = if (on) it.brightness else null) }
+                Choice(
+                    R.string.setting_tap_scheme, prefs.tapScheme, TapScheme.entries,
+                    label = {
+                        stringResource(
+                            when (it) {
+                                TapScheme.LeftRight -> R.string.tap_scheme_left_right
+                                TapScheme.TopBottom -> R.string.tap_scheme_top_bottom
+                                TapScheme.AnyForward -> R.string.tap_scheme_any_forward
+                                TapScheme.Off -> R.string.tap_scheme_off
+                            },
+                        )
+                    },
+                ) { chosen -> onChange { it.copy(tapScheme = chosen) } }
+                Toggle(R.string.setting_volume_keys, prefs.volumeKeysTurnPages) { on -> onChange { it.copy(volumeKeysTurnPages = on) } }
+                Toggle(R.string.setting_brightness_gesture, prefs.brightnessGesture) { on ->
+                    // Switching the gesture off hands brightness back to the system.
+                    onChange { it.copy(brightnessGesture = on, brightness = if (on) it.brightness else null) }
+                }
+                Toggle(R.string.setting_day_night_corner, prefs.dayNightByCorner) { on -> onChange { it.copy(dayNightByCorner = on) } }
+                Toggle(R.string.setting_bookmark_corner, prefs.bookmarkByCorner) { on -> onChange { it.copy(bookmarkByCorner = on) } }
             }
-            Toggle(R.string.setting_day_night_corner, prefs.dayNightByCorner) { on -> onChange { it.copy(dayNightByCorner = on) } }
-            Toggle(R.string.setting_bookmark_corner, prefs.bookmarkByCorner) { on -> onChange { it.copy(bookmarkByCorner = on) } }
         }
     }
 }
+
+/** The share of the screen height the settings take; the page shows above them. */
+internal const val SETTINGS_SHARE = 0.5f
 
 /** The next or previous value of a stepped range, staying inside it. */
 private fun stepped(value: Int, direction: Int, range: IntProgression): Int =
