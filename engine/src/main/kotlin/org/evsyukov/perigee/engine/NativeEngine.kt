@@ -18,7 +18,8 @@ internal object NativeEngine {
     external fun fontFaces(): Array<String>
 
     /** Creates an empty view; load a book into it after applySettings. */
-    external fun create(width: Int, height: Int): Long
+    /** [cacheable] false keeps the view off the engine's cache, for a second copy of a book that is open already. */
+    external fun create(width: Int, height: Int, cacheable: Boolean): Long
 
     external fun applySettings(
         handle: Long, cssFile: String, extraCss: String, fontFace: String, fontSize: Int, fontWeight: Int,

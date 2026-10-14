@@ -68,7 +68,9 @@ internal fun RotationOnRequest(modifier: Modifier) {
             override fun onOrientationChanged(degrees: Int) {
                 held = rotationFor(degrees, held)
                 val shown = activity.display?.rotation ?: return
-                wanted = held.takeIf { it != shown }
+                // Upside down is not offered: nobody reads so, and its page, with the camera strip at the
+                // bottom, is not the one the copy laid out for the screen upright fits.
+                wanted = held.takeIf { it != shown && it != Surface.ROTATION_180 }
             }
         }
         if (listener.canDetectOrientation()) listener.enable()

@@ -21,17 +21,31 @@ class Page(
     val progress: Float,
 )
 
+/** How a book is laid out: the settings and the page size. */
+data class Layout(val settings: EngineSettings, val width: Int, val height: Int)
+
 /**
  * A book being read: the safe way to use [EngineDocument] from any thread.
  * Every call runs on the engine thread. Pages next to the one shown are drawn
  * ahead of time, so turning the page does not wait for the engine.
+ *
+ * A second copy of the book may be kept laid out for another page size, as
+ * for the screen turned the other way ([prepareSpare]): laying a long book out
+ * takes most of a second, and a rotation to that size then takes none.
  */
 class BookReader private constructor(
-    private val document: EngineDocument,
+    private var document: EngineDocument,
     private var width: Int,
     private var height: Int,
     private var settings: EngineSettings,
+    private val context: Context,
+    private val file: File,
+    private val densityDpi: Int,
 ) {
+    /** The second copy and the layout it has. */
+    private class Spare(val document: EngineDocument, val layout: Layout)
+    private var spare: Spare? = null
+
     // Everything below is touched on the engine thread only.
     private val scope = CoroutineScope(SupervisorJob() + Engine.thread)
     private val cache = HashMap<Int, Page>()
@@ -88,12 +102,41 @@ class BookReader private constructor(
      */
     suspend fun apply(settings: EngineSettings, width: Int = this.width, height: Int = this.height): Page =
         onEngine {
-            document.apply(settings, width, height)
+            val wanted = Layout(settings, width, height)
+            val ready = spare
+            if (ready != null && ready.layout == wanted) {
+                // Laid out for this already: the copies change places, and the one shown so far waits for the way back.
+                spare = Spare(document, Layout(this.settings, this.width, this.height))
+                document = ready.document
+            } else {
+                document.apply(settings, width, height)
+            }
             this.settings = settings
             this.width = width
             this.height = height
             relaidOut()
         }
+
+    /**
+     * Lays a second copy of the book out as [layout] asks, for [apply] to show
+     * at once when it is asked for that. Takes as long as laying the book out
+     * does, and keeps the engine from anything else meanwhile: to be called
+     * when the reader is not turning pages.
+     */
+    suspend fun prepareSpare(layout: Layout) = onEngine {
+        if (layout == Layout(settings, width, height) || spare?.layout == layout) return@onEngine
+        val old = spare
+        spare = if (old != null) {
+            old.document.apply(layout.settings, layout.width, layout.height)
+            Spare(old.document, layout)
+        } else {
+            val copy = EngineDocument.open(context, file, layout.width, layout.height, layout.settings, densityDpi, cacheable = false)
+            Spare(copy, layout)
+        }
+    }
+
+    /** Whether a second copy is laid out as [layout] asks. */
+    suspend fun hasSpare(layout: Layout): Boolean = onEngine { spare?.layout == layout }
 
     /** Re-lays the book out for a new page size, as after a rotation. */
     suspend fun resize(width: Int, height: Int): Page = onEngine {
@@ -129,6 +172,8 @@ class BookReader private constructor(
         withContext(Engine.thread) {
             closed = true
             document.close()
+            spare?.document?.close()
+            spare = null
         }
     }
 
@@ -195,7 +240,7 @@ class BookReader private constructor(
             densityDpi: Int = context.resources.displayMetrics.densityDpi,
         ): BookReader = withContext(Engine.thread) {
             val document = EngineDocument.open(context, file, width, height, settings, densityDpi)
-            val reader = BookReader(document, width, height, settings)
+            val reader = BookReader(document, width, height, settings, context.applicationContext, file, densityDpi)
             if (xpointer != null && document.goToXPointer(xpointer)) reader.position = xpointer
             reader
         }

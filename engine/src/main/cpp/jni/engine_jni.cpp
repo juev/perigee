@@ -195,7 +195,7 @@ static bool needsFullShaping(const std::string& language) {
 static std::unordered_map<LVDocView*, lString8> gStylesheets;
 
 JNIEXPORT jlong JNICALL
-Java_org_evsyukov_perigee_engine_NativeEngine_create(JNIEnv*, jobject, jint width, jint height) {
+Java_org_evsyukov_perigee_engine_NativeEngine_create(JNIEnv*, jobject, jint width, jint height, jboolean cacheable) {
     auto* view = new LVDocView(-1, true);  // bitsPerPixel=-1, noDefaultDocument=true
     view->setViewMode(DVM_PAGES, -1);
     view->Resize(width, height);
@@ -217,7 +217,8 @@ Java_org_evsyukov_perigee_engine_NativeEngine_create(JNIEnv*, jobject, jint widt
     props->setInt(PROP_FORMAT_MIN_SPACE_CONDENSING_PERCENT, 75);
     // Books from 30 KB up are worth caching: parsing and laying out a novel
     // takes seconds, reading it back from the cache does not.
-    props->setInt(PROP_MIN_FILE_SIZE_TO_CACHE, 30000);
+    // A second copy of a book open beside the first must neither read nor write the cache the first one keeps.
+    props->setInt(PROP_MIN_FILE_SIZE_TO_CACHE, cacheable ? 30000 : INT_MAX);
     view->propsApply(props);
     return reinterpret_cast<jlong>(view);
 }

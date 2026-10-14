@@ -9,6 +9,7 @@ import kotlin.math.roundToInt
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -33,6 +34,7 @@ import org.evsyukov.perigee.engine.BookReader
 import org.evsyukov.perigee.engine.Engine
 import org.evsyukov.perigee.engine.EngineSettings
 import org.evsyukov.perigee.engine.Highlight
+import org.evsyukov.perigee.engine.Layout
 import org.evsyukov.perigee.engine.Page
 import org.evsyukov.perigee.engine.PageColors
 import org.evsyukov.perigee.engine.SearchHit
@@ -115,6 +117,8 @@ class ReaderViewModel(application: Application) : AndroidViewModel(application) 
 
     // Opening, re-laying out and closing must not overlap one another.
     private val layout = Mutex()
+    private val viewports = KnownViewports.of(application)
+    private var spareJob: Job? = null
     private val history = ArrayDeque<String>()
     private var searching: Job? = null
     private var turnsWaiting = 0
@@ -242,6 +246,8 @@ class ReaderViewModel(application: Application) : AndroidViewModel(application) 
         val open = reader ?: return
         if (_state.value.busy || turnsWaiting >= MAX_TURNS_WAITING) return
         turnsWaiting++
+        // The reader is reading: the second copy waits for the next pause.
+        prepareSpareLater()
         viewModelScope.launch {
             try {
                 show(open.turn(screens), turned = screens.coerceIn(-1, 1))
@@ -399,8 +405,28 @@ class ReaderViewModel(application: Application) : AndroidViewModel(application) 
         val open = reader
         try {
             if (open == null) openBook(file, viewport) else relayOut(open, viewport)
+            if (reader != null) viewports.remember(viewport)
         } finally {
             _state.update { it.copy(busy = false) }
+        }
+        prepareSpareLater()
+    }
+
+    /**
+     * Once the reader has not turned a page for a while, a second copy of the
+     * book is laid out for the screen turned the other way, so that turning it
+     * shows the book at once. Laying it out holds the engine for as long as a
+     * rotation would, which is why it waits for a pause.
+     */
+    private fun prepareSpareLater() {
+        spareJob?.cancel()
+        spareJob = viewModelScope.launch {
+            delay(SPARE_AFTER_MILLIS)
+            val open = reader ?: return@launch
+            val shown = viewport ?: return@launch
+            val other = viewports.otherThan(shown) ?: return@launch
+            val (width, height, settings) = laidOut(_prefs.value, other)
+            open.prepareSpare(Layout(settings, width, height))
         }
     }
 
@@ -522,6 +548,9 @@ class ReaderViewModel(application: Application) : AndroidViewModel(application) 
         /** Two pages side by side only make sense on a screen wider than it is tall. */
         fun twoUp(prefs: ReaderPrefs, viewport: Viewport) =
             prefs.twoPagesInLandscape && viewport.width > viewport.height
+
+        // How long the reader goes without turning a page before the second copy of the book is laid out.
+        private const val SPARE_AFTER_MILLIS = 3_000L
 
         // Margins in dp: at the sides, at the top and at the bottom of the screen; narrow and wide. They are
         // those measured in ReadEra on a 560 dpi phone: its wide margins widen the sides (30 px to 120 px) and

@@ -42,6 +42,46 @@ class BookReaderTest {
     }
 
     @Test
+    fun copyLaidOutForTheOtherOrientationIsShownAtOnceAndKeptForTheWayBack() = reading { reader ->
+        val start = reader.goToPage(5)
+        val place = reader.position
+        val tall = Layout(EngineSettings(), WIDTH, HEIGHT)
+        val wide = Layout(EngineSettings(twoPages = true), HEIGHT, WIDTH)
+        assertFalse(reader.hasSpare(wide))
+
+        reader.prepareSpare(wide)
+        assertTrue(reader.hasSpare(wide))
+        val turned = reader.apply(wide.settings, wide.width, wide.height)
+
+        assertEquals(HEIGHT, turned.bitmap.width)
+        assertEquals(WIDTH, turned.bitmap.height)
+        assertEquals("turning the screen does not move the place", place, reader.position)
+        val pageOfPlace = checkNotNull(reader.read { it.pageOf(place) })
+        assertEquals("the left page of the two the place falls on", pageOfPlace - pageOfPlace % 2, turned.index)
+        assertFalse("the copy is the one shown now", reader.hasSpare(wide))
+        assertTrue("and the one shown before waits for the way back", reader.hasSpare(tall))
+
+        val back = reader.apply(tall.settings, tall.width, tall.height)
+        assertEquals(start.index, back.index)
+        assertEquals(WIDTH, back.bitmap.width)
+        assertTrue(reader.hasSpare(wide))
+    }
+
+    @Test
+    fun copyLaidOutWithSettingsSinceChangedIsNotShown() = reading { reader ->
+        val wide = Layout(EngineSettings(twoPages = true), HEIGHT, WIDTH)
+        reader.prepareSpare(wide)
+        val bigger = wide.settings.copy(fontSize = wide.settings.fontSize + 8)
+
+        reader.apply(bigger, wide.width, wide.height)
+
+        assertTrue("the copy is still laid out as it was", reader.hasSpare(wide))
+        // Laid out again for what is asked now, the copy is used once more.
+        reader.prepareSpare(Layout(EngineSettings(), WIDTH, HEIGHT))
+        assertTrue(reader.hasSpare(Layout(EngineSettings(), WIDTH, HEIGHT)))
+    }
+
+    @Test
     fun badlyMadeBookWithParagraphsNeverClosedOpens() = runBlocking(Dispatchers.Default) {
         // Each paragraph ends up inside the one before it: hundreds of levels,
         // which the engine walks by recursion. This took the app down.

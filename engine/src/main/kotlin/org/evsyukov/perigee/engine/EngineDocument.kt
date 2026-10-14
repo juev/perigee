@@ -75,8 +75,7 @@ class EngineDocument private constructor(
     /** Position of the top of a page, or null when there is no such page. */
     fun xpointerOfPage(page: Int): String? = NativeEngine.xpointerOfPage(checked(), page)
 
-    /** Re-lays the book out; the reading position is kept. */
-    /** Applies [settings]; with a [width] and [height] the book is laid out at that page size, once. */
+    /** Applies [settings], keeping the reading position; with a [width] and [height] the book is laid out at that page size, once. */
     fun apply(settings: EngineSettings, width: Int = 0, height: Int = 0) {
         NativeEngine.applySettings(
             checked(), stylesheet.path, settings.extraCss, settings.fontFace, settings.fontSize,
@@ -185,10 +184,12 @@ class EngineDocument private constructor(
             height: Int,
             settings: EngineSettings = EngineSettings(),
             densityDpi: Int = context.resources.displayMetrics.densityDpi,
+            /** False for a second copy of a book that is open already: the engine's cache is the first one's. */
+            cacheable: Boolean = true,
         ): EngineDocument {
             Engine.init(context)
             val document = EngineDocument(
-                NativeEngine.create(width, height), Engine.stylesheetFor(file), densityDpi * 96 / 160,
+                NativeEngine.create(width, height, cacheable), Engine.stylesheetFor(file), densityDpi * 96 / 160,
             )
             document.apply(settings)
             if (!NativeEngine.load(document.handle, file.path)) {
