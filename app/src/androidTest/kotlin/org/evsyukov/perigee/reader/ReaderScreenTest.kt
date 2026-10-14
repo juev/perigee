@@ -22,6 +22,7 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performImeAction
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.swipeLeft
@@ -354,6 +355,33 @@ class ReaderScreenTest {
         rule.onNodeWithTag("font-size").assertTextEquals((ReaderPrefs().fontSize + 4).toString())
         rule.waitUntil(TIMEOUT) { model().state.value.page!!.pageCount > pagesBefore }
         assertEquals("the setting is stored", ReaderPrefs().fontSize + 4, runBlocking { preferences.prefs.first() }.fontSize)
+    }
+
+    @Test
+    fun settingsLeaveThePageInViewWhileTheyChangeIt() {
+        show()
+        waitForBook()
+        openMenu()
+        rule.onNodeWithContentDescription(string(R.string.action_settings)).performClick()
+        waitForTag("settings")
+        rule.waitForIdle()
+        // The sheet is a window of its own: both are measured on the screen, whose bottom is the page's.
+        val page = rule.onNodeWithTag("page").fetchSemanticsNode()
+        val half = (page.positionOnScreen.y + page.size.height) * (1 - SETTINGS_SHARE)
+        fun settingsTop() = rule.onNodeWithTag("settings-sheet").fetchSemanticsNode().positionOnScreen.y
+        assertTrue("the settings keep below the upper half: ${settingsTop()} vs $half", settingsTop() >= half - 1)
+
+        // A setting at the end of the list is reached by scrolling the settings, not by raising them over the page.
+        rule.onNodeWithText(string(R.string.setting_page_margins)).performScrollTo().assertIsDisplayed()
+        rule.waitForIdle()
+        assertTrue("the settings stay below the upper half after a scroll", settingsTop() >= half - 1)
+
+        // A change shows on the page with the settings still open.
+        val pagesBefore = model().state.value.page!!.pageCount
+        rule.onNodeWithTag("font-size").performScrollTo()
+        repeat(2) { rule.onNodeWithTag("font-size-more").performClick() }
+        rule.waitUntil(TIMEOUT) { model().state.value.page!!.pageCount > pagesBefore }
+        rule.onNodeWithTag("settings").assertIsDisplayed()
     }
 
     @Test

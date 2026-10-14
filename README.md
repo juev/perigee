@@ -12,7 +12,7 @@ Works today:
 
 - Opening a book and reading it: page turning by touch zones, swipes and volume keys; the place is kept across rotations and restarts.
 - Layout by the native engine: hyphenation by the dictionary of the book's language, justification, hanging punctuation, footnotes at the bottom of the page, two pages side by side in landscape.
-- Reading settings modelled on ReadEra: colour scheme, font, size, boldness, line spacing, alignment, paragraph spacing and indent, margins.
+- Reading settings modelled on ReadEra: colour scheme, font, size, boldness, line spacing, alignment, paragraph spacing and indent, margins. They take the lower half of the screen, so the page above shows each change as it is made.
 - Table of contents, bookmarks, highlights with notes, search in the book, return from a jump.
 
 - A library of the books in the folders you pick: shelves, authors, series, collections, search.
