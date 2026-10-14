@@ -76,13 +76,14 @@ class EngineDocument private constructor(
     fun xpointerOfPage(page: Int): String? = NativeEngine.xpointerOfPage(checked(), page)
 
     /** Re-lays the book out; the reading position is kept. */
-    fun apply(settings: EngineSettings) {
+    /** Applies [settings]; with a [width] and [height] the book is laid out at that page size, once. */
+    fun apply(settings: EngineSettings, width: Int = 0, height: Int = 0) {
         NativeEngine.applySettings(
             checked(), stylesheet.path, settings.extraCss, settings.fontFace, settings.fontSize,
             settings.fontWeight, settings.lineSpacingPercent, settings.marginHorizontal, settings.marginTop,
             settings.marginBottom,
             settings.hyphenation, settings.footnotes, settings.twoPages,
-            settings.colors.text, settings.colors.background, renderDpi,
+            settings.colors.text, settings.colors.background, renderDpi, width, height,
         )
         colors = settings.colors
     }

@@ -135,7 +135,7 @@ A thin line at the bottom edge of the page shows the position in the book, with 
 
 In ReadEra's order: turn pages, colour scheme, font, font size, boldness, line spacing, alignment, hyphenation, paragraph spacing, paragraph indent, page margins; then two pages in landscape, the turn scheme and the gesture options. Sizes are stored in dp.
 
-Differences from ReadEra, all open to change: the schemes are Day, Night and Sepia only; margins are a switch between wide (34 dp at the sides, 16 dp at the top, 23 dp at the bottom) and narrow (8 dp, 12 dp and 20 dp), narrow by default; the strip the page leaves clear under a camera cutout counts as top margin, so the text starts right under it. The widths are ReadEra's, measured on screenshots of both apps on the same 560 dpi phone on 2026-10-13: ReadEra's sides go from 30 px to 120 px with the switch, its top from 156 px to 160 px, counted to the nearest letter; its last line ended 75 to 161 px from the bottom edge over seven pages. At ReadEra's font size 62 and Perigee's 18 dp, both Roboto, the letters are the same: x-height 33 px, stroke about 7 px. Lines are 86 px apart in ReadEra at its 120 % and 81 px in Perigee at 110 %, which is the same spacing per 100 %; font size is in dp, not ReadEra's units.
+Differences from ReadEra, all open to change: the schemes are Day, Night and Sepia only; margins are a switch between wide (34 dp at the sides, 16 dp at the top, 23 dp at the bottom) and narrow (8 dp, 12 dp and 20 dp), narrow by default; the strip the page leaves clear under a camera cutout counts as top margin, so the text starts right under it. The widths are ReadEra's, measured on screenshots of both apps on the same 560 dpi phone on 2026-10-13: ReadEra's sides go from 30 px to 120 px with the switch, its top from 156 px to 160 px, counted to the nearest letter; its last line ended 75 to 161 px from the bottom edge over seven pages. At ReadEra's font size 62 and Perigee's 18 dp, both Roboto, the letters are the same: x-height 33 px, stroke about 7 px. Lines are 86 px apart in ReadEra at its 120 % and 81 px in Perigee at 110 %, which is the same spacing per 100 %; line spacing is 120 % by default since, as in the reader's ReadEra; font size is in dp, not ReadEra's units.
 
 ## Tests
 
@@ -145,6 +145,12 @@ The engine is covered by instrumented tests in `engine/src/androidTest`, run wit
 - `BookReaderTest` — page turning, drawing ahead, layout changes, calls from many threads, closing one book while another opens.
 - `:app`, `ReaderScreenTest` — the screen as the reader uses it: opening, turning by touch and swipe, reopening at the saved place, rotation, a changing screen size, menu, contents, bookmarks, search, settings, quotes and notes. `ZoneTest` covers the touch zones. `:data`, `LibraryTest` covers what is stored.
 - `ControlPagesTest` — control pages compared with accepted pictures in `engine/src/androidTest/assets/golden`. The pages are set in PT Serif from the test assets, so they do not depend on the fonts of the device. The class comment says how to accept a new look.
+
+## Rotation
+
+While a book is open the screen keeps the orientation it has, as in ReadEra: the activity is locked (`SCREEN_ORIENTATION_LOCKED`). When the device is held another way for a moment, a button in the bottom corner offers to turn the screen, for four seconds; pressed, it lets the system turn the screen the way the device is held, and the activity made anew locks it there. Laying a book out again for the other page size takes seconds on a long book, and is done only when asked for. Meanwhile the screen is the colour of the page with the busy mark, not the old page cut to the new shape.
+
+A new page size and new settings are laid out in one go, at the new size (`EngineDocument.apply` with a width and height), and the stylesheet is given to the engine again only when it changed: before, a rotation laid the book out twice and styled it afresh. Measured on the reader's phone on a 2.8 MB FB2 of 1620 pages: about 4 s for a rotation, with the engine's cache saved or not.
 
 ## Reference: ReadEra
 

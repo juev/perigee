@@ -43,7 +43,7 @@ data class ReaderPrefs(
     val fontFace: String = "Roboto",
     val fontSize: Int = 18,
     val fontWeight: Int = 400,
-    val lineSpacingPercent: Int = 110,
+    val lineSpacingPercent: Int = 120,
     val alignment: Alignment = Alignment.Justify,
     val hyphenation: Boolean = true,
     val paragraphSpacingPercent: Int = 20,

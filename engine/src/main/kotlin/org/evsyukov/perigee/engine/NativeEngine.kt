@@ -25,6 +25,8 @@ internal object NativeEngine {
         lineSpacingPercent: Int, marginHorizontal: Int, marginTop: Int, marginBottom: Int,
         hyphenation: Boolean, footnotes: Boolean, twoPages: Boolean, textColor: Int, backgroundColor: Int,
         renderDpi: Int,
+        /** The page size to lay the book out at; 0 keeps the size it has. */
+        width: Int, height: Int,
     )
 
     /** Returns false when the file cannot be opened. */

@@ -12,6 +12,7 @@
 #include <vector>
 
 #include "hyphman.h"
+#include <unordered_map>
 #include "lvdocview.h"
 #include "lvdocviewprops.h"
 #include "lvdrawbuf.h"
@@ -167,6 +168,9 @@ Java_org_evsyukov_perigee_engine_NativeEngine_fontFaces(JNIEnv* env, jobject) {
     return out;
 }
 
+// The stylesheet each view was last given, to tell a change of it.
+static std::unordered_map<LVDocView*, lString8> gStylesheets;
+
 JNIEXPORT jlong JNICALL
 Java_org_evsyukov_perigee_engine_NativeEngine_create(JNIEnv*, jobject, jint width, jint height) {
     auto* view = new LVDocView(-1, true);  // bitsPerPixel=-1, noDefaultDocument=true
@@ -197,7 +201,7 @@ Java_org_evsyukov_perigee_engine_NativeEngine_applySettings(
         JNIEnv* env, jobject, jlong handle, jstring cssFile, jstring extraCss, jstring fontFace,
         jint fontSize, jint fontWeight, jint lineSpacingPercent, jint marginHorizontal, jint marginTop, jint marginBottom,
         jboolean hyphenation, jboolean footnotes, jboolean twoPages, jint textColor, jint backgroundColor,
-        jint renderDpi) {
+        jint renderDpi, jint width, jint height) {
     LVDocView* view = viewOf(handle);
     // A new layout moves page boundaries; the reader stays where they were.
     const bool loaded = view->getDocument() != nullptr;
@@ -222,7 +226,14 @@ Java_org_evsyukov_perigee_engine_NativeEngine_applySettings(
     lString8 css;
     LVLoadStylesheetFile(Utf8ToUnicode(toStd(env, cssFile).c_str()), css);
     css << "\r\n" << lString8(toStd(env, extraCss).c_str());
-    view->setStyleSheet(css, false);
+    // A new stylesheet has every node of the book styled again: not done for a stylesheet that is the same.
+    lString8& applied = gStylesheets[view];
+    if (css != applied) {
+        view->setStyleSheet(css, false);
+        applied = css;
+    }
+    // A new page size comes with the settings, as on a rotation: the book is laid out once, at that size.
+    if (width > 0 && height > 0) view->Resize(width, height);
 
     if (loaded) {
         view->Render();
@@ -256,6 +267,7 @@ JNIEXPORT void JNICALL
 Java_org_evsyukov_perigee_engine_NativeEngine_close(JNIEnv*, jobject, jlong handle) {
     LVDocView* view = viewOf(handle);
     if (view->getDocument()) view->close();
+    gStylesheets.erase(view);
     delete view;
 }
 

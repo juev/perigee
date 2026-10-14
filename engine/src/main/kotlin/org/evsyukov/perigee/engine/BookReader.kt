@@ -88,7 +88,7 @@ class BookReader private constructor(
      */
     suspend fun apply(settings: EngineSettings, width: Int = this.width, height: Int = this.height): Page =
         onEngine {
-            document.apply(settings)
+            document.apply(settings, width, height)
             this.settings = settings
             this.width = width
             this.height = height

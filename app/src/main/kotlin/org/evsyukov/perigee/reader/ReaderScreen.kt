@@ -198,6 +198,9 @@ fun ReaderScreen(file: File, onClose: () -> Unit, viewModel: ReaderViewModel = v
                         page = shown,
                         turned = state.turned,
                         pageTurn = prefs.pageTurn,
+                        // A page laid out for the other orientation is not shown cut to this one while the
+                        // book is laid out again: the screen stays the colour of the page until it is.
+                        hidden = abs(shown.bitmap.height - area.height) > area.height / 10,
                         modifier = Modifier
                             .fillMaxSize()
                             .testTag("page")
@@ -302,6 +305,7 @@ fun ReaderScreen(file: File, onClose: () -> Unit, viewModel: ReaderViewModel = v
         if (offer != null && panel == Panel.None && state.selection == null && state.page != null) {
             Offer(offer, viewModel::acceptOffer, viewModel::declineOffer, Modifier.align(Alignment.BottomCenter))
         }
+        RotationOnRequest(Modifier.align(Alignment.BottomEnd).navigationBarsPadding().padding(24.dp))
     }
 
     when (panel) {
@@ -355,7 +359,11 @@ private fun Offer(offer: RemotePosition, onGo: () -> Unit, onStay: () -> Unit, m
 
 /** The page bitmap; a turn slides the new page in from the side it comes from. */
 @Composable
-private fun PageView(page: Page, turned: Int, pageTurn: PageTurn, modifier: Modifier) {
+private fun PageView(page: Page, turned: Int, pageTurn: PageTurn, hidden: Boolean, modifier: Modifier) {
+    if (hidden) {
+        Box(modifier)
+        return
+    }
     val density = LocalDensity.current
     AnimatedContent(
         targetState = page,
