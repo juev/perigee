@@ -19,6 +19,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import kotlinx.coroutines.delay
@@ -55,12 +56,11 @@ internal fun rotationFor(degrees: Int, previous: Int): Int {
 internal fun RotationOnRequest(modifier: Modifier) {
     val activity = LocalActivity.current ?: return
     DisposableEffect(activity) {
-        activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LOCKED
-        onDispose {
-            // A rotation the reader asked for recreates the activity; the next one locks it again.
-            if (!activity.isChangingConfigurations) activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
-        }
+        onDispose { activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED }
     }
+    // Locked where the screen is, and again once a rotation the reader asked for is done.
+    val orientation = LocalConfiguration.current.orientation
+    LaunchedEffect(activity, orientation) { activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LOCKED }
     var wanted by remember { mutableStateOf<Int?>(null) }
     DisposableEffect(activity) {
         var held = activity.display?.rotation ?: Surface.ROTATION_0
@@ -89,7 +89,7 @@ internal fun RotationOnRequest(modifier: Modifier) {
         SmallFloatingActionButton(
             onClick = {
                 offered = false
-                // The system turns the screen the way the device is held; the activity made anew locks it there.
+                // The system turns the screen the way the device is held; the new orientation is locked in turn.
                 activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_FULL_SENSOR
             },
             modifier = Modifier.testTag("rotate"),

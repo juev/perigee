@@ -88,6 +88,9 @@ class EngineDocument private constructor(
         colors = settings.colors
     }
 
+    /** Whether the book's text is shaped in full, ligatures and all, as its script needs. */
+    internal val fullShaping: Boolean get() = NativeEngine.kerningMode(checked()) == 3
+
     /** Text between two xpointers, or null when either does not resolve in this book. */
     fun textBetween(start: String, end: String): String? = NativeEngine.textBetween(checked(), start, end)
 

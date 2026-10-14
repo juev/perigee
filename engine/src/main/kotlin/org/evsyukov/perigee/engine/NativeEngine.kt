@@ -32,6 +32,9 @@ internal object NativeEngine {
     /** Returns false when the file cannot be opened. */
     external fun load(handle: Long, path: String): Boolean
 
+    /** How the loaded book's text is shaped: 2 is HarfBuzz without ligatures, 3 is HarfBuzz with everything. */
+    external fun kerningMode(handle: Long): Int
+
     /** Writes the parsed and laid out book to the engine's cache; small files are skipped. */
     external fun saveCache(handle: Long)
 

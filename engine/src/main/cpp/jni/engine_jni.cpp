@@ -12,6 +12,7 @@
 #include <vector>
 
 #include "hyphman.h"
+#include <cctype>
 #include <unordered_map>
 #include "lvdocview.h"
 #include "lvdocviewprops.h"
@@ -168,6 +169,28 @@ Java_org_evsyukov_perigee_engine_NativeEngine_fontFaces(JNIEnv* env, jobject) {
     return out;
 }
 
+// Kerning modes of the engine: HarfBuzz without ligatures, and HarfBuzz with everything.
+static const int KERNING_LIGHT = 2;
+static const int KERNING_FULL = 3;
+
+// Scripts whose letters change shape or order with their neighbours: light shaping draws them wrong.
+// Arabic, Persian, Urdu, Pashto, Sindhi, Kurdish (Sorani), Uyghur, Hebrew, Yiddish, Syriac, Thaana, the
+// scripts of India and Sri Lanka, Thai, Lao, Khmer, Burmese, Tibetan, Dzongkha.
+static bool needsFullShaping(const std::string& language) {
+    static const char* const complex[] = {
+        "ar", "fa", "ur", "ps", "sd", "ckb", "ug", "he", "iw", "yi", "syr", "dv",
+        "hi", "mr", "ne", "sa", "bn", "as", "pa", "gu", "or", "ta", "te", "kn", "ml", "si",
+        "th", "lo", "km", "my", "bo", "dz",
+    };
+    std::string primary;
+    for (char c : language) {
+        if (c == '-' || c == '_') break;
+        primary += static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    }
+    for (const char* code : complex) if (primary == code) return true;
+    return false;
+}
+
 // The stylesheet each view was last given, to tell a change of it.
 static std::unordered_map<LVDocView*, lString8> gStylesheets;
 
@@ -184,7 +207,10 @@ Java_org_evsyukov_perigee_engine_NativeEngine_create(JNIEnv*, jobject, jint widt
     props->setInt(PROP_REQUESTED_DOM_VERSION, gDOMVersionCurrent);
     props->setInt(PROP_RENDER_BLOCK_RENDERING_FLAGS, BLOCK_RENDERING_FULL_FEATURED);
     props->setInt(PROP_FONT_HINTING, 2);
-    props->setInt(PROP_FONT_KERNING, 3);  // HarfBuzz shaping
+    // Light HarfBuzz shaping: kerning as with full shaping, no ligatures. Full shaping lays a long
+    // book out five times slower (4 s against 0.8 s for a 2.8 MB FB2 on a 2025 phone), and a rotation
+    // waits for that; books in scripts that need it get it when they are loaded.
+    props->setInt(PROP_FONT_KERNING, KERNING_LIGHT);
     props->setInt(PROP_TEXTLANG_EMBEDDED_LANGS_ENABLED, 1);
     // A justified line may shrink its spaces to three quarters at most. The
     // engine's own floor of one half lets words run together before it hyphenates.
@@ -248,13 +274,17 @@ Java_org_evsyukov_perigee_engine_NativeEngine_load(JNIEnv* env, jobject, jlong h
     // Hyphenation and line breaking follow the book's language unless a
     // fragment declares its own.
     lString32 language = view->getLanguage();
-    if (!language.empty()) {
-        CRPropRef props = LVCreatePropsContainer();
-        props->setString(PROP_TEXTLANG_MAIN_LANG, UnicodeToUtf8(language).c_str());
-        view->propsApply(props);
-    }
+    CRPropRef props = LVCreatePropsContainer();
+    if (!language.empty()) props->setString(PROP_TEXTLANG_MAIN_LANG, UnicodeToUtf8(language).c_str());
+    props->setInt(PROP_FONT_KERNING, needsFullShaping(UnicodeToUtf8(language).c_str()) ? KERNING_FULL : KERNING_LIGHT);
+    view->propsApply(props);
     view->Render();
     return JNI_TRUE;
+}
+
+JNIEXPORT jint JNICALL
+Java_org_evsyukov_perigee_engine_NativeEngine_kerningMode(JNIEnv*, jobject, jlong handle) {
+    return viewOf(handle)->propsGetCurrent()->getIntDef(PROP_FONT_KERNING, -1);
 }
 
 JNIEXPORT void JNICALL
