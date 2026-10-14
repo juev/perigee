@@ -34,3 +34,31 @@ val RowsIcon: ImageVector = icon("Rows") {
     box(11f, 14f, 9f, 2f)
     box(11f, 17f, 6f, 2f)
 }
+
+/** An open book: two pages that meet at the spine. */
+val OpenBookIcon: ImageVector = icon("OpenBook") {
+    moveTo(2f, 5f)
+    lineTo(11f, 6.5f)
+    lineTo(11f, 20f)
+    lineTo(2f, 18.5f)
+    close()
+    moveTo(13f, 6.5f)
+    lineTo(22f, 5f)
+    lineTo(22f, 18.5f)
+    lineTo(13f, 20f)
+    close()
+}
+
+/** Books standing on a shelf: a library, local or on the network. */
+val ShelfIcon: ImageVector = icon("Shelf") {
+    box(4f, 6f, 3f, 12f)
+    box(8f, 4f, 3f, 14f)
+    box(12f, 7f, 3f, 11f)
+    // The last book leans on the others.
+    moveTo(16.2f, 7.4f)
+    lineTo(19.1f, 6.6f)
+    lineTo(21.9f, 17.2f)
+    lineTo(19f, 18f)
+    close()
+    box(3f, 19f, 19f, 1.5f)
+}

@@ -31,8 +31,10 @@ import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.List
@@ -110,7 +112,9 @@ import org.evsyukov.perigee.data.Covers
 import org.evsyukov.perigee.data.Folder
 import org.evsyukov.perigee.data.ReadingStatus
 import org.evsyukov.perigee.data.Shelf
+import org.evsyukov.perigee.ui.EmptyState
 import org.evsyukov.perigee.ui.GridIcon
+import org.evsyukov.perigee.ui.OpenBookIcon
 import org.evsyukov.perigee.ui.RowsIcon
 /**
  * The reader's books by shelf. [onOpen] is given the file of the book that
@@ -216,7 +220,7 @@ fun LibraryScreen(
                 padding, state.scanning, onAddFolder = { folderPicker.launch(null) }, onOpenFile = onOpenFile,
             )
             listing is Listing.Groups -> Groups(
-                padding, state.shelf, listing.groups,
+                padding, state.shelf, state.query, listing.groups,
                 onOpen = model::openGroup,
                 onNew = { naming = Naming.New },
                 onRename = { naming = Naming.Rename(it.key.toLong(), it.name) },
@@ -445,18 +449,15 @@ private fun LibraryMenu(
 
 @Composable
 private fun EmptyLibrary(padding: PaddingValues, scanning: Boolean, onAddFolder: () -> Unit, onOpenFile: () -> Unit) {
-    Column(
-        Modifier.fillMaxSize().padding(padding).padding(32.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterVertically),
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        Text(
-            stringResource(if (scanning) R.string.scanning else R.string.library_empty),
-            textAlign = TextAlign.Center,
-            style = MaterialTheme.typography.bodyLarge,
-        )
-        Button(onClick = onAddFolder) { Text(stringResource(R.string.action_add_folder)) }
-        OutlinedButton(onClick = onOpenFile) { Text(stringResource(R.string.open_book)) }
+    Box(Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()), contentAlignment = Alignment.Center) {
+        EmptyState(
+            OpenBookIcon,
+            stringResource(if (scanning) R.string.scanning else R.string.library_empty_title),
+            text = if (scanning) null else stringResource(R.string.library_empty),
+        ) {
+            Button(onClick = onAddFolder) { Text(stringResource(R.string.action_add_folder)) }
+            OutlinedButton(onClick = onOpenFile) { Text(stringResource(R.string.open_book)) }
+        }
     }
 }
 
@@ -464,6 +465,7 @@ private fun EmptyLibrary(padding: PaddingValues, scanning: Boolean, onAddFolder:
 private fun Groups(
     padding: PaddingValues,
     shelf: Shelf,
+    query: String,
     groups: List<Group>,
     onOpen: (Group) -> Unit,
     onNew: () -> Unit,
@@ -480,7 +482,7 @@ private fun Groups(
             }
         }
         if (groups.isEmpty()) {
-            item("empty") { Nothing(R.string.shelf_empty) }
+            item("empty") { ShelfEmpty(shelf, query, inGroup = false) }
         }
         items(groups, key = { it.key }) { group ->
             Row(
@@ -525,14 +527,29 @@ private fun Groups(
     }
 }
 
+/** An empty shelf, with what would put books on it. [inGroup] is true inside an author, a series or a collection. */
 @Composable
-private fun Nothing(text: Int) {
-    Text(
-        stringResource(text),
-        Modifier.fillMaxWidth().padding(32.dp),
-        textAlign = TextAlign.Center,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-    )
+private fun ShelfEmpty(shelf: Shelf, query: String, inGroup: Boolean) {
+    if (query.isNotBlank()) {
+        EmptyState(Icons.Filled.Search, stringResource(R.string.nothing_found), text = stringResource(R.string.nothing_found_for, query.trim()))
+        return
+    }
+    val status = when (shelf) {
+        Shelf.Reading -> R.string.shelf_reading
+        Shelf.ToRead -> R.string.shelf_to_read
+        Shelf.Read -> R.string.shelf_read
+        else -> null
+    }
+    val hint = when {
+        status != null -> stringResource(R.string.shelf_empty_status, stringResource(status))
+        inGroup -> null
+        shelf == Shelf.Favorites -> stringResource(R.string.shelf_empty_favorites)
+        shelf == Shelf.Collections -> stringResource(R.string.shelf_empty_collections)
+        shelf == Shelf.Series -> stringResource(R.string.shelf_empty_series)
+        else -> null
+    }
+    val icon = if (shelf == Shelf.Favorites && !inGroup) Icons.Filled.FavoriteBorder else OpenBookIcon
+    EmptyState(icon, stringResource(R.string.shelf_empty), text = hint)
 }
 
 @Composable
@@ -558,7 +575,7 @@ private fun Books(
             horizontalArrangement = Arrangement.spacedBy(4.dp), verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             if (books.isEmpty()) {
-                item("empty", span = { GridItemSpan(maxLineSpan) }) { Nothing(R.string.shelf_empty) }
+                item("empty", span = { GridItemSpan(maxLineSpan) }) { ShelfEmpty(state.shelf, state.query, state.group != null) }
             }
             items(books, key = { it.id }) { book ->
                 BookCell(
@@ -571,7 +588,7 @@ private fun Books(
     }
     LazyColumn(Modifier.fillMaxSize().testTag("books"), contentPadding = padding) {
         if (books.isEmpty()) {
-            item("empty") { Nothing(R.string.shelf_empty) }
+            item("empty") { ShelfEmpty(state.shelf, state.query, state.group != null) }
         }
         items(books, key = { it.id }) { book ->
             BookRow(

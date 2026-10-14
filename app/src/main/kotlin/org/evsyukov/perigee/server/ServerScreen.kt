@@ -87,6 +87,8 @@ import org.evsyukov.perigee.sync.BookOrbit
 import org.evsyukov.perigee.sync.DeviceChannel
 import org.evsyukov.perigee.sync.RemoteBook
 import org.evsyukov.perigee.sync.RemoteFile
+import org.evsyukov.perigee.ui.EmptyState
+import org.evsyukov.perigee.ui.ShelfIcon
 
 /**
  * The bookOrbit server the reader keeps books on. [onOpen] is given the file
@@ -290,10 +292,11 @@ private fun Books(padding: PaddingValues, state: ServerState, model: ServerViewM
         }
         if (state.books.isEmpty() && !state.loading && state.failure == null) {
             item("empty") {
-                Text(
-                    stringResource(R.string.catalog_page_empty), Modifier.fillMaxWidth().padding(32.dp),
-                    textAlign = TextAlign.Center, color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+                if (state.query.isEmpty()) {
+                    EmptyState(ShelfIcon, stringResource(R.string.catalog_page_empty))
+                } else {
+                    EmptyState(Icons.Filled.Search, stringResource(R.string.nothing_found), text = stringResource(R.string.nothing_found_for, state.query))
+                }
             }
         }
         itemsIndexed(state.books, key = { _, book -> book.id }) { index, book ->

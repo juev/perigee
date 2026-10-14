@@ -82,8 +82,15 @@
     <string name="shelf_authors">Authors</string>
     <string name="shelf_series">Series</string>
     <string name="shelf_collections">Collections</string>
-    <string name="shelf_empty">No books here.</string>
-    <string name="library_empty">There are no books yet. Add a folder you keep books in, and they will be listed here.</string>
+    <string name="shelf_empty">No books here</string>
+    <string name="shelf_empty_status">Choose “%1$s” in a book’s menu, and the book will be listed here.</string>
+    <string name="shelf_empty_favorites">Mark a book with the heart, and it will be listed here.</string>
+    <string name="shelf_empty_collections">No collections yet. Make one with “New collection” above, then add books to it from their menus.</string>
+    <string name="shelf_empty_series">None of the books is a part of a series.</string>
+    <string name="nothing_found">Nothing found</string>
+    <string name="nothing_found_for">Nothing here matches “%1$s”.</string>
+    <string name="library_empty">Add a folder you keep books in, and they will be listed here.</string>
+    <string name="library_empty_title">No books yet</string>
     <string name="scanning">Looking for books…</string>
     <string name="search_library_hint">Title, author or series</string>
     <string name="unknown_author">Author not named</string>
@@ -119,6 +126,7 @@
     <string name="catalogs_title">Catalogs</string>
     <string name="action_catalogs">Catalogs (OPDS)</string>
     <string name="catalogs_empty">A catalog is a library on the network that books can be downloaded from: your own server, or a public one. Add it by its OPDS address.</string>
+    <string name="catalogs_empty_title">No catalogs yet</string>
     <string name="catalog_add">Add a catalog</string>
     <string name="catalog_remove">Remove the catalog %1$s</string>
     <string name="catalog_address">Address</string>
@@ -131,7 +139,7 @@
     <string name="catalog_unreachable">The catalog does not answer. Check the address and the network.</string>
     <string name="catalog_password_lost">The password of this catalog can no longer be read. Remove the catalog and add it again.</string>
     <string name="catalog_not_a_book">The file is not a book this app reads.</string>
-    <string name="catalog_page_empty">Nothing here.</string>
+    <string name="catalog_page_empty">Nothing here</string>
     <string name="catalog_no_readable_file">No file in a format this app reads.</string>
     <string name="catalog_download">Download %1$s</string>
     <string name="catalog_downloading">Downloading %1$s…</string>

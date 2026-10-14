@@ -19,9 +19,11 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
@@ -79,6 +81,8 @@ import org.evsyukov.perigee.R
 import org.evsyukov.perigee.data.Catalog
 import org.evsyukov.perigee.isPlainHttp
 import org.evsyukov.perigee.library.folderName
+import org.evsyukov.perigee.ui.EmptyState
+import org.evsyukov.perigee.ui.ShelfIcon
 
 /**
  * The reader's OPDS catalogs. [onOpen] is given the file of a downloaded book
@@ -211,13 +215,10 @@ private fun CatalogList(
     onAdd: () -> Unit,
 ) {
     if (catalogs.isEmpty()) {
-        Column(
-            Modifier.fillMaxSize().padding(padding).padding(32.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterVertically),
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            Text(stringResource(R.string.catalogs_empty), textAlign = TextAlign.Center, style = MaterialTheme.typography.bodyLarge)
-            Button(onClick = onAdd) { Text(stringResource(R.string.catalog_add)) }
+        Box(Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()), contentAlignment = Alignment.Center) {
+            EmptyState(ShelfIcon, stringResource(R.string.catalogs_empty_title), text = stringResource(R.string.catalogs_empty)) {
+                Button(onClick = onAdd) { Text(stringResource(R.string.catalog_add)) }
+            }
         }
         return
     }
@@ -267,12 +268,7 @@ private fun Entries(padding: PaddingValues, page: Page, state: OpdsState, model:
             }
         }
         if (page.entries.isEmpty() && !state.loading) {
-            item("empty") {
-                Text(
-                    stringResource(R.string.catalog_page_empty), Modifier.fillMaxWidth().padding(32.dp),
-                    textAlign = TextAlign.Center, color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
+            item("empty") { EmptyState(ShelfIcon, stringResource(R.string.catalog_page_empty)) }
         }
         // By place, not by id: catalogs do repeat ids within a page.
         itemsIndexed(page.entries) { index, entry ->

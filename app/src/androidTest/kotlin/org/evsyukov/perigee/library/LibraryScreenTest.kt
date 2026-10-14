@@ -522,6 +522,24 @@ class LibraryScreenTest {
     }
 
     @Test
+    fun emptyShelfSaysWhatPutsBooksOnIt() {
+        shelve(found("Dune", author = "Frank Herbert"))
+        show()
+        waitForText("Dune")
+
+        shelf(R.string.shelf_favorites)
+        waitForText(string(R.string.shelf_empty_favorites))
+
+        shelf(R.string.shelf_read)
+        waitForText(string(R.string.shelf_empty_status, string(R.string.shelf_read)))
+
+        shelf(R.string.shelf_all)
+        rule.onNodeWithContentDescription(string(R.string.action_search)).performClick()
+        rule.onNodeWithTag("library-search").performTextInput("tolkien")
+        waitForText(string(R.string.nothing_found_for, "tolkien"))
+    }
+
+    @Test
     fun authorsShelfLeadsToTheBooksOfAnAuthor() {
         shelve(found("Dune", author = "Frank Herbert"), found("Emma", author = "Jane Austen"), found("Persuasion", author = "Jane Austen"))
         show()

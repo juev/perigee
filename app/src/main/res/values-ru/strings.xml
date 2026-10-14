@@ -80,8 +80,15 @@
     <string name="shelf_authors">Авторы</string>
     <string name="shelf_series">Серии</string>
     <string name="shelf_collections">Коллекции</string>
-    <string name="shelf_empty">Здесь книг нет.</string>
-    <string name="library_empty">Книг пока нет. Добавьте папку, в которой лежат книги, и они появятся здесь.</string>
+    <string name="shelf_empty">Здесь книг нет</string>
+    <string name="shelf_empty_status">Выберите «%1$s» в меню книги, и она появится здесь.</string>
+    <string name="shelf_empty_favorites">Отметьте книгу сердечком, и она появится здесь.</string>
+    <string name="shelf_empty_collections">Коллекций пока нет. Создайте коллекцию кнопкой «Новая коллекция» выше и добавляйте в неё книги из их меню.</string>
+    <string name="shelf_empty_series">Ни одна книга не входит в серию.</string>
+    <string name="nothing_found">Ничего не найдено</string>
+    <string name="nothing_found_for">По запросу «%1$s» здесь ничего нет.</string>
+    <string name="library_empty">Добавьте папку, в которой лежат книги, и они появятся здесь.</string>
+    <string name="library_empty_title">Книг пока нет</string>
     <string name="scanning">Ищем книги…</string>
     <string name="search_library_hint">Название, автор или серия</string>
     <string name="unknown_author">Автор не указан</string>
@@ -119,6 +126,7 @@
     <string name="catalogs_title">Каталоги</string>
     <string name="action_catalogs">Каталоги (OPDS)</string>
     <string name="catalogs_empty">Каталог — это библиотека в сети, из которой можно скачивать книги: ваш собственный сервер или общедоступный. Добавьте его по адресу OPDS.</string>
+    <string name="catalogs_empty_title">Каталогов пока нет</string>
     <string name="catalog_add">Добавить каталог</string>
     <string name="catalog_remove">Убрать каталог «%1$s»</string>
     <string name="catalog_address">Адрес</string>
@@ -131,7 +139,7 @@
     <string name="catalog_unreachable">Каталог не отвечает. Проверьте адрес и сеть.</string>
     <string name="catalog_password_lost">Пароль этого каталога больше не удаётся прочитать. Уберите каталог и добавьте его заново.</string>
     <string name="catalog_not_a_book">Этот файл — не книга, которую читает приложение.</string>
-    <string name="catalog_page_empty">Здесь ничего нет.</string>
+    <string name="catalog_page_empty">Здесь ничего нет</string>
     <string name="catalog_no_readable_file">Нет файла в формате, который читает приложение.</string>
     <string name="catalog_download">Скачать %1$s</string>
     <string name="catalog_downloading">Скачиваем %1$s…</string>
