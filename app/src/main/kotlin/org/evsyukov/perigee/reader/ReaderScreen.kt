@@ -149,7 +149,8 @@ fun ReaderScreen(file: File, onClose: () -> Unit, viewModel: ReaderViewModel = v
     ScreenBrightness(prefs.brightness)
     VolumeKeys(prefs.volumeKeysTurnPages && panel == Panel.None) { forward -> viewModel.turn(if (forward) 1 else -1) }
 
-    val colors = ReaderViewModel.colorsOf(prefs.colorScheme)
+    // The page shown sets the colours around it: a new scheme reaches the strips and the page together.
+    val colors = state.page?.colors ?: ReaderViewModel.colorsOf(prefs.colorScheme)
     val paper = Color(0xFF000000 or colors.background.toLong())
     val ink = Color(0xFF000000 or colors.text.toLong())
 

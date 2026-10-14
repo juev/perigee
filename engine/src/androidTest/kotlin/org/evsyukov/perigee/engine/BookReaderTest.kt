@@ -159,6 +159,23 @@ class BookReaderTest {
     }
 
     @Test
+    fun newColoursPaintTheSamePage() = reading { reader ->
+        val before = reader.goToPage(5)
+        val night = EngineSettings(colors = PageColors.Night)
+
+        val after = reader.apply(night)
+
+        assertEquals(before.index, after.index)
+        assertEquals(before.pageCount, after.pageCount)
+        assertEquals(before.xpointer, after.xpointer)
+        assertEquals(PageColors.Night, after.colors)
+        assertEquals("the page is painted in the night's paper", PageColors.Night.background, after.bitmap.getPixel(0, 0) and 0xFFFFFF)
+        assertEquals(PageColors.Day.background, before.bitmap.getPixel(0, 0) and 0xFFFFFF)
+        val pixels = IntArray(WIDTH * HEIGHT).also { after.bitmap.getPixels(it, 0, WIDTH, 0, 0, WIDTH, HEIGHT) }
+        assertTrue("the text is in the night's ink", pixels.any { it and 0xFFFFFF == PageColors.Night.text })
+    }
+
+    @Test
     fun resizingLaysTheBookOutForTheNewPage() = reading { reader ->
         val portrait = reader.current()
         val landscape = reader.resize(HEIGHT, WIDTH)

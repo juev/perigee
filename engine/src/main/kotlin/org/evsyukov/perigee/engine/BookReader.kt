@@ -20,6 +20,8 @@ class Page(
     val xpointer: String,
     /** How far the page is into the book, 0..1. */
     val progress: Float,
+    /** The colours the page is painted in: what is around it on the screen is painted to match. */
+    val colors: PageColors,
 )
 
 /** How a book is laid out: the settings and the page size. */
@@ -229,7 +231,7 @@ class BookReader private constructor(
         // A fresh bitmap per page: the screen may still be drawing the previous one.
         val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
         document.renderPage(bitmap, highlights)
-        return Page(bitmap, document.currentPage, document.pageCount, document.xpointer(), document.progress)
+        return Page(bitmap, document.currentPage, document.pageCount, document.xpointer(), document.progress, settings.colors)
     }
 
     companion object {
