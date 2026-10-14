@@ -16,9 +16,11 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -235,40 +237,52 @@ private fun SignIn(padding: PaddingValues, state: ServerState, onSignIn: (String
             onDismiss = { warning = false },
         )
     }
-    Column(
-        Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(24.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        Text(
-            stringResource(if (state.sessionOver) R.string.server_session_over else R.string.server_about),
-            style = MaterialTheme.typography.bodyLarge,
-        )
-        OutlinedTextField(
-            value = address, onValueChange = { address = it }, singleLine = true, enabled = !busy,
-            label = { Text(stringResource(R.string.server_address)) },
-            placeholder = { Text("https://…") },
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
-            modifier = Modifier.fillMaxWidth().testTag("server-address"),
-        )
-        OutlinedTextField(
-            value = user, onValueChange = { user = it }, singleLine = true, enabled = !busy,
-            label = { Text(stringResource(R.string.server_user)) },
-            modifier = Modifier.fillMaxWidth().testTag("server-user"),
-        )
-        OutlinedTextField(
-            value = password, onValueChange = { password = it }, singleLine = true, enabled = !busy,
-            label = { Text(stringResource(R.string.catalog_password)) },
-            visualTransformation = PasswordVisualTransformation(),
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-            modifier = Modifier.fillMaxWidth().testTag("server-password"),
-        )
-        if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
-        state.signInFailure?.let { Text(failureText(it), color = MaterialTheme.colorScheme.error) }
-        Button(
-            enabled = !busy && address.isNotBlank() && user.isNotBlank() && password.isNotEmpty(),
-            onClick = { if (isPlainHttp(address)) warning = true else onSignIn(address, user, password) },
-            modifier = Modifier.testTag("server-sign-in"),
-        ) { Text(stringResource(R.string.server_sign_in)) }
+    // On a wide screen the form keeps the width of a phone's, in the middle.
+    Box(Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()), contentAlignment = Alignment.TopCenter) {
+        Column(
+            Modifier.widthIn(max = 480.dp).fillMaxWidth().padding(24.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Box(
+                Modifier.align(Alignment.CenterHorizontally).padding(top = 8.dp, bottom = 4.dp).size(72.dp)
+                    .background(MaterialTheme.colorScheme.secondaryContainer, CircleShape),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(ShelfIcon, null, Modifier.size(36.dp), tint = MaterialTheme.colorScheme.onSecondaryContainer)
+            }
+            Text(
+                stringResource(if (state.sessionOver) R.string.server_session_over else R.string.server_about),
+                Modifier.fillMaxWidth().padding(bottom = 8.dp),
+                style = MaterialTheme.typography.bodyLarge,
+                textAlign = TextAlign.Center,
+            )
+            OutlinedTextField(
+                value = address, onValueChange = { address = it }, singleLine = true, enabled = !busy,
+                label = { Text(stringResource(R.string.server_address)) },
+                placeholder = { Text("https://…") },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
+                modifier = Modifier.fillMaxWidth().testTag("server-address"),
+            )
+            OutlinedTextField(
+                value = user, onValueChange = { user = it }, singleLine = true, enabled = !busy,
+                label = { Text(stringResource(R.string.server_user)) },
+                modifier = Modifier.fillMaxWidth().testTag("server-user"),
+            )
+            OutlinedTextField(
+                value = password, onValueChange = { password = it }, singleLine = true, enabled = !busy,
+                label = { Text(stringResource(R.string.catalog_password)) },
+                visualTransformation = PasswordVisualTransformation(),
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                modifier = Modifier.fillMaxWidth().testTag("server-password"),
+            )
+            if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
+            state.signInFailure?.let { Text(failureText(it), color = MaterialTheme.colorScheme.error) }
+            Button(
+                enabled = !busy && address.isNotBlank() && user.isNotBlank() && password.isNotEmpty(),
+                onClick = { if (isPlainHttp(address)) warning = true else onSignIn(address, user, password) },
+                modifier = Modifier.fillMaxWidth().padding(top = 4.dp).testTag("server-sign-in"),
+            ) { Text(stringResource(R.string.server_sign_in)) }
+        }
     }
 }
 
