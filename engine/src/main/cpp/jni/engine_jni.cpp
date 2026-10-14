@@ -284,7 +284,7 @@ static std::unordered_map<LVDocView*, Palette> gPalettes;
 
 /// A pixel this close to grey is part of the text or of the page, and takes the
 /// reader's colours; one further from grey is colour the book itself has, and is kept.
-static const int GREY_SPREAD = 12;
+static const uint32_t GREY_SPREAD = 12;
 
 JNIEXPORT jlong JNICALL
 Java_org_evsyukov_perigee_engine_NativeEngine_create(JNIEnv*, jobject, jint width, jint height, jboolean cacheable) {
@@ -652,34 +652,33 @@ Java_org_evsyukov_perigee_engine_NativeEngine_renderPage(JNIEnv* env, jobject, j
         LVColorDrawBuf buf(w, h, static_cast<lUInt8*>(pixels), 32);
         view->Draw(buf, false);
     }
-    // crengine writes BGRA with inverted alpha; Android expects RGBA.
+    // crengine writes BGRA with inverted alpha; Android expects RGBA (bytes R, G, B, A: 0xAABBGGRR as a word).
     const Palette palette = gPalettes[view];
     const bool plain = palette.plain();
-    // Grey level -> the reader's colour: 0 is the text, 255 the page.
-    uint8_t mapped[256][3];
+    // Grey level -> the reader's colour as an opaque RGBA word: 0 is the text, 255 the page.
+    uint32_t mapped[256];
     for (int v = 0; v < 256; v++) {
+        uint32_t word = 0xFF000000u;
         for (int c = 0; c < 3; c++) {
             const int shift = 16 - 8 * c;
             const int ink = static_cast<int>((palette.text >> shift) & 0xFF);
             const int paper = static_cast<int>((palette.background >> shift) & 0xFF);
-            mapped[v][c] = static_cast<uint8_t>(ink + (paper - ink) * v / 255);
+            word |= static_cast<uint32_t>(ink + (paper - ink) * v / 255) << (8 * c);
         }
+        mapped[v] = word;
     }
-    auto* p = static_cast<uint8_t*>(pixels);
-    for (size_t n = static_cast<size_t>(w) * h; n > 0; n--, p += 4) {
-        const uint8_t b = p[0];
-        p[0] = p[2];
-        p[2] = b;
-        p[3] ^= 0xFFu;
-        if (plain) continue;
-        const int r = p[0], g = p[1], bl = p[2];
-        const int high = std::max(r, std::max(g, bl));
-        const int low = std::min(r, std::min(g, bl));
-        if (high - low > GREY_SPREAD) continue;
-        const uint8_t* to = mapped[(r + g + bl) / 3];
-        p[0] = to[0];
-        p[1] = to[1];
-        p[2] = to[2];
+    auto* word = static_cast<uint32_t*>(pixels);
+    for (size_t n = static_cast<size_t>(w) * h; n > 0; n--, word++) {
+        const uint32_t bgra = *word;
+        const uint32_t b = bgra & 0xFF, g = (bgra >> 8) & 0xFF, r = (bgra >> 16) & 0xFF;
+        const uint32_t rgba = (r | (g << 8) | (b << 16)) | ((bgra & 0xFF000000u) ^ 0xFF000000u);
+        if (plain) {
+            *word = rgba;
+            continue;
+        }
+        const uint32_t high = std::max(r, std::max(g, b));
+        const uint32_t low = std::min(r, std::min(g, b));
+        *word = high - low > GREY_SPREAD ? rgba : mapped[(r + g + b) / 3];
     }
     AndroidBitmap_unlockPixels(env, bitmap);
 }
