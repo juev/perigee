@@ -193,7 +193,7 @@ class BookReaderTest {
     }
 
     @Test
-    fun pictureKeepsItsColoursOnAPageOfAnotherScheme() = runBlocking(Dispatchers.Default) {
+    fun colourKeepsItsHueOnAPageOfAnotherScheme() = runBlocking(Dispatchers.Default) {
         val red = Bitmap.createBitmap(60, 60, Bitmap.Config.ARGB_8888).apply { eraseColor(Color.RED) }
         val png = ByteArrayOutputStream().also { red.compress(Bitmap.CompressFormat.PNG, 100, it) }.toByteArray()
         val file = File(dir, "picture.fb2").apply {
@@ -210,7 +210,10 @@ class BookReaderTest {
         try {
             val page = reader.current()
             val pixels = IntArray(WIDTH * HEIGHT).also { page.bitmap.getPixels(it, 0, WIDTH, 0, 0, WIDTH, HEIGHT) }
-            assertTrue("the picture is still red", pixels.any { it and 0xFFFFFF == 0xFF0000 })
+            // Red as light as a grey the night darkens a little: still red, a shade lighter on the dark page.
+            val reds = pixels.filter { Color.red(it) > 200 && Color.green(it) < 100 && Color.blue(it) < 100 }
+            assertTrue("the picture is still red", reds.isNotEmpty())
+            assertTrue("and no longer the red it was drawn in", reds.none { it and 0xFFFFFF == 0xFF0000 })
             assertTrue("the text is in the night's ink", pixels.any { it and 0xFFFFFF == PageColors.Night.text })
         } finally {
             reader.close()

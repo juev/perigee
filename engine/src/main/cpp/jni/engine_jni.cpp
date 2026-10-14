@@ -7,7 +7,6 @@
 #include <sys/mman.h>
 #include <sys/stat.h>
 
-#include <algorithm>
 #include <climits>
 #include <string>
 #include <vector>
@@ -273,8 +272,10 @@ static std::unordered_map<LVDocView*, lString8> gStylesheets;
 
 /// The colours a book's pages are painted in. The engine always draws black on
 /// white: in crengine the text colour is part of the styles, and a new one has
-/// the whole book styled and laid out again. The greys of the page drawn are
-/// mapped onto the reader's colours instead, which takes no layout at all.
+/// the whole book styled and laid out again. The page drawn is mapped onto the
+/// reader's colours instead, which takes no layout at all: each pixel takes the
+/// lightness the scheme gives its grey and keeps its own hue, so a blue link
+/// turns light blue at night, readable on the dark page.
 struct Palette {
     lUInt32 text = 0x000000;
     lUInt32 background = 0xFFFFFF;
@@ -282,9 +283,6 @@ struct Palette {
 };
 static std::unordered_map<LVDocView*, Palette> gPalettes;
 
-/// A pixel this close to grey is part of the text or of the page, and takes the
-/// reader's colours; one further from grey is colour the book itself has, and is kept.
-static const uint32_t GREY_SPREAD = 12;
 
 JNIEXPORT jlong JNICALL
 Java_org_evsyukov_perigee_engine_NativeEngine_create(JNIEnv*, jobject, jint width, jint height, jboolean cacheable) {
@@ -655,18 +653,17 @@ Java_org_evsyukov_perigee_engine_NativeEngine_renderPage(JNIEnv* env, jobject, j
     // crengine writes BGRA with inverted alpha; Android expects RGBA (bytes R, G, B, A: 0xAABBGGRR as a word).
     const Palette palette = gPalettes[view];
     const bool plain = palette.plain();
-    // Grey level -> the reader's colour as an opaque RGBA word: 0 is the text, 255 the page.
-    uint32_t mapped[256];
+    // Grey level -> the reader's colour, per channel (R, G, B): 0 is the text, 255 the page.
+    int mapped[256][3];
     for (int v = 0; v < 256; v++) {
-        uint32_t word = 0xFF000000u;
         for (int c = 0; c < 3; c++) {
             const int shift = 16 - 8 * c;
             const int ink = static_cast<int>((palette.text >> shift) & 0xFF);
             const int paper = static_cast<int>((palette.background >> shift) & 0xFF);
-            word |= static_cast<uint32_t>(ink + (paper - ink) * v / 255) << (8 * c);
+            mapped[v][c] = ink + (paper - ink) * v / 255;
         }
-        mapped[v] = word;
     }
+    auto clamp = [](int v) { return static_cast<uint32_t>(v < 0 ? 0 : (v > 255 ? 255 : v)); };
     auto* word = static_cast<uint32_t*>(pixels);
     for (size_t n = static_cast<size_t>(w) * h; n > 0; n--, word++) {
         const uint32_t bgra = *word;
@@ -676,9 +673,11 @@ Java_org_evsyukov_perigee_engine_NativeEngine_renderPage(JNIEnv* env, jobject, j
             *word = rgba;
             continue;
         }
-        const uint32_t high = std::max(r, std::max(g, b));
-        const uint32_t low = std::min(r, std::min(g, b));
-        *word = high - low > GREY_SPREAD ? rgba : mapped[(r + g + b) / 3];
+        // The grey the pixel is as light as goes where the scheme puts it; how far each channel is off that grey stays.
+        const int grey = static_cast<int>(r + g + b) / 3;
+        const int* to = mapped[grey];
+        *word = 0xFF000000u | clamp(to[0] + static_cast<int>(r) - grey) | (clamp(to[1] + static_cast<int>(g) - grey) << 8) |
+                (clamp(to[2] + static_cast<int>(b) - grey) << 16);
     }
     AndroidBitmap_unlockPixels(env, bitmap);
 }
