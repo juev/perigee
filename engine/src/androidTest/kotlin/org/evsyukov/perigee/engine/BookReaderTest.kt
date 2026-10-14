@@ -193,28 +193,55 @@ class BookReaderTest {
     }
 
     @Test
-    fun colourKeepsItsHueOnAPageOfAnotherScheme() = runBlocking(Dispatchers.Default) {
-        val red = Bitmap.createBitmap(60, 60, Bitmap.Config.ARGB_8888).apply { eraseColor(Color.RED) }
-        val png = ByteArrayOutputStream().also { red.compress(Bitmap.CompressFormat.PNG, 100, it) }.toByteArray()
-        val file = File(dir, "picture.fb2").apply {
+    fun picturesKeepTheirColoursOnAPageOfAnotherScheme() = runBlocking(Dispatchers.Default) {
+        fun png(colour: Int): String {
+            val square = Bitmap.createBitmap(60, 60, Bitmap.Config.ARGB_8888).apply { eraseColor(colour) }
+            val bytes = ByteArrayOutputStream().also { square.compress(Bitmap.CompressFormat.PNG, 100, it) }.toByteArray()
+            return Base64.encodeToString(bytes, Base64.NO_WRAP)
+        }
+        val file = File(dir, "pictures.fb2").apply {
             writeText(
                 """<?xml version="1.0" encoding="UTF-8"?>
 <FictionBook xmlns="http://www.gribuser.ru/xml/fictionbook/2.0" xmlns:l="http://www.w3.org/1999/xlink">
-<description><title-info><book-title>Picture</book-title><lang>en</lang></title-info></description>
-<body><section><p>Before the picture.</p><image l:href="#red.png"/><p>After the picture.</p></section></body>
-<binary id="red.png" content-type="image/png">${Base64.encodeToString(png, Base64.NO_WRAP)}</binary>
+<description><title-info><book-title>Pictures</book-title><lang>en</lang></title-info></description>
+<body><section><p>Before the pictures.</p><image l:href="#red.png"/><image l:href="#grey.png"/><p>After the pictures.</p></section></body>
+<binary id="red.png" content-type="image/png">${png(Color.RED)}</binary>
+<binary id="grey.png" content-type="image/png">${png(GREY)}</binary>
 </FictionBook>""",
+            )
+        }
+        for (colors in listOf(PageColors.Night, PageColors.Sepia)) {
+            val reader = BookReader.open(context, file, WIDTH, HEIGHT, EngineSettings(colors = colors), densityDpi = DENSITY)
+            try {
+                val page = reader.current()
+                val pixels = IntArray(WIDTH * HEIGHT).also { page.bitmap.getPixels(it, 0, WIDTH, 0, 0, WIDTH, HEIGHT) }
+                assertTrue("$colors: the red picture is the red it was drawn in", pixels.any { it and 0xFFFFFF == 0xFF0000 })
+                assertTrue("$colors: the grey picture is the grey it was drawn in", pixels.any { it and 0xFFFFFF == GREY and 0xFFFFFF })
+                assertEquals("$colors: the page is in the scheme's paper", colors.background, pixels[0] and 0xFFFFFF)
+                assertTrue("$colors: the text is in the scheme's ink", pixels.any { it and 0xFFFFFF == colors.text })
+            } finally {
+                reader.close()
+            }
+        }
+    }
+
+    @Test
+    fun colouredTextKeepsItsHueOnAPageOfAnotherScheme() = runBlocking(Dispatchers.Default) {
+        val file = File(dir, "blue.html").apply {
+            writeText(
+                """<html><head><title>Blue</title></head>
+<body><p style="color: #0000FF; font-size: 300%">Blue words, written large.</p><p>Black words.</p></body></html>""",
             )
         }
         val reader = BookReader.open(context, file, WIDTH, HEIGHT, EngineSettings(colors = PageColors.Night), densityDpi = DENSITY)
         try {
             val page = reader.current()
             val pixels = IntArray(WIDTH * HEIGHT).also { page.bitmap.getPixels(it, 0, WIDTH, 0, 0, WIDTH, HEIGHT) }
-            // Red as light as a grey the night darkens a little: still red, a shade lighter on the dark page.
-            val reds = pixels.filter { Color.red(it) > 200 && Color.green(it) < 100 && Color.blue(it) < 100 }
-            assertTrue("the picture is still red", reds.isNotEmpty())
-            assertTrue("and no longer the red it was drawn in", reds.none { it and 0xFFFFFF == 0xFF0000 })
-            assertTrue("the text is in the night's ink", pixels.any { it and 0xFFFFFF == PageColors.Night.text })
+            // Blue as light as a grey the night lightens: still blue, lighter on the dark page.
+            val blues = pixels.filter { Color.blue(it) > Color.red(it) + 100 && Color.blue(it) > Color.green(it) + 100 }
+            assertTrue("the words are still blue", blues.isNotEmpty())
+            assertTrue("and no longer the blue they were drawn in", blues.none { it and 0xFFFFFF == 0x0000FF })
+            assertTrue("the black words are in the night's ink", pixels.any { it and 0xFFFFFF == PageColors.Night.text })
         } finally {
             reader.close()
         }
@@ -412,5 +439,6 @@ class BookReaderTest {
         const val WIDTH = 720
         const val HEIGHT = 1280
         const val DENSITY = 320
+        const val GREY = 0xFF808080.toInt()
     }
 }
