@@ -1,6 +1,7 @@
 package org.evsyukov.perigee.reader
 
 import android.app.Application
+import android.util.Log
 import android.graphics.Rect
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -137,6 +138,8 @@ class ReaderViewModel(application: Application) : AndroidViewModel(application) 
             // Not collectLatest: a book being opened must not be dropped halfway
             // because another preference arrived.
             preferences.prefs.collect { stored ->
+                // A copy about to be laid out with the settings before must not hold up the new layout.
+                if (stored != _prefs.value) spareJob?.cancel()
                 _prefs.value = stored
                 sync()
             }
@@ -229,9 +232,23 @@ class ReaderViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     /** The screen reports the area it has for the page. */
+    /**
+     * Whether a rotation brought the screen to the very area it settled at
+     * before in that orientation: the book may be laid out for it already, and
+     * there is nothing to wait for. A size changing within one orientation, as
+     * with a split screen or a keyboard, passes through others on the way.
+     */
+    fun isSettled(viewport: Viewport): Boolean {
+        val shown = this.viewport ?: return false
+        return (shown.width > shown.height) != (viewport.width > viewport.height) && viewports.isKnown(viewport)
+    }
+
     fun setViewport(viewport: Viewport) {
+        Log.d(TAG, "page area $viewport${if (this.viewport == viewport) ", as before" else ""}")
         if (this.viewport == viewport) return
         this.viewport = viewport
+        // A copy about to be laid out for a size no longer next must not hold up the page for this one.
+        spareJob?.cancel()
         viewModelScope.launch { sync() }
     }
 
@@ -460,13 +477,18 @@ class ReaderViewModel(application: Application) : AndroidViewModel(application) 
         // Most preferences are about controls and leave the pages as they are.
         if (target == applied) return
         _state.update { it.copy(busy = true) }
+        val started = System.nanoTime()
         val (width, height, settings) = target
         val page = open.apply(settings, width, height)
         applied = target
-        // Page numbers of the contents moved with the layout.
-        val toc = open.read { it.toc() }
-        _state.update { it.copy(toc = toc, selection = null, quoteTouch = null) }
+        _state.update { it.copy(selection = null, quoteTouch = null) }
         show(page)
+        // The page is there: touches count from now on, not once the contents are counted too.
+        _state.update { it.copy(busy = false) }
+        Log.d(TAG, "new layout shown in ${(System.nanoTime() - started) / 1_000_000} ms")
+        // Page numbers of the contents moved with the layout; the page is not kept waiting for them.
+        val toc = open.read { it.toc() }
+        _state.update { it.copy(toc = toc) }
     }
 
     /** Keeps the lists of the book's marks current and the quotes painted on the pages. */
@@ -548,6 +570,8 @@ class ReaderViewModel(application: Application) : AndroidViewModel(application) 
         /** Two pages side by side only make sense on a screen wider than it is tall. */
         fun twoUp(prefs: ReaderPrefs, viewport: Viewport) =
             prefs.twoPagesInLandscape && viewport.width > viewport.height
+
+        private const val TAG = "Perigee.Reader"
 
         // How long the reader goes without turning a page before the second copy of the book is laid out.
         private const val SPARE_AFTER_MILLIS = 3_000L

@@ -2,6 +2,7 @@ package org.evsyukov.perigee.engine
 
 import android.content.Context
 import android.graphics.Bitmap
+import android.util.Log
 import java.io.File
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -102,9 +103,11 @@ class BookReader private constructor(
      */
     suspend fun apply(settings: EngineSettings, width: Int = this.width, height: Int = this.height): Page =
         onEngine {
+            val started = System.nanoTime()
             val wanted = Layout(settings, width, height)
             val ready = spare
-            if (ready != null && ready.layout == wanted) {
+            val swapped = ready != null && ready.layout == wanted
+            if (ready != null && swapped) {
                 // Laid out for this already: the copies change places, and the one shown so far waits for the way back.
                 spare = Spare(document, Layout(this.settings, this.width, this.height))
                 document = ready.document
@@ -114,7 +117,9 @@ class BookReader private constructor(
             this.settings = settings
             this.width = width
             this.height = height
-            relaidOut()
+            relaidOut().also {
+                Log.d(TAG, "${if (swapped) "copy shown" else "laid out"} at ${width}x$height in ${millisSince(started)} ms")
+            }
         }
 
     /**
@@ -125,6 +130,7 @@ class BookReader private constructor(
      */
     suspend fun prepareSpare(layout: Layout) = onEngine {
         if (layout == Layout(settings, width, height) || spare?.layout == layout) return@onEngine
+        val started = System.nanoTime()
         val old = spare
         spare = if (old != null) {
             old.document.apply(layout.settings, layout.width, layout.height)
@@ -133,6 +139,7 @@ class BookReader private constructor(
             val copy = EngineDocument.open(context, file, layout.width, layout.height, layout.settings, densityDpi, cacheable = false)
             Spare(copy, layout)
         }
+        Log.d(TAG, "copy ${if (old == null) "opened and laid out" else "laid out again"} at ${layout.width}x${layout.height} in ${millisSince(started)} ms")
     }
 
     /** Whether a second copy is laid out as [layout] asks. */
@@ -226,6 +233,10 @@ class BookReader private constructor(
     }
 
     companion object {
+        private const val TAG = "Perigee.Reader"
+
+        private fun millisSince(started: Long) = (System.nanoTime() - started) / 1_000_000
+
         /**
          * Opens the book at [xpointer] when it is given and still resolves.
          * @throws IllegalArgumentException when the engine cannot read the file

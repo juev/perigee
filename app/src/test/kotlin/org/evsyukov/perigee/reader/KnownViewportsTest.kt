@@ -22,6 +22,14 @@ class KnownViewportsTest {
     }
 
     @Test
+    fun anAreaSeenBeforeIsKnownAndOneOnTheWayToItIsNot() {
+        known.remember(wide)
+        assertEquals(true, known.isKnown(wide))
+        assertEquals("a rotation passes through other sizes", false, known.isKnown(wide.copy(width = 2772)))
+        assertEquals(false, known.isKnown(tall))
+    }
+
+    @Test
     fun theLatestAreaOfAnOrientationCounts() {
         known.remember(wide)
         val narrower = wide.copy(width = 2400)

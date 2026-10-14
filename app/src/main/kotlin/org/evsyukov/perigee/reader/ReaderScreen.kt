@@ -165,12 +165,12 @@ fun ReaderScreen(file: File, onClose: () -> Unit, viewModel: ReaderViewModel = v
         val clearAbove = with(density) { cutout.calculateTopPadding().roundToPx() }
         LaunchedEffect(viewModel, area, density.density, clearAbove) {
             if (area != IntSize.Zero) {
-                // The area settles over a few frames, as the cutout inset arrives or a
-                // rotation finishes. Laying a book out takes seconds: wait for the last size.
-                delay(VIEWPORT_SETTLE_MILLIS)
-                viewModel.setViewport(
-                    Viewport(area.width, area.height, density.density, densityDpi, clearAbove),
-                )
+                val viewport = Viewport(area.width, area.height, density.density, densityDpi, clearAbove)
+                // The area settles over a few frames, as the cutout inset arrives or a rotation
+                // finishes. Laying a book out takes a while: wait for the last size, unless this is
+                // the size the screen settled at before, which the book may be laid out for already.
+                if (!viewModel.isSettled(viewport)) delay(VIEWPORT_SETTLE_MILLIS)
+                viewModel.setViewport(viewport)
             }
         }
         Box(

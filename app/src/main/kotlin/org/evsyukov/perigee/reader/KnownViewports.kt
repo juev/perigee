@@ -13,6 +13,9 @@ internal class KnownViewports(private val read: (String) -> String?, private val
     /** The screen gave this area, and a book was laid out for it. */
     fun remember(viewport: Viewport) = write(keyOf(viewport.wide), encode(viewport))
 
+    /** Whether this is the area last seen in its orientation. */
+    fun isKnown(viewport: Viewport): Boolean = read(keyOf(viewport.wide))?.let(::decode) == viewport
+
     /** The area of the other orientation, when one was seen on a screen of the same density. */
     fun otherThan(viewport: Viewport): Viewport? =
         read(keyOf(!viewport.wide))?.let(::decode)?.takeIf { it.density == viewport.density && it.densityDpi == viewport.densityDpi }
