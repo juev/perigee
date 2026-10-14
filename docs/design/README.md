@@ -45,4 +45,13 @@ The books are the Standard Ebooks editions (standardebooks.org), downloaded 2026
 | Crime and Punishment | Edvard Munch, *Self-Portrait with Burning Cigarette*, 1895 |
 | The Adventures of Sherlock Holmes | Thomas Eakins, *Music*, 1904 |
 
-Tablet screenshots are not there yet.
+## Tablet screenshots
+
+`tenInchScreenshots/1.png` to `4.png`: two pages side by side, the library as covers, the reading settings over the pages, the page about a book. They were taken on 2026-10-14 on the emulator `perigee_tablet_api36` (the Pixel Tablet profile, 2560×1600, 320 dpi, Android 16, 4 GB of memory), made on the image the phone emulator uses:
+
+```sh
+avdmanager create avd -n perigee_tablet_api36 -k 'system-images;android-36;google_apis;arm64-v8a' -d pixel_tablet
+emulator -avd perigee_tablet_api36 -port 5556
+```
+
+The screen size is left as it is; the status bar is set up with the same demo mode commands. Same books and reading settings as on the phone.
