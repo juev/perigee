@@ -70,6 +70,41 @@ class DescribeTest {
     }
 
     @Test
+    fun epubSeriesIsTheCollectionTypedSeriesNotAListTheBookIsOn() {
+        val series = """
+    <meta id="c1" property="belongs-to-collection">Best 100 Novels</meta>
+    <meta property="collection-type" refines="#c1">set</meta>
+    <meta property="group-position" refines="#c1">21</meta>
+    <meta id="c2" property="belongs-to-collection">Sherlock Holmes</meta>
+    <meta property="collection-type" refines="#c2">series</meta>
+    <meta property="group-position" refines="#c2">3</meta>"""
+        val book = describe(epub(File(dir, "holmes.epub"), cover(Color.BLUE), version = "3.0", series = series))!!
+        assertEquals("Sherlock Holmes", book.series)
+        assertEquals("3", book.seriesNumber)
+    }
+
+    @Test
+    fun epubOnlyOnListsHasNoSeries() {
+        val series = """
+    <meta id="c1" property="belongs-to-collection">Best 100 Novels</meta>
+    <meta property="collection-type" refines="#c1">set</meta>
+    <meta property="group-position" refines="#c1">8</meta>"""
+        val book = describe(epub(File(dir, "listed.epub"), cover(Color.BLUE), version = "3.0", series = series))!!
+        assertEquals("", book.series)
+        assertEquals("", book.seriesNumber)
+    }
+
+    @Test
+    fun epubCollectionWithoutTypeIsTakenForASeries() {
+        val series = """
+    <meta id="c1" property="belongs-to-collection">Long Saga</meta>
+    <meta property="group-position" refines="#c1">4</meta>"""
+        val book = describe(epub(File(dir, "untyped.epub"), cover(Color.BLUE), version = "3.0", series = series))!!
+        assertEquals("Long Saga", book.series)
+        assertEquals("4", book.seriesNumber)
+    }
+
+    @Test
     fun bookWithoutCoverOrSeriesHasNone() {
         val book = describe(TestBooks.fb2(dir))!!
         assertEquals("Perigee Test Book", book.title)
@@ -131,7 +166,7 @@ ${(1..40).joinToString("\n") { "<p>Абзац номер $it этой книги
         )
     }
 
-    private fun epub(file: File, cover: ByteArray): File {
+    private fun epub(file: File, cover: ByteArray, version: String = "2.0", series: String = CALIBRE_SERIES): File {
         ZipOutputStream(file.outputStream()).use { zip ->
             val mimetype = "application/epub+zip".toByteArray()
             zip.putNextEntry(ZipEntry("mimetype").apply {
@@ -158,7 +193,7 @@ ${(1..40).joinToString("\n") { "<p>Абзац номер $it этой книги
             entry(
                 "content.opf",
                 """<?xml version="1.0" encoding="UTF-8"?>
-<package xmlns="http://www.idpf.org/2007/opf" version="2.0" unique-identifier="id">
+<package xmlns="http://www.idpf.org/2007/opf" version="$version" unique-identifier="id">
   <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
     <dc:title>Second Book</dc:title>
     <dc:creator>Smith, Anna</dc:creator>
@@ -167,8 +202,7 @@ ${(1..40).joinToString("\n") { "<p>Абзац номер $it этой книги
     <dc:description>What came next, &lt;i&gt;and&lt;/i&gt; how it ended.</dc:description>
     <dc:identifier id="id">perigee-described-epub</dc:identifier>
     <meta name="cover" content="cover-image"/>
-    <meta name="calibre:series" content="Long Saga"/>
-    <meta name="calibre:series_index" content="2"/>
+$series
   </metadata>
   <manifest>
     <item id="cover-image" href="images/cover.png" media-type="image/png"/>
@@ -191,5 +225,7 @@ ${(1..40).joinToString("\n") { "<p>Абзац номер $it этой книги
     private companion object {
         const val COVER_WIDTH = 30
         const val COVER_HEIGHT = 40
+        const val CALIBRE_SERIES = """    <meta name="calibre:series" content="Long Saga"/>
+    <meta name="calibre:series_index" content="2"/>"""
     }
 }

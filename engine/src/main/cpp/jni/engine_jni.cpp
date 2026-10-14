@@ -11,6 +11,7 @@
 #include <string>
 #include <vector>
 
+#include "epubfmt.h"
 #include "hyphman.h"
 #include <cctype>
 #include <unordered_map>
@@ -126,6 +127,81 @@ lString32 contextAfter(const ldomXPointerEx& hitEnd, int words) {
 lString32 authorsOf(LVDocView* view) {
     if (view->getDocFormat() == doc_format_fb2) return extractDocAuthors(view->getDocument(), cs32("\n"), false);
     return view->getAuthors();
+}
+
+lString32 withoutHash(lString32 id) {
+    return id.startsWith("#") ? id.substr(1) : id;
+}
+
+/// The series of a book and its number in it. For EPUB 3 the engine takes the
+/// first collection the book belongs to, while a collection typed "set" is a
+/// list it is on (a hundred best novels), not a series: one typed "series" is
+/// taken first, then an untyped one, and sets never.
+void seriesOf(LVDocView* view, lString32& name, lString32& number) {
+    CRPropRef props = view->getDocProps();
+    name = props->getStringDef(DOC_PROP_SERIES_NAME, "");
+    number = props->getStringDef(DOC_PROP_SERIES_NUMBER, "");
+    if (view->getDocFormat() != doc_format_epub || name.empty()) return;
+    LVContainerRef container = view->getDocument()->getContainer();
+    if (container.isNull()) return;
+    lString32 opfPath = EpubGetRootFilePath(container);
+    if (opfPath.empty()) return;
+    LVStreamRef opf = container->OpenStream(opfPath.c_str(), LVOM_READ);
+    if (opf.isNull()) return;
+    ldomDocument* opfDoc = LVParseXMLStream(opf);
+    if (opfDoc == nullptr) return;
+    ldomNode* package = opfDoc->nodeFromXPath(cs32("package"));
+    ldomNode* metadata = opfDoc->nodeFromXPath(cs32("package/metadata"));
+    lString32 version = package == nullptr ? lString32() : package->getAttributeValue("version");
+    if (metadata == nullptr || version.empty() || version[0] < '3') {
+        delete opfDoc;
+        return;
+    }
+    struct Collection {
+        lString32 id, name, type, position;
+    };
+    std::vector<Collection> collections;
+    bool calibre = false;
+    const lUInt16 metaId = opfDoc->getElementNameIndex(U"meta");
+    for (int pass = 0; pass < 2; pass++) {
+        for (int i = 0; i < metadata->getChildCount(); i++) {
+            ldomNode* item = metadata->getChildNode(i);
+            if (item->getNodeId() != metaId) continue;
+            if (item->getAttributeValue("name") == "calibre:series") calibre = true;
+            lString32 property = item->getAttributeValue("property");
+            lString32 text = item->getText().trim();
+            if (pass == 0) {
+                if (property == "belongs-to-collection") {
+                    Collection c;
+                    c.id = item->getAttributeValue("id");
+                    c.name = text;
+                    collections.push_back(c);
+                }
+                continue;
+            }
+            lString32 refines = withoutHash(item->getAttributeValue("refines"));
+            for (Collection& c : collections) {
+                if (c.id.empty() || c.id != refines) continue;
+                if (property == "collection-type") c.type = text;
+                if (property == "group-position") c.position = text;
+            }
+        }
+    }
+    delete opfDoc;
+    // Calibre's own series comes before any collection, as in the engine.
+    if (calibre || collections.empty()) return;
+    const Collection* chosen = nullptr;
+    for (const Collection& c : collections) {
+        if (c.type == "series") {
+            chosen = &c;
+            break;
+        }
+    }
+    for (const Collection& c : collections) {
+        if (chosen == nullptr && c.type.empty()) chosen = &c;
+    }
+    name = chosen == nullptr ? lString32() : chosen->name;
+    number = chosen == nullptr ? lString32() : chosen->position;
 }
 
 }  // namespace
@@ -376,16 +452,16 @@ Java_org_evsyukov_perigee_engine_NativeEngine_describe(JNIEnv* env, jobject, jin
         stream->SetName(fileName.c_str());
         if (view.LoadDocument(stream, true) && view.getDocument()) {
             out = env->NewObjectArray(2, env->FindClass("java/lang/Object"), nullptr);
-            CRPropRef doc = view.getDocProps();
             // For FB2 the engine runs the paragraphs of the annotation together and adds the
             // translators and the publisher's data to them: the annotation is taken as it is, a line a paragraph.
             lString32 about = view.getDescription();
             ldomNode* annotation =
                     view.getDocument()->createXPointer(U"/FictionBook/description/title-info/annotation").getNode();
             if (annotation != nullptr) about = annotation->getText(U'\n').trim();
-            jobjectArray texts = toJava(env, {view.getTitle(), authorsOf(&view), view.getLanguage(),
-                                              doc->getStringDef(DOC_PROP_SERIES_NAME, ""),
-                                              doc->getStringDef(DOC_PROP_SERIES_NUMBER, ""), about});
+            lString32 series, seriesNumber;
+            seriesOf(&view, series, seriesNumber);
+            jobjectArray texts =
+                    toJava(env, {view.getTitle(), authorsOf(&view), view.getLanguage(), series, seriesNumber, about});
             env->SetObjectArrayElement(out, 0, texts);
             LVStreamRef cover = view.getCoverPageImageStream();
             const lvsize_t coverSize = cover.isNull() ? 0 : cover->GetSize();
