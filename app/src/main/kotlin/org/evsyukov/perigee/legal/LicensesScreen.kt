@@ -33,6 +33,7 @@ import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.evsyukov.perigee.R
+import org.evsyukov.perigee.ui.Centred
 
 /** A license text that comes with the app: [name] as the reader sees it, [asset] where it lies. */
 data class LicenseText(val name: String, val asset: String)
@@ -84,23 +85,25 @@ fun LicensesScreen(onClose: () -> Unit) {
     ) { padding ->
         // Keyed by the text, so that a license opens at its top, not where the list before it was left.
         androidx.compose.runtime.key(shown) {
-            LazyColumn(Modifier.fillMaxSize().padding(padding).testTag("legal-text")) {
-                items(text) { paragraph ->
-                    Text(
-                        paragraph, style = MaterialTheme.typography.bodySmall,
-                        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp),
-                    )
-                }
-                if (asset == null) {
-                    item { HorizontalDivider(Modifier.padding(top = 8.dp)) }
-                    items(listOf(gpl) + components) { license ->
+            Centred(padding) { inner ->
+                LazyColumn(Modifier.fillMaxSize().testTag("legal-text"), contentPadding = inner) {
+                    items(text) { paragraph ->
                         Text(
-                            license.name, style = MaterialTheme.typography.bodyLarge,
-                            modifier = Modifier.fillMaxWidth().clickable {
-                                name = license.name
-                                asset = license.asset
-                            }.padding(horizontal = 16.dp, vertical = 14.dp),
+                            paragraph, style = MaterialTheme.typography.bodySmall,
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp),
                         )
+                    }
+                    if (asset == null) {
+                        item { HorizontalDivider(Modifier.padding(top = 8.dp)) }
+                        items(listOf(gpl) + components) { license ->
+                            Text(
+                                license.name, style = MaterialTheme.typography.bodyLarge,
+                                modifier = Modifier.fillMaxWidth().clickable {
+                                    name = license.name
+                                    asset = license.asset
+                                }.padding(horizontal = 16.dp, vertical = 14.dp),
+                            )
+                        }
                     }
                 }
             }

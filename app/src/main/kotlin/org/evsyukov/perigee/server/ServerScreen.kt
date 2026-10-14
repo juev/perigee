@@ -89,6 +89,7 @@ import org.evsyukov.perigee.sync.BookOrbit
 import org.evsyukov.perigee.sync.DeviceChannel
 import org.evsyukov.perigee.sync.RemoteBook
 import org.evsyukov.perigee.sync.RemoteFile
+import org.evsyukov.perigee.ui.Centred
 import org.evsyukov.perigee.ui.EmptyState
 import org.evsyukov.perigee.ui.ShelfIcon
 
@@ -288,36 +289,38 @@ private fun SignIn(padding: PaddingValues, state: ServerState, onSignIn: (String
 
 @Composable
 private fun Books(padding: PaddingValues, state: ServerState, model: ServerViewModel, onOpen: (File) -> Unit) {
-    LazyColumn(Modifier.fillMaxSize().testTag("server-books"), contentPadding = padding) {
-        val channel = state.channel
-        if (channel != null && channel != DeviceChannel.Ready) {
-            item("channel") { Channel(channel, state, model::devicePassword, model::newDevicePassword) }
-        }
-        state.failure?.let { failure ->
-            item("failure") {
-                Column(
-                    Modifier.fillMaxWidth().padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    Text(failureText(failure), color = MaterialTheme.colorScheme.error, textAlign = TextAlign.Center)
-                    OutlinedButton(onClick = model::retry) { Text(stringResource(R.string.action_retry)) }
+    Centred(padding) { inner ->
+        LazyColumn(Modifier.fillMaxSize().testTag("server-books"), contentPadding = inner) {
+            val channel = state.channel
+            if (channel != null && channel != DeviceChannel.Ready) {
+                item("channel") { Channel(channel, state, model::devicePassword, model::newDevicePassword) }
+            }
+            state.failure?.let { failure ->
+                item("failure") {
+                    Column(
+                        Modifier.fillMaxWidth().padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Text(failureText(failure), color = MaterialTheme.colorScheme.error, textAlign = TextAlign.Center)
+                        OutlinedButton(onClick = model::retry) { Text(stringResource(R.string.action_retry)) }
+                    }
                 }
             }
-        }
-        if (state.books.isEmpty() && !state.loading && state.failure == null) {
-            item("empty") {
-                if (state.query.isEmpty()) {
-                    EmptyState(ShelfIcon, stringResource(R.string.catalog_page_empty))
-                } else {
-                    EmptyState(Icons.Filled.Search, stringResource(R.string.nothing_found), text = stringResource(R.string.nothing_found_for, state.query))
+            if (state.books.isEmpty() && !state.loading && state.failure == null) {
+                item("empty") {
+                    if (state.query.isEmpty()) {
+                        EmptyState(ShelfIcon, stringResource(R.string.catalog_page_empty))
+                    } else {
+                        EmptyState(Icons.Filled.Search, stringResource(R.string.nothing_found), text = stringResource(R.string.nothing_found_for, state.query))
+                    }
                 }
             }
-        }
-        itemsIndexed(state.books, key = { _, book -> book.id }) { index, book ->
-            // Reaching the last line asks for what follows it.
-            if (index == state.books.lastIndex && state.more) LaunchedEffect(state.books.size) { model.more() }
-            BookRow(book, state, model, onOpen)
-            HorizontalDivider()
+            itemsIndexed(state.books, key = { _, book -> book.id }) { index, book ->
+                // Reaching the last line asks for what follows it.
+                if (index == state.books.lastIndex && state.more) LaunchedEffect(state.books.size) { model.more() }
+                BookRow(book, state, model, onOpen)
+                HorizontalDivider()
+            }
         }
     }
 }

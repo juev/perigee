@@ -89,6 +89,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.pluralStringResource
@@ -112,10 +113,12 @@ import org.evsyukov.perigee.data.Covers
 import org.evsyukov.perigee.data.Folder
 import org.evsyukov.perigee.data.ReadingStatus
 import org.evsyukov.perigee.data.Shelf
+import org.evsyukov.perigee.ui.Centred
 import org.evsyukov.perigee.ui.EmptyState
 import org.evsyukov.perigee.ui.GridIcon
 import org.evsyukov.perigee.ui.OpenBookIcon
 import org.evsyukov.perigee.ui.RowsIcon
+import org.evsyukov.perigee.ui.WIDE_SCREEN
 /**
  * The reader's books by shelf. [onOpen] is given the file of the book that
  * was picked; [onOpenFile] asks for a single file from outside the library;
@@ -472,57 +475,59 @@ private fun Groups(
     onRename: (Group) -> Unit,
     onRemove: (Group) -> Unit,
 ) {
-    LazyColumn(Modifier.fillMaxSize(), contentPadding = padding) {
-        if (shelf == Shelf.Collections) {
-            item("new") {
-                TextButton(onClick = onNew, modifier = Modifier.padding(horizontal = 8.dp)) {
-                    Icon(Icons.Filled.Add, null)
-                    Text(stringResource(R.string.collection_new), Modifier.padding(start = 8.dp))
-                }
-            }
-        }
-        if (groups.isEmpty()) {
-            item("empty") { ShelfEmpty(shelf, query, inGroup = false) }
-        }
-        items(groups, key = { it.key }) { group ->
-            Row(
-                Modifier.fillMaxWidth().clickable { onOpen(group) }.padding(start = 16.dp, end = 4.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Column(Modifier.weight(1f).padding(vertical = 12.dp)) {
-                    Text(groupName(group), style = MaterialTheme.typography.bodyLarge, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                    Text(
-                        pluralStringResource(R.plurals.books_count, group.count, group.count),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-                if (shelf == Shelf.Collections) {
-                    var open by remember { mutableStateOf(false) }
-                    Box {
-                        IconButton(onClick = { open = true }) {
-                            Icon(Icons.Filled.MoreVert, stringResource(R.string.collection_actions, group.name))
-                        }
-                        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
-                            DropdownMenuItem(
-                                text = { Text(stringResource(R.string.action_rename)) },
-                                onClick = {
-                                    open = false
-                                    onRename(group)
-                                },
-                            )
-                            DropdownMenuItem(
-                                text = { Text(stringResource(R.string.action_delete)) },
-                                onClick = {
-                                    open = false
-                                    onRemove(group)
-                                },
-                            )
-                        }
+    Centred(padding) { inner ->
+        LazyColumn(Modifier.fillMaxSize(), contentPadding = inner) {
+            if (shelf == Shelf.Collections) {
+                item("new") {
+                    TextButton(onClick = onNew, modifier = Modifier.padding(horizontal = 8.dp)) {
+                        Icon(Icons.Filled.Add, null)
+                        Text(stringResource(R.string.collection_new), Modifier.padding(start = 8.dp))
                     }
                 }
             }
-            HorizontalDivider()
+            if (groups.isEmpty()) {
+                item("empty") { ShelfEmpty(shelf, query, inGroup = false) }
+            }
+            items(groups, key = { it.key }) { group ->
+                Row(
+                    Modifier.fillMaxWidth().clickable { onOpen(group) }.padding(start = 16.dp, end = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(Modifier.weight(1f).padding(vertical = 12.dp)) {
+                        Text(groupName(group), style = MaterialTheme.typography.bodyLarge, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                        Text(
+                            pluralStringResource(R.plurals.books_count, group.count, group.count),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    if (shelf == Shelf.Collections) {
+                        var open by remember { mutableStateOf(false) }
+                        Box {
+                            IconButton(onClick = { open = true }) {
+                                Icon(Icons.Filled.MoreVert, stringResource(R.string.collection_actions, group.name))
+                            }
+                            DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+                                DropdownMenuItem(
+                                    text = { Text(stringResource(R.string.action_rename)) },
+                                    onClick = {
+                                        open = false
+                                        onRename(group)
+                                    },
+                                )
+                                DropdownMenuItem(
+                                    text = { Text(stringResource(R.string.action_delete)) },
+                                    onClick = {
+                                        open = false
+                                        onRemove(group)
+                                    },
+                                )
+                            }
+                        }
+                    }
+                }
+                HorizontalDivider()
+            }
         }
     }
 }
@@ -570,8 +575,10 @@ private fun Books(
         val around = PaddingValues(
             start = 12.dp, end = 12.dp, top = padding.calculateTopPadding() + 4.dp, bottom = padding.calculateBottomPadding() + 12.dp,
         )
+        // A tablet's covers are larger, not just more of them in a row.
+        val cell = if (LocalConfiguration.current.screenWidthDp.dp >= WIDE_SCREEN) 136.dp else 104.dp
         LazyVerticalGrid(
-            GridCells.Adaptive(104.dp), Modifier.fillMaxSize().testTag("books-grid"), contentPadding = around,
+            GridCells.Adaptive(cell), Modifier.fillMaxSize().testTag("books-grid"), contentPadding = around,
             horizontalArrangement = Arrangement.spacedBy(4.dp), verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             if (books.isEmpty()) {
@@ -586,15 +593,17 @@ private fun Books(
         }
         return
     }
-    LazyColumn(Modifier.fillMaxSize().testTag("books"), contentPadding = padding) {
-        if (books.isEmpty()) {
-            item("empty") { ShelfEmpty(state.shelf, state.query, state.group != null) }
-        }
-        items(books, key = { it.id }) { book ->
-            BookRow(
-                book, covers, state.signedIn, state.sending[book.id], if (state.canSend(book)) onSend else null,
-                onOpen, onFavorite, onStatus, onRating, onCollections, onAbout,
-            )
+    Centred(padding) { inner ->
+        LazyColumn(Modifier.fillMaxSize().testTag("books"), contentPadding = inner) {
+            if (books.isEmpty()) {
+                item("empty") { ShelfEmpty(state.shelf, state.query, state.group != null) }
+            }
+            items(books, key = { it.id }) { book ->
+                BookRow(
+                    book, covers, state.signedIn, state.sending[book.id], if (state.canSend(book)) onSend else null,
+                    onOpen, onFavorite, onStatus, onRating, onCollections, onAbout,
+                )
+            }
         }
     }
 }

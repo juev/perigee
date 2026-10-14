@@ -81,6 +81,7 @@ import org.evsyukov.perigee.R
 import org.evsyukov.perigee.data.Catalog
 import org.evsyukov.perigee.isPlainHttp
 import org.evsyukov.perigee.library.folderName
+import org.evsyukov.perigee.ui.Centred
 import org.evsyukov.perigee.ui.EmptyState
 import org.evsyukov.perigee.ui.ShelfIcon
 
@@ -222,24 +223,26 @@ private fun CatalogList(
         }
         return
     }
-    LazyColumn(Modifier.fillMaxSize(), contentPadding = padding) {
-        itemsIndexed(catalogs, key = { _, catalog -> catalog.id }) { _, catalog ->
-            Row(
-                Modifier.fillMaxWidth().clickable { onOpen(catalog) }.padding(start = 16.dp, end = 4.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Column(Modifier.weight(1f).padding(vertical = 12.dp)) {
-                    Text(catalog.title, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    Text(
-                        catalog.url, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
+    Centred(padding) { inner ->
+        LazyColumn(Modifier.fillMaxSize(), contentPadding = inner) {
+            itemsIndexed(catalogs, key = { _, catalog -> catalog.id }) { _, catalog ->
+                Row(
+                    Modifier.fillMaxWidth().clickable { onOpen(catalog) }.padding(start = 16.dp, end = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(Modifier.weight(1f).padding(vertical = 12.dp)) {
+                        Text(catalog.title, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(
+                            catalog.url, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    IconButton(onClick = { onRemove(catalog) }) {
+                        Icon(Icons.Filled.Delete, stringResource(R.string.catalog_remove, catalog.title))
+                    }
                 }
-                IconButton(onClick = { onRemove(catalog) }) {
-                    Icon(Icons.Filled.Delete, stringResource(R.string.catalog_remove, catalog.title))
-                }
+                HorizontalDivider()
             }
-            HorizontalDivider()
         }
     }
 }
@@ -258,24 +261,26 @@ private fun Failed(padding: PaddingValues, failure: Failure, onRetry: () -> Unit
 
 @Composable
 private fun Entries(padding: PaddingValues, page: Page, state: OpdsState, model: OpdsViewModel, onOpen: (File) -> Unit) {
-    LazyColumn(Modifier.fillMaxSize().testTag("catalog-entries"), contentPadding = padding) {
-        state.failure?.let { failure ->
-            item("failure") {
-                Text(
-                    failureText(failure), Modifier.fillMaxWidth().padding(16.dp),
-                    color = MaterialTheme.colorScheme.error, textAlign = TextAlign.Center,
-                )
+    Centred(padding) { inner ->
+        LazyColumn(Modifier.fillMaxSize().testTag("catalog-entries"), contentPadding = inner) {
+            state.failure?.let { failure ->
+                item("failure") {
+                    Text(
+                        failureText(failure), Modifier.fillMaxWidth().padding(16.dp),
+                        color = MaterialTheme.colorScheme.error, textAlign = TextAlign.Center,
+                    )
+                }
             }
-        }
-        if (page.entries.isEmpty() && !state.loading) {
-            item("empty") { EmptyState(ShelfIcon, stringResource(R.string.catalog_page_empty)) }
-        }
-        // By place, not by id: catalogs do repeat ids within a page.
-        itemsIndexed(page.entries) { index, entry ->
-            // Reaching the last line asks for what follows it.
-            if (index == page.entries.lastIndex && page.next != null) LaunchedEffect(page.next) { model.more() }
-            EntryRow(entry, state, model, onOpen)
-            HorizontalDivider()
+            if (page.entries.isEmpty() && !state.loading) {
+                item("empty") { EmptyState(ShelfIcon, stringResource(R.string.catalog_page_empty)) }
+            }
+            // By place, not by id: catalogs do repeat ids within a page.
+            itemsIndexed(page.entries) { index, entry ->
+                // Reaching the last line asks for what follows it.
+                if (index == page.entries.lastIndex && page.next != null) LaunchedEffect(page.next) { model.more() }
+                EntryRow(entry, state, model, onOpen)
+                HorizontalDivider()
+            }
         }
     }
 }
