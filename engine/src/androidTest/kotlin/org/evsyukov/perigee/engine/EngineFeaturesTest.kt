@@ -173,6 +173,23 @@ class EngineFeaturesTest {
         assertEquals("dragging right to left gives the same range", forward, backward)
     }
 
+    @Test
+    fun aSelectionFromGapToGapHasNoSpacesAtItsEnds() = open(TestBooks.epub(dir)).use { doc ->
+        val (first, quick) = doc.locate("quick")
+        val onLine = { word: String -> doc.search(word).first { it.page == first.page }.let { doc.rects(it.range.start, it.range.end).first() } }
+        val brown = onLine("brown")
+        val jumps = onLine("jumps")
+        assertEquals("the words are on one line", quick.top, jumps.top)
+
+        // The server drops spaces at the ends of a quote; a selection must end where its copy does.
+        val gap = (quick.right + brown.left) / 2
+        for ((from, to) in listOf(gap to jumps.centerX(), jumps.centerX() to gap)) {
+            val selected = checkNotNull(doc.select(from, quick.centerY(), to, quick.centerY()))
+            assertEquals("from x=$from to x=$to got '${selected.text}'", selected.text.trim(), selected.text)
+            assertEquals("the range reads back as the same text", selected.text, doc.textBetween(selected.start, selected.end))
+        }
+    }
+
     // --- where a range is on the page
 
     @Test

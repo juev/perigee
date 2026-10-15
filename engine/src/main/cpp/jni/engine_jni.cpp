@@ -576,6 +576,18 @@ Java_org_evsyukov_perigee_engine_NativeEngine_selectText(
         }
     }
     if (range.isNull()) return nullptr;
+    // The server drops white space at the ends of a quote; a selection drops it too,
+    // or the two disagree on where the quote ends by a character.
+    auto blank = [](lChar32 c) { return c == ' ' || c == 0x00A0 || c == '\t' || c == '\n' || c == '\r'; };
+    while (range.getStart().compare(range.getEnd()) < 0 && blank(range.getStart().getChar())) {
+        range.getStart().setOffset(range.getStart().getOffset() + 1);
+    }
+    while (range.getEnd().getOffset() > 0 && range.getStart().compare(range.getEnd()) < 0) {
+        ldomXPointerEx last(range.getEnd());
+        last.setOffset(last.getOffset() - 1);
+        if (!blank(last.getChar())) break;
+        range.getEnd() = last;
+    }
     lString32 text = range.getRangeText();
     if (lString32(text).trim().empty()) return nullptr;
     return toJava(env, {range.getStart().toString(), range.getEnd().toString(), text});
