@@ -78,6 +78,8 @@ python3 contract/up.py
     -Pandroid.testInstrumentationRunnerArguments.bookorbitUrl=http://10.0.2.2:3070
 ```
 
+In CI the app's screen tests are run up to three times by `.github/scripts/device_tests.py`, as an emulator on a shared machine fails one now and then for nothing in the code. A test that passed only on a later attempt is listed in the job's summary and as a warning on the run: such a test is to be fixed, not left to the retry. Its own tests: `python3 -m unittest discover -s .github/scripts`.
+
 ## Layout of the code
 
 | Module | What it is |
