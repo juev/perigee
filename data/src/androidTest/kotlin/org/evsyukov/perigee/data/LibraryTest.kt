@@ -40,6 +40,23 @@ class LibraryTest {
     }
 
     @Test
+    fun placesJumpedFromAreKeptAcrossOpeningsUpToTheLastFew() = runBlocking {
+        val file = file("jumps.fb2", "jumping book")
+        val book = library.open(file, "Title", "Author")
+        assertEquals("a new book has nowhere to return to", emptyList<String>(), book.jumpedFrom)
+
+        library.saveJumps(book.id, listOf("/body/p[1]", "/body/p[9]"))
+        assertEquals(listOf("/body/p[1]", "/body/p[9]"), library.open(file, "Title", "Author").jumpedFrom)
+
+        val many = (1..Library.MAX_JUMPS + 3).map { "/body/p[$it]" }
+        library.saveJumps(book.id, many)
+        assertEquals("the oldest are let go", many.takeLast(Library.MAX_JUMPS), library.open(file, "Title", "Author").jumpedFrom)
+
+        library.saveJumps(book.id, emptyList())
+        assertEquals(emptyList<String>(), library.open(file, "Title", "Author").jumpedFrom)
+    }
+
+    @Test
     fun sameFileInAnotherPlaceIsTheSameBook() = runBlocking {
         val book = library.open(file("b.fb2", "moved book"), "Title", "Author")
         library.savePosition(book.id, "/body/p[2]", 0.1f)

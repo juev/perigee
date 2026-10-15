@@ -188,7 +188,7 @@ class ReaderViewModel(application: Application) : AndroidViewModel(application) 
         val shown = _state.value.page ?: return@act
         // A place that cannot be found in this copy of the book is gone to by how far into the book it is.
         val page = offer.xpointer?.let { open.goTo(it) } ?: open.goToPage((offer.progress * (shown.pageCount - 1)).roundToInt())
-        if (page.index != shown.index) history.addLast(shown.xpointer)
+        if (page.index != shown.index) jumpedFrom(shown.xpointer)
         show(page)
         library.settleOffer(offer.bookId)
     }
@@ -286,7 +286,7 @@ class ReaderViewModel(application: Application) : AndroidViewModel(application) 
     fun goTo(xpointer: String) = act { open ->
         val from = _state.value.page?.xpointer
         val page = open.goTo(xpointer) ?: return@act
-        if (from != null && page.index != _state.value.page?.index) history.addLast(from)
+        if (from != null && page.index != _state.value.page?.index) jumpedFrom(from)
         show(page)
     }
 
@@ -295,14 +295,27 @@ class ReaderViewModel(application: Application) : AndroidViewModel(application) 
         val shown = _state.value.page ?: return@act
         val target = (share * (shown.pageCount - 1)).toInt()
         if (target == shown.index) return@act
-        history.addLast(shown.xpointer)
+        jumpedFrom(shown.xpointer)
         show(open.goToPage(target))
     }
 
     /** Returns to where the last jump was made from. */
     fun goBack() = act { open ->
         val from = history.removeLastOrNull() ?: return@act
+        saveHistory()
         show(open.goTo(from) ?: return@act)
+    }
+
+    /** Remembers a place a jump is made from, here and in the library, for Back after a restart too. */
+    private suspend fun jumpedFrom(xpointer: String) {
+        history.addLast(xpointer)
+        while (history.size > Library.MAX_JUMPS) history.removeFirst()
+        saveHistory()
+    }
+
+    private suspend fun saveHistory() {
+        val book = _state.value.book ?: return
+        library.saveJumps(book.id, history.toList())
     }
 
     /**
@@ -479,6 +492,7 @@ class ReaderViewModel(application: Application) : AndroidViewModel(application) 
             val info = open.read { it.info() }
             val book = library.open(file, info.title, info.authors)
             book.xpointer?.let { open.goTo(it) }
+            history.addAll(book.jumpedFrom)
             val toc = open.read { it.toc() }
             _state.update { it.copy(book = book, toc = toc, failed = false) }
             watch(book)
