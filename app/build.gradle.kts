@@ -41,6 +41,10 @@ android {
         includeInApk = false
         includeInBundle = false
     }
+    // The view models are checked on the JVM under Robolectric, which reads the app's strings.
+    testOptions {
+        unitTests.isIncludeAndroidResources = true
+    }
 }
 
 // The license texts the app shows are the files of the source tree.
@@ -111,6 +115,10 @@ dependencies {
     implementation("androidx.work:work-runtime:2.11.2")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
     testImplementation("junit:junit:4.13.2")
+    testImplementation(project(":sync-fake"))
+    testImplementation("org.robolectric:robolectric:4.17")
+    testImplementation("androidx.test:core-ktx:1.6.1")
+    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.2")
     androidTestImplementation(project(":sync-fake"))
     androidTestImplementation(composeBom)
     androidTestImplementation("androidx.compose.ui:ui-test-junit4")
@@ -121,6 +129,8 @@ dependencies {
 
 // LicensesTest reads these from the source tree: a change in them is a reason to run it again.
 tasks.withType<Test>().configureEach {
+    // Robolectric sets up Android's shared memory through the JDK's internal access to file descriptors.
+    jvmArgs("--add-exports", "java.base/jdk.internal.access=ALL-UNNAMED")
     inputs.file(rootProject.layout.projectDirectory.file("NOTICE")).withPathSensitivity(PathSensitivity.NONE)
     inputs.dir(rootProject.layout.projectDirectory.dir("licenses")).withPathSensitivity(PathSensitivity.RELATIVE)
     inputs.file(rootProject.layout.projectDirectory.file("engine/src/main/cpp/cmake/deps.cmake"))

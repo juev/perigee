@@ -14,6 +14,7 @@ import org.evsyukov.perigee.data.Fb2Archive
 import org.evsyukov.perigee.data.FileHash
 import org.evsyukov.perigee.data.Library
 import org.evsyukov.perigee.data.LocalBook
+import org.evsyukov.perigee.engine.BookDescription
 import org.evsyukov.perigee.engine.Engine
 
 /** The format of an FB2 kept in a zip archive, as file names end. */
@@ -92,6 +93,9 @@ internal suspend fun describeKept(context: Context, library: Library, covers: Co
     }
 }
 
+/** What a book file says about itself, as the engine reads it; null when it cannot. */
+typealias Describe = suspend (Context, ParcelFileDescriptor, String) -> BookDescription?
+
 /**
  * Reads what a book file says about itself and keeps its cover. A book that
  * does not name itself is titled by its file name. Null when the engine
@@ -101,6 +105,7 @@ internal suspend fun describeKept(context: Context, library: Library, covers: Co
  */
 internal suspend fun readBook(
     context: Context, covers: Covers, file: ParcelFileDescriptor, name: String, format: String,
+    describe: Describe = Engine::describe,
 ): LocalBook? {
     // Not closed here: the stream shares the descriptor, which the caller closes.
     val channel = FileInputStream(file.fileDescriptor).channel
@@ -112,7 +117,7 @@ internal suspend fun readBook(
         null
     }
     val id = inside ?: FileHash.partialMd5(channel)
-    val said = Engine.describe(context, file, name) ?: return null
+    val said = describe(context, file, name) ?: return null
     return LocalBook(
         id, if (inside != null) "fb2" else format,
         title = said.title.ifBlank { name.dropLast(format.length + 1) },
