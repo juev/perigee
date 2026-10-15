@@ -206,4 +206,59 @@ class MarksContractTest {
             assertNull(bookmark(theirs))
         }
     }
+
+    @Test
+    fun starsGoBothWaysThroughTheReadersSession() = runBlocking<Unit> {
+        EngineDocument.open(context, file, 720, 1280).use { doc ->
+            // A selection ends on a word, as the server keeps a quote.
+            val (start, end, text) = range(doc, 0.45)
+            val note = words("starred")
+            val id = device.library.addQuote(book.id, start, end, text, 0xFFE066, null, note)
+            device.library.starQuote(id, true)
+
+            device.orbit.sync()
+
+            val web = webQuotes(note).single()
+            assertFalse("starred on the server: $web", web.isNull("starredAt"))
+            assertEquals("tied to the server's quote by its words", web.getLong("id"), checkNotNull(quote(note)).serverId)
+            assertFalse(checkNotNull(quote(note)).starUnsent)
+
+            // Taken off in the web reader: taken off here.
+            val unstarred = server.jwt("PATCH", "/books/${book.serverBookId}/annotations/${web.getLong("id")}", JSONObject().put("starred", false))
+            assertEquals("web star: $unstarred", 200, unstarred.code)
+            device.orbit.syncMarks(book.id)
+            assertFalse(checkNotNull(quote(note)).starred)
+
+            device.library.removeQuote(id)
+            device.orbit.sync()
+            assertTrue(webQuotes(note).isEmpty())
+        }
+    }
+
+    @Test
+    fun bookmarkRenamedInTheWebReaderIsRenamedHere() = runBlocking<Unit> {
+        EngineDocument.open(context, file, 720, 1280).use { doc ->
+            assertTrue(doc.goToPage(doc.pageCount * 2 / 3))
+            val here = doc.xpointer()
+            val mine = words("bookmark to rename")
+            device.library.addBookmark(book.id, here, mine, null)
+            device.orbit.sync()
+            val web = webBookmarks(mine).single()
+            assertEquals("tied to the server's bookmark by its title", web.getLong("id"), checkNotNull(bookmark(mine)).serverId)
+
+            val renamed = words("renamed in the browser")
+            val patched = server.jwt("PATCH", "/books/${book.serverBookId}/bookmarks/${web.getLong("id")}", JSONObject().put("title", renamed))
+            assertEquals("web rename: $patched", 200, patched.code)
+            device.orbit.syncMarks(book.id)
+
+            val taken = checkNotNull(bookmark(renamed)) { "the title given in the browser reached the device" }
+            assertEquals(here, taken.xpointer)
+            device.orbit.sync()
+            assertEquals("the server keeps the title it was given", renamed, webBookmarks(renamed).single().getString("title"))
+
+            device.library.removeBookmark(taken.id)
+            device.orbit.sync()
+            assertTrue(webBookmarks(renamed).isEmpty())
+        }
+    }
 }

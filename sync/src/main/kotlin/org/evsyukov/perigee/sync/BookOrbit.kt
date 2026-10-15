@@ -20,6 +20,7 @@ import kotlinx.coroutines.withContext
 import org.evsyukov.perigee.data.Account
 import org.evsyukov.perigee.data.Accounts
 import org.evsyukov.perigee.data.Book
+import org.evsyukov.perigee.data.Bookmark
 import org.evsyukov.perigee.data.Library
 import org.evsyukov.perigee.data.ReadingStatus
 import org.evsyukov.perigee.data.RemotePosition
@@ -460,7 +461,7 @@ class BookOrbit(
      */
     suspend fun syncMarks(bookId: String): SyncReport = syncing.withLock {
         val book = library.book(bookId)?.takeIf { it.serverFileId != null } ?: return SyncReport()
-        syncMarksOf(book) + syncMarksOf(checkNotNull(library.book(bookId)))
+        syncMarksOf(book, starsAndTitles = false) + syncMarksOf(checkNotNull(library.book(bookId)))
     }
 
     /**
@@ -468,10 +469,10 @@ class BookOrbit(
      * made or changed here, and learns of what was removed from the list of
      * all that is here; so the list is said to be whole only when it is.
      */
-    private suspend fun syncMarksOf(book: Book): SyncReport {
+    private suspend fun syncMarksOf(book: Book, starsAndTitles: Boolean = true): SyncReport {
         val changedAt = book.marksChangedAt
         val report = try {
-            exchangeQuotes(book) + exchangeBookmarks(book)
+            exchangeQuotes(book) + exchangeBookmarks(book) + if (starsAndTitles) starsAndTitlesOf(book) else SyncReport()
         } catch (e: BookGone) {
             library.notOnServer(listOf(book.id))
             return SyncReport()
@@ -482,6 +483,80 @@ class BookOrbit(
 
     /** The server has the file no more. */
     private class BookGone : IOException()
+
+    /**
+     * What the devices' channel does not carry: stars on quotes, both ways,
+     * and titles given to bookmarks on the server. They are read through the
+     * reader's session, where the server knows marks by its own numbers; a
+     * mark here is tied to its number when the server hands it over, or else
+     * by what it was sent as, see [Pairing].
+     */
+    private suspend fun starsAndTitlesOf(book: Book): SyncReport {
+        val serverBookId = book.serverBookId ?: return SyncReport()
+        val (bookmarks, quotes) = library.marksOf(book.id)
+        var sent = 0
+        var taken = 0
+
+        val annotations = serverList("/books/$serverBookId/annotations") ?: return SyncReport()
+        val tied = quotes.mapNotNull { it.serverId }.toSet()
+        val loose = annotations.filter { it.optLong("id") !in tied }.sortedBy { it.optLong("id") }
+        val ties = HashMap<Long, Long>()
+        // Only a quote the server has heard of can be one of its own.
+        for ((quote, annotation) in Pairing.pair(
+            quotes.filter { it.serverId == null && it.sentAt > 0 }, loose,
+            { Pairing.quoteWords(it.text, MAX_QUOTE_TEXT) }, { it.textOf("text").trim() },
+        )) {
+            library.linkQuote(quote.id, annotation.optLong("id"))
+            ties[quote.id] = annotation.optLong("id")
+        }
+        val byId = annotations.associateBy { it.optLong("id") }
+        for (quote in quotes) {
+            val id = quote.serverId ?: ties[quote.id] ?: continue
+            val theirs = byId[id] ?: continue
+            val starred = !theirs.isNull("starredAt")
+            if (quote.starUnsent) {
+                if (starred != quote.starred) {
+                    val reply = jwt("PATCH", "/books/$serverBookId/annotations/$id", JSONObject().put("starred", quote.starred))
+                    if (!reply.ok && reply.code != 404) throw failure(reply)
+                }
+                library.starSent(quote.id, quote.starred)
+                sent++
+            } else if (starred != quote.starred) {
+                library.takeStar(quote.id, starred)
+                taken++
+            }
+        }
+
+        val marked = serverList("/books/$serverBookId/bookmarks") ?: return SyncReport(marksSent = sent, marksTaken = taken)
+        val sentAs = { bookmark: Bookmark -> Pairing.bookmarkTitle(bookmark.text, bookmark.chapter, MAX_BOOKMARK_TEXT, MAX_CHAPTER) }
+        val tiedMarks = bookmarks.mapNotNull { it.serverId }.toSet()
+        val titles = HashMap<Long, Long>()
+        for ((bookmark, theirs) in Pairing.pair(
+            bookmarks.filter { it.serverId == null && it.sent }, marked.filter { it.optLong("id") !in tiedMarks }.sortedBy { it.optLong("id") },
+            sentAs, { it.textOf("title") },
+        )) {
+            library.linkBookmark(bookmark.id, theirs.optLong("id"))
+            titles[bookmark.id] = theirs.optLong("id")
+        }
+        val markById = marked.associateBy { it.optLong("id") }
+        for (bookmark in bookmarks) {
+            val title = markById[bookmark.serverId ?: titles[bookmark.id] ?: continue]?.textOf("title") ?: continue
+            // A title the server made of what it was sent is no title of the reader's.
+            if (title.isBlank() || title == sentAs(bookmark) || title == bookmark.text) continue
+            library.titleBookmark(bookmark.id, title)
+            taken++
+        }
+        return SyncReport(marksSent = sent, marksTaken = taken)
+    }
+
+    /** A list the reader's session reads, or null for a book the server has no more. */
+    private suspend fun serverList(path: String): List<JSONObject>? {
+        val reply = jwt("GET", path)
+        if (reply.code == 404) return null
+        if (!reply.ok) throw failure(reply)
+        val items = runCatching { JSONArray(reply.body) }.getOrNull() ?: throw ServerResponseException(reply.code, "no list")
+        return (0 until items.length()).mapNotNull { items.optJSONObject(it) }
+    }
 
     private suspend fun exchangeBody(account: Account, book: JSONObject): JSONObject = JSONObject()
         .put("deviceId", account.deviceId).put("deviceModel", DEVICE_MODEL).put("pluginVersion", clientVersion)
@@ -522,7 +597,7 @@ class BookOrbit(
                 val start = add.textOf("pos0")
                 library.takeQuote(
                     book.id, add.textOf("datetime"), start, add.textOf("pos1").ifEmpty { start }, add.textOf("text"),
-                    add.textOf("note"), colorOf(add.textOf("color")), add.textOf("chapter").ifEmpty { null },
+                    add.textOf("note"), colorOf(add.textOf("color")), add.textOf("chapter").ifEmpty { null }, add.optLong("serverId").takeIf { it > 0 },
                 )
                 applied.put(JSONObject().put("serverId", add.optLong("serverId")).put("version", add.optInt("version", 1)).put("status", "applied"))
                 taken++
@@ -532,6 +607,7 @@ class BookOrbit(
                 val quote = mine.firstOrNull { Stamps.key(it.stamp, it.start) == edit.textOf("key") }
                     ?: mine.firstOrNull { it.stamp == edit.textOf("datetime") }
                 if (quote != null) {
+                    edit.optLong("serverId").takeIf { it > 0 }?.let { library.linkQuote(quote.id, it) }
                     library.takeQuoteChange(quote.id, edit.textOf("text").ifEmpty { quote.text }, edit.textOf("note"), colorOf(edit.textOf("color")), edit.textOf("chapter").ifEmpty { quote.chapter })
                     taken++
                 }
@@ -590,7 +666,7 @@ class BookOrbit(
             val applied = JSONArray()
             val deleted = JSONArray()
             toApply.optJSONArray("add").each { add ->
-                val bookmark = library.takeBookmark(book.id, add.textOf("pos"), add.textOf("title"))
+                val bookmark = library.takeBookmark(book.id, add.textOf("pos"), add.textOf("title"), add.optLong("serverId").takeIf { it > 0 })
                 applied.put(
                     JSONObject().put("serverId", add.optLong("serverId")).put("status", "applied")
                         .put("key", Stamps.key(bookmark.stamp, bookmark.xpointer)).put("datetime", bookmark.stamp).put("pos", bookmark.xpointer),

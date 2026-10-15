@@ -158,7 +158,7 @@ data class Bookmark(
     val bookId: String,
     /** Top of the marked page. */
     val xpointer: String,
-    /** The first words of the page, to recognise it in a list. */
+    /** The first words of the page, to recognise it in a list, or the title it was given on the server. */
     val text: String,
     val chapter: String?,
     val createdAt: Long,
@@ -166,6 +166,8 @@ data class Bookmark(
     @ColumnInfo(defaultValue = "") val stamp: String = "",
     /** Whether the server was told of it, or it came from there. */
     @ColumnInfo(defaultValue = "0") val sent: Boolean = false,
+    /** The server's own number for it, once it is known which of the server's bookmarks it is. */
+    @ColumnInfo(defaultValue = "NULL") val serverId: Long? = null,
 )
 
 /** A passage the reader highlighted, with an optional note. */
@@ -190,6 +192,11 @@ data class Quote(
     @ColumnInfo(defaultValue = "") val stamp: String = "",
     /** [updatedAt] as of when the server last had it; the quote is still to be sent while [updatedAt] is later. */
     @ColumnInfo(defaultValue = "0") val sentAt: Long = 0,
+    /** The server's own number for it, once it is known which of the server's quotes it is. */
+    @ColumnInfo(defaultValue = "NULL") val serverId: Long? = null,
+    @ColumnInfo(defaultValue = "0") val starred: Boolean = false,
+    /** The star was given or taken off here, and the server has not heard of it yet. */
+    @ColumnInfo(defaultValue = "0") val starUnsent: Boolean = false,
 ) {
     val unsent: Boolean get() = updatedAt > sentAt
 }

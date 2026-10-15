@@ -138,6 +138,15 @@ Requirement R8. They go through `POST koreader/plugin/annotations/exchange` and 
 
 The server drops white space at the ends of a range (`docs/spikes/position-contract.md`); a selection has none at its ends, so the server's copy of a quote ends where the quote does.
 
+### Stars and bookmarks' titles
+
+The devices' channel carries neither the stars of quotes nor a title given to a bookmark on the server: a star changes nothing a device is handed over, and the server never hands down a renamed bookmark (`bookmark-sync.service.ts`). Both go through the reader's session, `GET books/:bookId/annotations` and `…/bookmarks`, after the exchanges of a book; on opening a book, after the second asking.
+
+- **Which of the server's marks.** The session lists marks by the server's numbers. A mark handed over through the devices' channel comes with its number, and is tied to it. A mark sent from here comes back with none: it is tied to the server's mark not tied yet that says what it was sent as — a quote by its words without white space at the ends, a bookmark by the title the server made of it (its words, else its chapter, else "Bookmark"). Marks that say the same are paired in the order they were made (`Pairing`). A bookmark renamed on the server before it was tied stays untied.
+- **Stars.** A star given or taken off here goes up through `PATCH books/:bookId/annotations/:id` with `starred`, in the round after it was changed; until it is sent, the server's word does not overrule it. Otherwise a quote takes the star as the server has it.
+- **Titles.** A bookmark tied to one of the server's with a title other than the one the server made shows that title in place of the first words of its page. Nothing goes back: a bookmark is sent once, so the server keeps the title it was given.
+- **Another server, or signing in again.** The numbers are forgotten, and a starred quote sends its star anew.
+
 ### When
 
 - A round is asked for when the app starts, when a book is closed, when the app is put away with a book open, and when a status or a rating is changed. It runs through WorkManager some seconds later, when there is a network; a round that could not reach the server is tried again with growing pauses.
@@ -213,8 +222,8 @@ The server has two other ways to take a file, which the app does not use: the Bo
 - `:sync` `SyncRoundTest` — rounds against the stand-in server: a place sent once, a later place elsewhere offered and not overwritten, a book just opened, the same place, a place as a share, reading without the server, an answer that was lost, a book the server has no more, status and rating both ways, a status the app has no word for, many pages read, a server of another version, a channel that is not ready.
 - `:app` `ReaderScreenTest` — going to an offered place and back, an offer as a share, staying, the time on pages with its bounds and the app put away; `LibraryScreenTest` — stars; `server.SyncRoundTest` — which rounds are done with, tried again, or wait for the reader.
 - `:data` `MarksSyncTest` — stamps and keys, every change to marks being news even a removal, marks from the server not sent back and not taken twice, another server told of every mark anew.
-- `:sync` `MarksRoundTest` — a quote made, changed and removed on either side, an answer lost on the way, a list too long to be whole, hundreds of quotes in parts, bookmarks both ways, a bookmark the server cannot place, marks made before signing in, the reader's own quotes not taken twice after signing in again, a book the server has no more, colours.
-- `:contract` `MarksContractTest` — against bookOrbit 3.3.0: a quote made here seen by the web reader at an exact CFI, changed here, sent twice without a second one made, changed and removed in the web reader; a quote made in the web reader taken with a place the engine finds the same words by, and removed here; bookmarks made and removed on either side.
+- `:sync` `MarksRoundTest` — a quote made, changed and removed on either side, an answer lost on the way, a list too long to be whole, hundreds of quotes in parts, bookmarks both ways, a bookmark the server cannot place, marks made before signing in, the reader's own quotes not taken twice after signing in again, a book the server has no more, colours; stars both ways, one changed here standing over the server's, a star going with a new quote and to the next server, bookmarks' titles given on the server. `PairingTest` — which of the server's marks a mark here is taken for.
+- `:contract` `MarksContractTest` — against bookOrbit 3.3.0: a quote made here seen by the web reader at an exact CFI, changed here, sent twice without a second one made, changed and removed in the web reader; a quote made in the web reader taken with a place the engine finds the same words by, and removed here; bookmarks made and removed on either side; a star given here and taken off in the web reader; a bookmark renamed in the web reader.
 - `:contract` `SyncContractTest` — against bookOrbit 3.3.0: a place sent and seen by the web reader as a CFI, a later place from the web reader offered with an xpointer the engine finds on the right page and not overwritten, the reader staying, FB2 kept word for word, status and rating both ways including `on_hold`, pages read in the book's statistics once.
 - `:sync` `LikenessTest` — which books are taken for one: case, spaces, punctuation and "ё", an author's name either way round, one author in common, no title, series. `UploadTest` — against the stand-in server: what the server takes, a book sent whole under its title and synced from then on, a book not sent twice, one that got there meanwhile, the same book asked for twice at once, what is not sent at all, each refusal, a session renewed, no devices' channel, a likeness pointed out, gone with the server's book, looked for through the whole list, and left behind by a book that was sent.
 - `:data` `AccountsTest` — a likeness kept until the book's own file is there, the place books are sent to forgotten with the server.
@@ -240,8 +249,8 @@ Checked by hand on the emulator against the same server: signing in over `http:/
 - A round of syncing on a timer, and one while a book is open: a place read elsewhere meanwhile is learnt when the book is next opened.
 - A sign in the library or the reader that something waits to be sent, or could not be.
 - The reader's review of a book, and the statuses `on_hold` and `abandoned`.
-- Styles of a quote other than a highlight (underline, strike-through), which the server has and the app shows as highlights; the server's stars on quotes.
-- A bookmark's words changed elsewhere: the server does not hand such a change over.
+- Styles of a quote other than a highlight (underline, strike-through), which the server has and the app shows as highlights.
+- A bookmark's title given here.
 - KEPUB files of the server.
 - A second server.
 - Running the contract tests against the latest server image in CI.

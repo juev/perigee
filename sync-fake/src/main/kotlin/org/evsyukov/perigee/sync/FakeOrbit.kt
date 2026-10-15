@@ -136,6 +136,8 @@ class FakeOrbit : AutoCloseable {
         var color: String, var version: Int = 1, var deleted: Boolean = false,
         /** The device has it, as of [onDevice]; a removal the device was told of is [removalKnown]. */
         var known: Boolean = false, var onDevice: Int = 0, var removalKnown: Boolean = false,
+        /** Given in the web reader or through the reader's session; the devices' channel says nothing of it. */
+        var starred: Boolean = false,
     )
 
     class Bookmark(
@@ -162,6 +164,34 @@ class FakeOrbit : AutoCloseable {
         Bookmark(marks.incrementAndGet().toLong(), pos, title).also { bookmarks.getOrPut(hash) { ArrayList() } += it }
 
     private fun key(stamp: String, place: String) = md5("$stamp|$place")
+
+    /** The fingerprint of the file of a book, by the server's number for the book. */
+    private fun hashOf(bookId: Long): String? = files.entries.firstOrNull { it.value.first == bookId }?.key
+
+    /** Quotes and bookmarks as the reader's session lists them, and a star given or taken off through it. */
+    private fun marksOfBook(request: Seen, path: String): Answer {
+        val parts = path.removePrefix("/books/").split('/')
+        val hash = parts[0].toLongOrNull()?.let(::hashOf) ?: return error(404, "Book not found")
+        val list = JSONArray()
+        if (parts[1] == "bookmarks") {
+            for (bookmark in bookmarks[hash].orEmpty().filter { !it.deleted }) {
+                list.put(JSONObject().put("id", bookmark.serverId).put("cfi", JSONObject.NULL).put("title", bookmark.title))
+            }
+            return Answer(200, list.toString())
+        }
+        if (request.method == "PATCH") {
+            val quote = quotes[hash].orEmpty().firstOrNull { it.serverId == parts[2].toLong() && !it.deleted } ?: return error(404, "Annotation not found")
+            quote.starred = JSONObject(request.body).getBoolean("starred")
+            return Answer(200, "{}")
+        }
+        for (quote in quotes[hash].orEmpty().filter { !it.deleted }) {
+            list.put(
+                JSONObject().put("id", quote.serverId).put("text", quote.text).put("note", quote.note ?: JSONObject.NULL)
+                    .put("starredAt", if (quote.starred) "2031-01-01T00:00:00.000Z" else JSONObject.NULL),
+            )
+        }
+        return Answer(200, list.toString())
+    }
 
     private fun exchangeQuotes(body: JSONObject): Answer {
         val book = body.getJSONArray("books").getJSONObject(0)
@@ -262,7 +292,9 @@ class FakeOrbit : AutoCloseable {
                 rejected++
                 continue
             }
-            list += Bookmark(marks.incrementAndGet().toLong(), change.getString("pos"), change.optString("note", "Bookmark"), key = k)
+            // Titled as the server titles a bookmark: by its words, else its chapter.
+            val title = change.optString("note").trim().ifEmpty { change.optString("chapter").trim() }.ifEmpty { "Bookmark" }
+            list += Bookmark(marks.incrementAndGet().toLong(), change.getString("pos"), title, key = k)
         }
         if (book.getBoolean("keysComplete")) {
             val keys = book.getJSONArray("keys")
@@ -441,6 +473,7 @@ class FakeOrbit : AutoCloseable {
                 }
             }
             path == "/books/query" -> queryAnswer ?: Answer(201, JSONObject().put("items", page(body)).put("total", total ?: books.length()).put("page", body.getJSONObject("pagination").getInt("page")).toString())
+            Regex("/books/\\d+/(annotations|bookmarks)(/\\d+)?").matches(path) -> marksOfBook(request, path)
             path.startsWith("/books/files/") -> downloads[path.removePrefix("/books/files/").removeSuffix("/download").toLong()] ?: error(404, "No file")
             path.endsWith("/thumbnail") -> Answer(200, byteArrayOf(1, 2, 3), "image/jpeg")
             else -> error(404, "Cannot ${request.method} $path")
