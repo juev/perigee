@@ -37,7 +37,7 @@ All of these are methods of `EngineDocument`.
 
 - `toc()` lists the table of contents in reading order: title, xpointer, depth (1 is the top level) and page.
 - `search(pattern, caseInsensitive, maxHits)` finds a phrase in the whole book, in reading order. A match is found across inline markup, with typographic spaces and apostrophes, and with soft hyphens inside words. Each hit carries its range, its text, a few words before and after it within the paragraph, and its page. Regular expressions are not supported: the engine is built without SRELL.
-- `select(x0, y0, x1, y1)` returns the whole words between two points of the page shown, in reading order whichever point comes first. One point selects the word under it.
+- `select(x0, y0, x1, y1)` returns the whole words between two points of the page shown, in reading order whichever point comes first. One point selects the word under it. A selection has no white space at its ends.
 - `rects(start, end)` returns where a range lies on the page shown, one rectangle per text line. A range on another page gives an empty list.
 - `linkAt(x, y)` returns the link under a point: its href, the xpointer of the link and, for a link inside the book, the xpointer of its target.
 - `pageOf(xpointer)` and `xpointerOfPage(page)` convert between the two.

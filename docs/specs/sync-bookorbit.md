@@ -136,7 +136,7 @@ Requirement R8. They go through `POST koreader/plugin/annotations/exchange` and 
 - **Which books.** Books being read, books whose marks changed here, and books with marks that the server was never told of, as those marked before the reader signed in. And the book that is opened, at once.
 - **Another server, or signing in again.** Every mark is to be sent anew. To the server the app is then a device it has not seen, and it hands the reader's own quotes back as new ones; they are known by stamp and place and not taken twice.
 
-The ends of a quote are sent as selected. The server drops white space at the ends of a range, so its copy of a quote that ends on a space is a character shorter (`docs/spikes/position-contract.md`).
+The server drops white space at the ends of a range (`docs/spikes/position-contract.md`); a selection has none at its ends, so the server's copy of a quote ends where the quote does.
 
 ### When
 
@@ -241,7 +241,6 @@ Checked by hand on the emulator against the same server: signing in over `http:/
 - A sign in the library or the reader that something waits to be sent, or could not be.
 - The reader's review of a book, and the statuses `on_hold` and `abandoned`.
 - Styles of a quote other than a highlight (underline, strike-through), which the server has and the app shows as highlights; the server's stars on quotes.
-- Trimming a quote to its words before it is sent.
 - A bookmark's words changed elsewhere: the server does not hand such a change over.
 - KEPUB files of the server.
 - A second server.
