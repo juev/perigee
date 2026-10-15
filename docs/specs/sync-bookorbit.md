@@ -94,7 +94,7 @@ The server remembers fingerprints it was asked about and did not know, and lists
 
 ## Syncing what is read
 
-Requirements R7 and R9. `BookOrbit.sync()` is one round: the reader's places, status and rating, and the pages read, for the books the server has. It goes through the devices' channel, so nothing of it happens for a server of a version the app was not made for, or while the channel is not ready.
+Requirements R7 and R9. `BookOrbit.sync()` is one round: the reader's places, status, rating and review, and the pages read, for the books the server has. It goes through the devices' channel, so nothing of it happens for a server of a version the app was not made for, or while the channel is not ready.
 
 ### Places
 
@@ -118,6 +118,15 @@ A place is sent with the time the reader moved to it. From 3.4.0 the server drop
 - What the reader changed here goes up through `PUT koreader/plugin/catalog/books/:id/read-status` and `…/rating`; only what was changed and differs is sent, so that stars given here do not carry an old status along.
 - Everything else is taken as the server has it, from `POST books/query`, 200 books to a page. The later change wins; a change here that the server has not heard of is not undone by what it says meanwhile.
 - A rating is one to five stars, set in the book's menu in the library; choosing the same number again takes it off.
+
+### Review
+
+The server keeps a review of a book for each reader, up to 10 000 characters, without white space at its ends; nothing but white space is no review. The web pages call it a personal note.
+
+- A review written or changed here goes up through the reader's session, `PATCH books/:id/personal-note`, as the web pages send it, in the round after it was written; `null` takes it off. The devices' channel takes reviews too, but weighs one against the server's by the day alone, so that a second change on the same day would not reach the server.
+- The server's reviews come through the devices' channel, `POST koreader/plugin/book-states` with the files' fingerprints only, 200 to a request: that sets nothing, and the answer carries each book's review. One the reader changed here and the server has not taken yet is not overwritten.
+- A review is written from the book's menu in the library, "Write a review", and shown on the book's page under what the book says of itself. Saved empty, it is taken off.
+- Another server, or signing in again: a review written here is sent anew.
 
 ### Pages read
 
@@ -220,13 +229,13 @@ The server has two other ways to take a file, which the app does not use: the Bo
 - `:data` `AccountsTest` — sealed tokens and key, what the server said of books, signing out and in to another server; `MigrationTest` — a database of every earlier version.
 - `:sync` `BookOrbitTest` — against a stand-in server (`:sync-fake`, `FakeOrbit`) that answers as 3.3.0 was seen to: addresses, versions, each refusal to sign in, no password to a non-server or across a redirect, renewal before and after a refusal, one renewal for many requests, a session that ended, each state of the devices' channel, the channel looked at from several places at once, a server of another version, the list of books, file names, matching in parts of 500.
 - `:app` `ServerScreenTest` — the screen against the same stand-in: signing in with each kind of failure, the plain HTTP question, a download into the library, a file that is not a book, a book the reader already has, the KOReader password, an unknown version, search, the next part of the list, a session that ended, signing out, a server that fails and is tried again. `OpdsScreenTest` — the plain HTTP question for catalogs. `LibraryScreenTest` — the mark on a book the server has, and on one with a place not sent yet; `ServerScreenTest` and `ServerViewModelTest` — how syncing went and how many books wait.
-- `:data` `SyncStateTest` — what is a move and what is not, what is still to be sent and which books say so, the server's status giving way to the reader's unsent one, offers, pages read, another server told everything anew.
-- `:sync` `SyncRoundTest` — rounds against the stand-in server: a place sent once, a later place elsewhere offered and not overwritten, a book just opened, the same place, a place as a share, reading without the server, an answer that was lost, a book the server has no more, status and rating both ways, a status the app has no word for, many pages read, a server of another version, a channel that is not ready.
-- `:app` `ReaderScreenTest` — going to an offered place and back, an offer as a share, staying, the time on pages with its bounds and the app put away; `LibraryScreenTest` — stars; `server.SyncRoundTest` — which rounds are done with, tried again, or wait for the reader, and how they are remembered. `server.SyncWorkTest` — a round asked for as the app asks, run by the system's WorkManager with the app's own library and account, and run again when it could not reach the server. `ReaderViewModelTest` — the open book asked about again when the reader comes back to it.
+- `:data` `SyncStateTest` — what is a move and what is not, what is still to be sent and which books say so, a review as the server keeps it, the server's status giving way to the reader's unsent one, offers, pages read, another server told everything anew.
+- `:sync` `SyncRoundTest` — rounds against the stand-in server: a place sent once, a later place elsewhere offered and not overwritten, a book just opened, the same place, a place as a share, reading without the server, an answer that was lost, a book the server has no more, status and rating both ways, a review both ways and one written here while the server could not be reached, a status the app has no word for, many pages read, a server of another version, a channel that is not ready.
+- `:app` `ReaderScreenTest` — going to an offered place and back, an offer as a share, staying, the time on pages with its bounds and the app put away; `LibraryScreenTest` — stars, a review written from the menu and shown on the book's page; `server.SyncRoundTest` — which rounds are done with, tried again, or wait for the reader, and how they are remembered. `server.SyncWorkTest` — a round asked for as the app asks, run by the system's WorkManager with the app's own library and account, and run again when it could not reach the server. `ReaderViewModelTest` — the open book asked about again when the reader comes back to it.
 - `:data` `MarksSyncTest` — stamps and keys, every change to marks being news even a removal, marks from the server not sent back and not taken twice, another server told of every mark anew.
 - `:sync` `MarksRoundTest` — a quote made, changed and removed on either side, an answer lost on the way, a list too long to be whole, hundreds of quotes in parts, bookmarks both ways, a bookmark the server cannot place, marks made before signing in, the reader's own quotes not taken twice after signing in again, a book the server has no more, colours; stars both ways, one changed here standing over the server's, a star going with a new quote and to the next server, bookmarks' titles given on the server. `PairingTest` — which of the server's marks a mark here is taken for.
 - `:contract` `MarksContractTest` — against bookOrbit 3.3.0: a quote made here seen by the web reader at an exact CFI, changed here, sent twice without a second one made, changed and removed in the web reader; a quote made in the web reader taken with a place the engine finds the same words by, and removed here; bookmarks made and removed on either side; a star given here and taken off in the web reader; a bookmark renamed in the web reader.
-- `:contract` `SyncContractTest` — against bookOrbit 3.3.0: a place sent and seen by the web reader as a CFI, a later place from the web reader offered with an xpointer the engine finds on the right page and not overwritten, the reader staying, FB2 kept word for word, status and rating both ways including `on_hold`, pages read in the book's statistics once.
+- `:contract` `SyncContractTest` — against bookOrbit 3.3.0: a place sent and seen by the web reader as a CFI, a later place from the web reader offered with an xpointer the engine finds on the right page and not overwritten, the reader staying, FB2 kept word for word, status and rating both ways including `on_hold`, a review both ways and taken off, pages read in the book's statistics once.
 - `:sync` `LikenessTest` — which books are taken for one: case, spaces, punctuation and "ё", an author's name either way round, one author in common, no title, series. `UploadTest` — against the stand-in server: what the server takes, a book sent whole under its title and synced from then on, a book not sent twice, one that got there meanwhile, the same book asked for twice at once, what is not sent at all, each refusal, a session renewed, no devices' channel, a likeness pointed out, gone with the server's book, looked for through the whole list, and left behind by a book that was sent.
 - `:data` `AccountsTest` — a likeness kept until the book's own file is there, the place books are sent to forgotten with the server.
 - `:app` `LibraryScreenTest` — a book sent from its menu, sending offered only for what the server takes from the reader, the question before a book like one on the server, where to send asked once, a refusal said at the book, a server that does not answer.
@@ -250,7 +259,7 @@ Checked by hand on the emulator against the same server: signing in over `http:/
 - Download progress, cancelling, resuming.
 - A round of syncing on a timer: a place read elsewhere while the open book stays on the screen is learnt when the reader next comes back to it.
 - A sign in the reader that something waits to be sent; which of a book's changes a round could not send.
-- The reader's review of a book, and the statuses `on_hold` and `abandoned`.
+- The statuses `on_hold` and `abandoned`.
 - Styles of a quote other than a highlight (underline, strike-through), which the server has and the app shows as highlights.
 - A bookmark's title given here.
 - KEPUB files of the server.

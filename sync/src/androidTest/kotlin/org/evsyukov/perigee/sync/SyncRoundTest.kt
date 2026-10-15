@@ -323,6 +323,57 @@ class SyncRoundTest {
     }
 
     @Test
+    fun reviewWrittenHereGoesToTheServer() = runBlocking<Unit> {
+        val book = shared("review-up.fb2")
+        serverSays(state(7, null, null))
+        later()
+        library.setReview(book.id, "  A slow start,\nand then I could not put it down.  ")
+        assertTrue(fresh(book).syncUnsent)
+
+        orbit.sync()
+
+        assertEquals("A slow start,\nand then I could not put it down.", server.reviews[7])
+        assertFalse(fresh(book).reviewUnsent)
+        val sent = server.seen.count { it.path.endsWith("/personal-note") }
+        orbit.sync()
+        assertEquals("sent once", sent, server.seen.count { it.path.endsWith("/personal-note") })
+
+        later()
+        library.setReview(book.id, " ")
+        orbit.sync()
+        assertNull("a review taken off here is taken off there too", server.reviews[7])
+        assertNull(fresh(book).review)
+    }
+
+    @Test
+    fun reviewWrittenOnTheServerComesHereUnlessTheReadersOwnIsNotSentYet() = runBlocking<Unit> {
+        val book = shared("review-down.fb2")
+        serverSays(state(7, null, null))
+        orbit.sync()
+
+        server.reviews[7] = "Written in the browser."
+        orbit.sync()
+        assertEquals("Written in the browser.", fresh(book).review)
+        assertFalse("what came from the server is not sent back", fresh(book).reviewUnsent)
+
+        // Changed here while the server cannot be reached, and in the browser meanwhile: the reader's goes, the later one.
+        later()
+        library.setReview(book.id, "Written here.")
+        server.reviews[7] = "Changed in the browser."
+        server.down = true
+        assertThrows(IOException::class.java) { runBlocking { orbit.sync() } }
+        assertEquals("Written here.", fresh(book).review)
+        server.down = false
+        orbit.sync()
+        assertEquals("Written here.", server.reviews[7])
+        assertEquals("Written here.", fresh(book).review)
+
+        server.reviews.remove(7)
+        orbit.sync()
+        assertNull("a review taken off on the server is taken off here", fresh(book).review)
+    }
+
+    @Test
     fun statusTheAppHasNoWordForIsLeftAloneBothWays() = runBlocking<Unit> {
         val book = shared("on-hold.fb2")
         serverSays(state(7, "reading", null))

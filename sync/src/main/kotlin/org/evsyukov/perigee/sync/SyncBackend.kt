@@ -60,7 +60,7 @@ data class SyncReport(
     val placesSent: Int = 0,
     /** Later places from elsewhere, kept for the reader to decide about. */
     val offers: Int = 0,
-    /** Books whose status or rating the server took, and books that took the server's. */
+    /** Books whose status, rating or review the server took, and books that took the server's. */
     val statesSent: Int = 0,
     val statesTaken: Int = 0,
     /** Pages read that the server was told of. */

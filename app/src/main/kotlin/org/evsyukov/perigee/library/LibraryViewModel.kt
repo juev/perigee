@@ -370,6 +370,14 @@ class LibraryViewModel(
         }
     }
 
+    /** What the reader writes of a book; an empty one takes the review off. */
+    fun setReview(book: Book, review: String) {
+        viewModelScope.launch {
+            library.setReview(book.id, review)
+            afterChange()
+        }
+    }
+
     /** Adds a folder the reader picked and looks through it. */
     fun addFolder(uri: String, name: String) = rescan { library.addFolder(uri, name) }
 

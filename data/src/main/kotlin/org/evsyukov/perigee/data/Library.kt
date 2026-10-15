@@ -48,6 +48,9 @@ class Library internal constructor(internal val database: ReadingDatabase, priva
     /** One to five stars; null takes the rating off. */
     suspend fun setRating(bookId: String, rating: Int?) = dao.setRating(bookId, rating?.coerceIn(1, 5), now())
 
+    /** What the reader writes of a book; nothing but white space takes the review off. */
+    suspend fun setReview(bookId: String, review: String) = dao.setReview(bookId, reviewOf(review), now())
+
     /**
      * A file in the app's storage, as one downloaded from a catalog, joins the
      * library without being opened. A book that was there already keeps what
@@ -233,6 +236,12 @@ class Library internal constructor(internal val database: ReadingDatabase, priva
      */
     suspend fun takeState(bookId: String, status: ReadingStatus, rating: Int?) = dao.takeState(bookId, status, rating)
 
+    /** The server took the review as the reader changed it at [changedAt]. */
+    suspend fun reviewSent(bookId: String, changedAt: Long) = dao.reviewPushed(bookId, changedAt)
+
+    /** The review as the server has it, unless the reader changed theirs since the server last took it. */
+    suspend fun takeReview(bookId: String, review: String?) = dao.takeReview(bookId, review?.let(::reviewOf))
+
     /** The reader got further in a book somewhere else; they are to be asked whether to go there. */
     suspend fun offer(position: RemotePosition) = database.withTransaction {
         dao.insert(position)
@@ -385,6 +394,12 @@ class Library internal constructor(internal val database: ReadingDatabase, priva
     }
 
     companion object {
+        /** The longest review the server keeps; it cuts off the rest. */
+        const val REVIEW_MAX_LENGTH = 10_000
+
+        /** A review as the server keeps it: without white space at its ends, and none for nothing else. */
+        private fun reviewOf(text: String): String? = text.trim().take(REVIEW_MAX_LENGTH).ifEmpty { null }
+
         @Volatile
         private var instance: Library? = null
 

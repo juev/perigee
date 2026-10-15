@@ -425,7 +425,7 @@ class BookOrbit(
 
     /**
      * One round of keeping the server and the library in step: the places the
-     * reader got to, status and rating, and the pages read. Nothing is done
+     * reader got to, status, rating and review, and the pages read. Nothing is done
      * for a server of a version the app was not made for.
      *
      * A place the reader got to elsewhere, later than here, is not gone to: it
@@ -451,6 +451,7 @@ class BookOrbit(
             if (book.status == ReadingStatus.Reading || book.marksUnsent || neverSynced) report += syncMarksOf(book)
         }
         report += syncStates(books)
+        report += syncReviews(books)
         report + syncPagesRead()
     }
 
@@ -783,6 +784,43 @@ class BookOrbit(
             if (rating != book.rating) device("PUT", "$base/rating", JSONObject().put("rating", book.rating ?: JSONObject.NULL))
             library.stateSent(book.id, book.stateChangedAt)
             sent++
+        }
+        return SyncReport(statesSent = sent, statesTaken = taken)
+    }
+
+    /**
+     * The reader's reviews, both ways. One written here goes up through the
+     * reader's session, as the web reader sends it: the devices' channel would
+     * weigh it against the server's by the day alone. The server's are asked
+     * for through the devices' channel, many books at once, and taken unless
+     * the reader changed theirs since the server last took it.
+     */
+    private suspend fun syncReviews(books: List<Book>): SyncReport {
+        val account = accounts.current() ?: throw SignedOutException()
+        var sent = 0
+        for (book in books) {
+            val id = book.serverBookId ?: continue
+            if (!book.reviewUnsent) continue
+            val reply = jwt("PATCH", "/books/$id/personal-note", JSONObject().put("note", book.review ?: JSONObject.NULL))
+            // A book the server has no more is found out by the next matching; the review waits here meanwhile.
+            if (reply.code == 404) continue
+            if (!reply.ok) throw failure(reply)
+            library.reviewSent(book.id, book.reviewChangedAt)
+            sent++
+        }
+        var taken = 0
+        for (part in books.chunked(STATES_PAGE)) {
+            val list = JSONArray()
+            for (book in part) list.put(JSONObject().put("hash", book.id))
+            val body = JSONObject()
+                .put("deviceId", account.deviceId).put("deviceModel", DEVICE_MODEL).put("pluginVersion", clientVersion).put("books", list)
+            device("POST", "/koreader/plugin/book-states", body).json()?.optJSONArray("results").each { result ->
+                val book = library.book(result.optString("hash")) ?: return@each
+                val theirs = result.textOf("reviewNote").ifEmpty { null }
+                if (book.reviewUnsent || theirs == book.review) return@each
+                library.takeReview(book.id, theirs)
+                taken++
+            }
         }
         return SyncReport(statesSent = sent, statesTaken = taken)
     }
