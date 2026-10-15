@@ -8,6 +8,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import org.evsyukov.perigee.data.Covers
+import org.evsyukov.perigee.data.Fb2Archive
 import org.evsyukov.perigee.data.Folder
 import org.evsyukov.perigee.data.FoundBook
 import org.evsyukov.perigee.data.Library
@@ -66,7 +67,9 @@ class LibraryScanner(
             if (was != null && was.format == ARCHIVE && book.format != ARCHIVE && was.id != book.id) {
                 // The same file under the fingerprint of the book inside: what the reader left in it goes along.
                 val stale = library.reidentify(was.id, book.id, book.format)
-                if (stale.isNotEmpty()) File(stale).delete()
+                if (stale.isNotEmpty()) keepUnpacked(File(stale), book.id, book.format)
+                // Read just now, the book keeps its cover under the new fingerprint.
+                covers.file(was.id).delete()
             }
             library.found(folder.id, book)
             present += file.uri
@@ -75,6 +78,18 @@ class LibraryScanner(
         val gone = known.keys - present
         library.lost(folder.id, gone)
         ScanResult(found, gone.size, unreadable)
+    }
+
+    /**
+     * The archive the app kept to read a book from becomes the book inside, so
+     * that the app can start on it as before. A copy the book already has stays.
+     */
+    private suspend fun keepUnpacked(archive: File, bookId: String, format: String) {
+        if (archive.isFile && library.book(bookId)?.path.isNullOrEmpty()) {
+            val target = File(File(context.filesDir, "books").apply { mkdirs() }, "$bookId.$format")
+            if (archive.inputStream().use { Fb2Archive.unpack(it, target) }) library.setLocalCopy(bookId, target)
+        }
+        archive.delete()
     }
 
     private suspend fun read(file: SourceFile, format: String): FoundBook? {

@@ -34,9 +34,9 @@ internal fun unpacked(file: File): File {
 
 /**
  * Books the app keeps as archives, from before it unpacked them, become the
- * FB2 inside, with what the reader left in them.
+ * FB2 inside, with what the reader left in them and their cover.
  */
-internal suspend fun unpackKept(context: Context, library: Library) = withContext(Dispatchers.IO) {
+internal suspend fun unpackKept(context: Context, library: Library, covers: Covers) = withContext(Dispatchers.IO) {
     for (book in library.keptOfFormat(ARCHIVE)) {
         val archive = File(book.path)
         if (!archive.isFile) continue
@@ -45,6 +45,8 @@ internal suspend fun unpackKept(context: Context, library: Library) = withContex
         if (!archive.inputStream().use { Fb2Archive.unpack(it, target) }) continue
         library.reidentify(book.id, id, "fb2")
         library.setLocalCopy(id, target)
+        // The book is not read again here: the cover found in the archive is the book's.
+        covers.move(book.id, id)
         archive.delete()
     }
 }
@@ -91,6 +93,8 @@ internal suspend fun describeKept(
             if (!file.inputStream().use { Fb2Archive.unpack(it, target) }) continue
             library.reidentify(book.id, said.id, said.format)
             file.delete()
+            // Read just now, the book keeps its cover under the new fingerprint.
+            covers.file(book.id).delete()
             kept = target
         }
         library.keep(kept, said)
