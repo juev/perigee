@@ -71,7 +71,12 @@ data class Book(
      */
     @ColumnInfo(defaultValue = "NULL") val serverLikeId: Long? = null,
     @ColumnInfo(defaultValue = "") val serverLikeName: String = "",
+    /** The places the reader last jumped from, oldest first, one to a line; see [jumpedFrom]. */
+    @ColumnInfo(defaultValue = "") val jumps: String = "",
 ) {
+    /** The places the reader last jumped from, oldest first: Back returns to the last of them. */
+    val jumpedFrom: List<String> get() = jumps.lines().filter { it.isNotEmpty() }
+
     /** Whether bookmarks or quotes changed here since the server last heard; one removed leaves no other trace. */
     val marksUnsent: Boolean get() = marksChangedAt > marksSyncedAt
 

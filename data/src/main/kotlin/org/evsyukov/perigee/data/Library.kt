@@ -210,6 +210,14 @@ class Library internal constructor(internal val database: ReadingDatabase, priva
     suspend fun savePosition(bookId: String, xpointer: String, progress: Float) =
         dao.savePosition(bookId, xpointer, progress, now())
 
+    /**
+     * Remembers the places the reader jumped from, oldest first, so that Back
+     * returns to them after the app is started again. Only the last
+     * [MAX_JUMPS] are kept.
+     */
+    suspend fun saveJumps(bookId: String, from: List<String>) =
+        dao.saveJumps(bookId, from.takeLast(MAX_JUMPS).joinToString("\n"))
+
     /** The books the server has. */
     suspend fun booksOnServer(): List<Book> = dao.onServer()
 
@@ -351,6 +359,9 @@ class Library internal constructor(internal val database: ReadingDatabase, priva
     companion object {
         @Volatile
         private var instance: Library? = null
+
+        /** How many places jumped from are kept per book. */
+        const val MAX_JUMPS = 10
 
         fun get(context: Context): Library = instance ?: synchronized(this) {
             instance ?: Library(ReadingDatabase.get(context), System::currentTimeMillis).also { instance = it }

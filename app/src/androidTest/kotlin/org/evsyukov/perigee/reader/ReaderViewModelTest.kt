@@ -114,6 +114,27 @@ class ReaderViewModelTest {
     }
 
     @Test
+    fun backReturnsFromAJumpAfterTheAppIsStartedAgain() {
+        val first = opened()
+        first.forward(2)
+        val before = first.state.value.page!!.xpointer
+        val chapter = first.state.value.toc[2]
+        onMain { first.goTo(chapter.xpointer) }
+        first.until("the chapter is shown") { it.page?.index == chapter.page }
+        val id = first.state.value.book!!.id
+        untilTrue("the place jumped from is kept") { runBlocking { library.book(id) }?.jumpedFrom == listOf(before) }
+
+        // A new model knows nothing of the old one, like the app started again.
+        val reopened = opened()
+        assertTrue("there is a place to return to", reopened.state.value.canGoBack)
+        onMain { reopened.goBack() }
+        reopened.until("the reader is back where they jumped from, with nothing more to return to") {
+            it.page?.index == 2 && !it.canGoBack
+        }
+        untilTrue("the return is kept too") { runBlocking { library.book(id) }?.jumpedFrom == emptyList<String>() }
+    }
+
+    @Test
     fun readerGoesToThePlaceTheyGotToElsewhereAndCanComeBack() {
         val model = opened()
         // A place further on, as another device would name it.

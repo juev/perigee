@@ -307,6 +307,9 @@ internal interface ReadingDao {
     )
     suspend fun savePosition(id: String, xpointer: String, progress: Float, at: Long)
 
+    @Query("UPDATE books SET jumps = :jumps WHERE id = :id")
+    suspend fun saveJumps(id: String, jumps: String)
+
     @Query("SELECT * FROM bookmarks WHERE bookId = :bookId ORDER BY createdAt DESC")
     fun bookmarks(bookId: String): Flow<List<Bookmark>>
 
@@ -346,11 +349,12 @@ internal class EpubsReadAgain : AutoMigrationSpec {
         Book::class, Bookmark::class, Quote::class, Folder::class, BookCollection::class, CollectionBook::class,
         Catalog::class, Account::class, RemotePosition::class, PageRead::class,
     ],
-    version = 9,
+    version = 10,
     autoMigrations = [
         AutoMigration(from = 1, to = 2), AutoMigration(from = 2, to = 3), AutoMigration(from = 3, to = 4),
         AutoMigration(from = 4, to = 5), AutoMigration(from = 5, to = 6), AutoMigration(from = 6, to = 7),
         AutoMigration(from = 7, to = 8), AutoMigration(from = 8, to = 9, spec = EpubsReadAgain::class),
+        AutoMigration(from = 9, to = 10),
     ],
 )
 internal abstract class ReadingDatabase : RoomDatabase() {

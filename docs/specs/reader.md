@@ -95,7 +95,7 @@ Such a note is shown under a rule at the bottom of the page whose text links to 
 
 ### State that is kept
 
-- Per book, in `:data` (`Library`, Room): the reading position, bookmarks and quotes. A book is identified by a fingerprint of its file (`FileHash`, the scheme KOReader uses), so the same file in another folder is the same book.
+- Per book, in `:data` (`Library`, Room): the reading position, bookmarks, quotes and the last ten places jumped from, so that Back returns after the app is started again. A book is identified by a fingerprint of its file (`FileHash`, the scheme KOReader uses), so the same file in another folder is the same book.
 - For all books, in `ReaderPreferences` (DataStore): the reading settings and the control options below.
 - The app starts on the book that was open last, if its file is still there.
 
