@@ -2,6 +2,7 @@ package org.evsyukov.perigee.server
 
 import androidx.activity.ComponentActivity
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.ui.test.ComposeTimeoutException
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
@@ -52,6 +53,7 @@ class ServerScreenTest {
     private val server = FakeOrbit()
     private val bookFile by lazy { TestBook.write(File(activity.cacheDir, "server-book.fb2"), "Title In The File", author = "File Author") }
     private var opened: File? = null
+    private lateinit var model: ServerViewModel
 
     @After
     fun stopServer() = server.close()
@@ -68,19 +70,26 @@ class ServerScreenTest {
         val arrivals = Arrivals(
             activity, library, Covers(File(activity.cacheDir, "server-covers")), LibraryPreferences.get(activity),
         ) { BookSink { _, _ -> null } }
-        val model = ServerViewModel(activity.application, orbit, accounts, library, arrivals)
+        model = ServerViewModel(activity.application, orbit, accounts, library, arrivals)
         rule.setContent { MaterialTheme { ServerScreen(onOpen = { opened = it }, onClose = {}, model = model) } }
     }
 
+    /** Waits for [done]; on a timeout, says what the server was asked and where the model stood. */
+    private fun waitFor(what: String, done: () -> Boolean) = try {
+        rule.waitUntil(TIMEOUT, done)
+    } catch (e: ComposeTimeoutException) {
+        throw AssertionError("$what; the server was asked ${server.seen.map { "${it.method} ${it.path}" }}, the state is ${model.state.value}", e)
+    }
+
     private fun waitForText(text: String) =
-        rule.waitUntil(TIMEOUT) { rule.onAllNodesWithText(text).fetchSemanticsNodes().isNotEmpty() }
+        waitFor("'$text' is shown") { rule.onAllNodesWithText(text).fetchSemanticsNodes().isNotEmpty() }
 
     private fun waitUntilGone(text: String) =
-        rule.waitUntil(TIMEOUT) { rule.onAllNodesWithText(text).fetchSemanticsNodes().isEmpty() }
+        waitFor("'$text' is gone") { rule.onAllNodesWithText(text).fetchSemanticsNodes().isEmpty() }
 
     private fun fillIn(address: String, user: String, password: String) {
         // The form comes once the account has been looked up.
-        rule.waitUntil(TIMEOUT) { rule.onAllNodesWithTag("server-address").fetchSemanticsNodes().isNotEmpty() }
+        waitFor("the form is shown") { rule.onAllNodesWithTag("server-address").fetchSemanticsNodes().isNotEmpty() }
         rule.onNodeWithTag("server-address").performTextReplacement(address)
         rule.onNodeWithTag("server-user").performTextReplacement(user)
         rule.onNodeWithTag("server-password").performTextReplacement(password)
@@ -147,7 +156,7 @@ class ServerScreenTest {
         assertEquals("Title In The File", book.title)
 
         rule.onNodeWithText(string(R.string.catalog_read)).performClick()
-        rule.waitUntil(TIMEOUT) { opened != null }
+        waitFor("the book is opened") { opened != null }
         assertEquals(book.path, opened?.path)
     }
 

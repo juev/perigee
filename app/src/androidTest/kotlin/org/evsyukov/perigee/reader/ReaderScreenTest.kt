@@ -11,6 +11,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.test.ComposeTimeoutException
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.click
@@ -64,12 +65,15 @@ class ReaderScreenTest {
     private val activity get() = rule.activity
     private val preferences by lazy { ReaderPreferences.get(activity) }
     private lateinit var book: File
+    private lateinit var title: String
 
     @Before
     fun freshBookAndDefaultSettings() {
         runBlocking { preferences.update { ReaderPrefs() } }
-        // The library knows a book by its contents: a title of its own makes every test a new book.
-        book = TestBook.write(File(activity.cacheDir, "screen-test.fb2"), title = testName.methodName)
+        // The library knows a book by its contents, and it is the app's own, kept from run to run:
+        // a title of its own makes every test, and every run of it, a new book.
+        title = "${testName.methodName} ${System.nanoTime()}"
+        book = TestBook.write(File(activity.cacheDir, "screen-test.fb2"), title = title)
     }
 
     private fun show() {
@@ -86,10 +90,22 @@ class ReaderScreenTest {
 
     private fun shownPage(): Int? = model().state.value.page?.index
 
-    private fun waitForPage(index: Int) = rule.waitUntil(TIMEOUT) { shownPage() == index }
+    /** Waits for [done]; on a timeout, says where the model stood. */
+    private fun waitFor(what: String, done: () -> Boolean) = try {
+        rule.waitUntil(TIMEOUT, done)
+    } catch (e: ComposeTimeoutException) {
+        val state = model().state.value
+        throw AssertionError(
+            "$what; the page is ${state.page?.index} of ${state.page?.pageCount}, busy ${state.busy}, " +
+                "the scheme ${model().prefs.value.colorScheme}, the menu ${rule.onAllNodesWithTag("position").fetchSemanticsNodes().isNotEmpty()}",
+            e,
+        )
+    }
+
+    private fun waitForPage(index: Int) = waitFor("page $index is shown") { shownPage() == index }
 
     private fun waitForBook() {
-        rule.waitUntil(TIMEOUT) { model().state.value.let { it.page != null && !it.busy } }
+        waitFor("the book is shown") { model().state.value.let { it.page != null && !it.busy } }
         rule.waitForIdle()
     }
 
@@ -203,11 +219,12 @@ class ReaderScreenTest {
         openMenu()
         val pages = model().state.value.page!!.pageCount
         rule.onNodeWithTag("position").assertTextEquals(string(R.string.page_of, 1, pages))
-        rule.onNodeWithText(testName.methodName).assertIsDisplayed()
+        rule.onNodeWithText(title).assertIsDisplayed()
         rule.onNodeWithTag("chapter").assertTextEquals("Chapter 1")
 
         tapPage(0.5f, 0.2f)
-        rule.onNodeWithTag("position").assertDoesNotExist()
+        // What a touch means is settled on the engine thread, a moment later.
+        waitFor("the menu is closed") { rule.onAllNodesWithTag("position").fetchSemanticsNodes().isEmpty() }
         assertEquals("the touch that closed the menu did not turn the page", 0, shownPage())
     }
 
@@ -266,12 +283,12 @@ class ReaderScreenTest {
         show()
         waitForBook()
         tapPage(0.05f, 0.03f)
-        rule.waitUntil(TIMEOUT) { model().prefs.value.colorScheme == ColorScheme.Night }
+        waitFor("the scheme is Night") { model().prefs.value.colorScheme == ColorScheme.Night }
         // The page is redrawn in the new colours; touches made meanwhile are dropped.
-        rule.waitUntil(TIMEOUT) { model().state.value.page!!.bitmap.getPixel(2, 2) == Color.BLACK }
+        waitFor("the page is drawn at night") { model().state.value.page?.bitmap?.getPixel(2, 2) == Color.BLACK }
         waitForBook()
         tapPage(0.05f, 0.03f)
-        rule.waitUntil(TIMEOUT) { model().prefs.value.colorScheme == ColorScheme.Day }
+        waitFor("the scheme is Day again") { model().prefs.value.colorScheme == ColorScheme.Day }
         assertEquals(0, shownPage())
     }
 
