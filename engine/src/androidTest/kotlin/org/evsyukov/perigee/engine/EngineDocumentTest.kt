@@ -110,6 +110,29 @@ class EngineDocumentTest {
     }
 
     @Test
+    fun bothPagesOfASpreadStartTheirTextAtTheSameHeight() {
+        val settings = EngineSettings(marginTop = 28, twoPages = true)
+        EngineDocument.open(context, TestBooks.epub(dir), HEIGHT, WIDTH, settings).use { doc ->
+            val bitmap = Bitmap.createBitmap(HEIGHT, WIDTH, Bitmap.Config.ARGB_8888)
+            // A chapter heading brings its own space above it, so a page that opens
+            // a chapter starts lower by design; only spreads in mid-chapter compare.
+            val spreads = (0 until doc.pageCount - 1 step 2).filter { left ->
+                listOf(left, left + 1).none { doc.xpointerOfPage(it).orEmpty().contains("/h1[") }
+            }
+            assertTrue("the book has spreads in mid-chapter: $spreads", spreads.size > CHAPTERS)
+            for (left in spreads) {
+                doc.goToPage(left)
+                doc.renderPage(bitmap)
+                assertEquals(
+                    "pages $left and ${left + 1}: the top line of text",
+                    firstInkRow(bitmap, 0, HEIGHT / 2),
+                    firstInkRow(bitmap, HEIGHT / 2, HEIGHT),
+                )
+            }
+        }
+    }
+
+    @Test
     fun russianBookIsHyphenatedByItsOwnLanguage() {
         val file = TestBooks.russianFb2(dir)
         val narrow = EngineSettings(fontSize = 44)
@@ -132,6 +155,15 @@ class EngineDocumentTest {
         val out = InstrumentationRegistry.getArguments().getString("additionalTestOutputDir") ?: return
         File(out).mkdirs()
         File(out, "$name.png").outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
+    }
+
+    /** The first row from the top with a dark pixel between [fromX] and [toX], or -1 if there is none. */
+    private fun firstInkRow(bitmap: Bitmap, fromX: Int, toX: Int): Int {
+        val row = IntArray(toX - fromX)
+        return (0 until bitmap.height).firstOrNull { y ->
+            bitmap.getPixels(row, 0, row.size, fromX, y, row.size, 1)
+            row.any { luminance(it) < 96 }
+        } ?: -1
     }
 
     private fun luminance(argb: Int): Int {
