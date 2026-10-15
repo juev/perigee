@@ -220,6 +220,14 @@ internal fun SelectionBars(state: ReaderState, viewModel: ReaderViewModel, modif
                     Text("A文", Modifier.semantics { contentDescription = translateLabel }, style = MaterialTheme.typography.titleSmall)
                 }
                 if (touched != null) {
+                    val starred = touched.quote.starred
+                    IconButton(modifier = action, onClick = { viewModel.toggleStar(touched.quote) }) {
+                        Icon(
+                            Icons.Filled.Star,
+                            stringResource(if (starred) R.string.action_unstar else R.string.action_star),
+                            tint = if (starred) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                     IconButton(modifier = action, onClick = { viewModel.removeQuote(touched.quote) }) {
                         Icon(Icons.Filled.Delete, stringResource(R.string.action_delete))
                     }

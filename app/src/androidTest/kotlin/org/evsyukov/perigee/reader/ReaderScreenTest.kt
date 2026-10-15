@@ -37,12 +37,16 @@ import java.io.File
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.evsyukov.perigee.R
+import org.evsyukov.perigee.data.Accounts
 import org.evsyukov.perigee.data.ColorScheme
 import org.evsyukov.perigee.data.Library
 import org.evsyukov.perigee.data.PageTurn
 import org.evsyukov.perigee.data.ReaderPreferences
 import org.evsyukov.perigee.data.ReaderPrefs
 import org.evsyukov.perigee.data.TapScheme
+import org.evsyukov.perigee.server.Server
+import org.evsyukov.perigee.sync.BookOrbit
+import org.evsyukov.perigee.sync.FakeOrbit
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
@@ -85,7 +89,10 @@ class ReaderScreenTest {
     /** As in the app: the page has the whole screen from the start, whatever the system bars do. */
     private fun edgeToEdge() = rule.runOnUiThread { activity.enableEdgeToEdge() }
 
-    private fun model(): ReaderViewModel = ViewModelProvider(activity)[ReaderViewModel::class.java]
+    /** A model made by the test, as with a server of its own; otherwise the one the screen makes. */
+    private var made: ReaderViewModel? = null
+
+    private fun model(): ReaderViewModel = made ?: ViewModelProvider(activity)[ReaderViewModel::class.java]
 
     private fun string(id: Int, vararg args: Any) = activity.getString(id, *args)
 
@@ -377,10 +384,15 @@ class ReaderScreenTest {
         assertEquals("worth remembering", quote.note)
         assertNull("the selection is done with", model().state.value.selection)
 
-        // Touching the quote brings its actions back; deleting removes it.
+        // Touching the quote brings its actions back: a star, and deleting.
+        rule.onNodeWithTag("page").performTouchInput { click(onWord) }
+        rule.waitUntil(TIMEOUT) { model().state.value.quoteTouch != null }
+        rule.onNodeWithContentDescription(string(R.string.action_star)).performClick()
+        waitFor("the quote has a star") { model().state.value.quotes.single().starred }
         rule.onNodeWithTag("page").performTouchInput { click(onWord) }
         rule.waitUntil(TIMEOUT) { model().state.value.quoteTouch != null }
         assertNotNull(model().state.value.quoteTouch)
+        rule.onNodeWithContentDescription(string(R.string.action_unstar)).assertIsDisplayed()
         rule.onNodeWithContentDescription(string(R.string.action_delete)).performClick()
         rule.waitUntil(TIMEOUT) { model().state.value.quotes.isEmpty() }
         assertEquals("touching a quote does not turn the page", 0, shownPage())
@@ -482,6 +494,34 @@ class ReaderScreenTest {
 
         waitForPage(5)
         rule.waitUntil(TIMEOUT) { rule.onAllNodesWithTag("offer").fetchSemanticsNodes().isEmpty() }
+    }
+
+    @Test
+    fun quoteMadeElsewhereAppearsInTheOpenBook() {
+        val library = Library.inMemory(activity)
+        val accounts = Accounts.of(library)
+        val orbit = BookOrbit(accounts, library, "0.0.1")
+        FakeOrbit().use { server ->
+            runBlocking {
+                orbit.signIn(server.url, "reader", "right-password")
+                // The server has the book: the library knows it by its file, as the screen will open it.
+                val known = library.open(book, title, "")
+                server.files[known.id] = 7L to 70L
+                library.onServer(known.id, 7, 70)
+                server.webQuote(known.id, "/FictionBook/body/section/p[2]/text().0", "/FictionBook/body/section/p[2]/text().5", "Words from the web")
+            }
+            val model = ReaderViewModel(activity.application, library) { Server.bookOpened(accounts, orbit, it) }
+            made = model
+            edgeToEdge()
+            rule.setContent { MaterialTheme { ReaderScreen(book, onClose = {}, viewModel = model) } }
+            waitForBook()
+
+            waitFor("the quote from the server is in the book") { model.state.value.quotes.any { it.text == "Words from the web" } }
+            openMenu()
+            rule.onNodeWithContentDescription(string(R.string.action_contents)).performClick()
+            rule.onNodeWithText(string(R.string.tab_quotes)).performClick()
+            rule.onNodeWithText("Words from the web").assertIsDisplayed()
+        }
     }
 
     private companion object {

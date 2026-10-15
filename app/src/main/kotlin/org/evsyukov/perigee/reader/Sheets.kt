@@ -24,6 +24,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.BottomSheetDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
@@ -332,6 +333,12 @@ internal fun ContentsSheet(
                     quote.chapter?.let { Text(it, style = MaterialTheme.typography.labelMedium) }
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Box(Modifier.size(10.dp).clip(CircleShape).background(Color(0xFF000000 or quote.color.toLong())))
+                        if (quote.starred) {
+                            Icon(
+                                Icons.Filled.Star, stringResource(R.string.quote_starred), Modifier.padding(start = 4.dp).size(14.dp),
+                                tint = MaterialTheme.colorScheme.primary,
+                            )
+                        }
                         Text(quote.text, Modifier.padding(start = 8.dp), maxLines = 3, overflow = TextOverflow.Ellipsis)
                     }
                     quote.note?.let { Text(it, fontStyle = FontStyle.Italic, style = MaterialTheme.typography.bodySmall) }

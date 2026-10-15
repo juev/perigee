@@ -108,8 +108,16 @@ data class ReaderState(
  * One book on the screen. Outlives rotations: the screen comes back to the
  * same open book and only tells its new size.
  */
-class ReaderViewModel(application: Application) : AndroidViewModel(application) {
-    private val library = Library.get(application)
+class ReaderViewModel(
+    application: Application,
+    private val library: Library,
+    /** Asks the server about a book just opened, see [Server.bookOpened]. */
+    private val bookOpened: suspend (bookId: String) -> Unit,
+) : AndroidViewModel(application) {
+
+    @Suppress("unused") // The constructor the system makes the model with.
+    constructor(application: Application) : this(application, Library.get(application), { Server.bookOpened(application, it) })
+
     private val preferences = ReaderPreferences.get(application)
 
     private val _state = MutableStateFlow(ReaderState())
@@ -401,6 +409,12 @@ class ReaderViewModel(application: Application) : AndroidViewModel(application) 
         _state.update { it.copy(quoteTouch = null) }
     }
 
+    /** Gives the quote a star, or takes it off. */
+    fun toggleStar(quote: Quote) = act {
+        library.starQuote(quote.id, !quote.starred)
+        _state.update { it.copy(quoteTouch = null) }
+    }
+
     /** Marks the page shown, or takes its mark away. */
     fun toggleBookmark() = act { open ->
         val current = _state.value
@@ -498,7 +512,7 @@ class ReaderViewModel(application: Application) : AndroidViewModel(application) 
             watch(book)
             show(open.current())
             // Not waited for: the reader reads meanwhile, and is told if there is a later place.
-            viewModelScope.launch { Server.bookOpened(getApplication(), book.id) }
+            viewModelScope.launch { bookOpened(book.id) }
         } catch (e: IllegalArgumentException) {
             _state.update { it.copy(failed = true) }
         }

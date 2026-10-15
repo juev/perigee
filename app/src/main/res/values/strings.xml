@@ -19,6 +19,9 @@
     <string name="action_share">Share</string>
     <string name="action_translate">Translate, dictionary</string>
     <string name="action_web_search">Search the web</string>
+    <string name="action_star">Star the quote</string>
+    <string name="action_unstar">Take the star off</string>
+    <string name="quote_starred">Starred</string>
     <string name="action_note">Note</string>
     <string name="action_save">Save</string>
     <string name="action_cancel">Cancel</string>
