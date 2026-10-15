@@ -485,6 +485,7 @@ class ReaderScreenTest {
     }
 
     private companion object {
-        const val TIMEOUT = 10_000L
+        // An emulator on a shared CI machine can stall for seconds; only a failing wait lasts this long.
+        const val TIMEOUT = 30_000L
     }
 }
