@@ -46,6 +46,8 @@ jobs:
       - uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
       - name: Build both flavors, lint, unit tests
         run: ./gradlew build lint :app:bundlePlayRelease
+      - name: Test the script that runs device tests
+        run: python3 -m unittest discover -s .github/scripts
       - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
       - name: Scan the F-Droid package for what F-Droid does not accept
         run: uvx --from fdroidserver==2.4.5 fdroid scanner --exit-code app/build/outputs/apk/fdroid/release/app-fdroid-release-unsigned.apk
@@ -78,6 +80,9 @@ jobs:
           # The screens of the app; they talk to a stand-in server of their own.
           - name: app
             tasks: ":app:connectedFdroidDebugAndroidTest"
+            # Screens on a shared emulator fail now and then for nothing in the code:
+            # they are run again, and what passed only then is listed in the summary.
+            attempts: 3
           # Everything under the app, and the contract with the version of the
           # server the app is written against.
           - name: modules, bookOrbit 3.3.0
@@ -128,7 +133,7 @@ jobs:
           profile: pixel_6
           disable-animations: true
           # The emulator reaches the server on the runner at 10.0.2.2.
-          script: ./gradlew ${{ matrix.tasks }} --continue -Pandroid.testInstrumentationRunnerArguments.bookorbitUrl=http://10.0.2.2:3070
+          script: python3 .github/scripts/device_tests.py --attempts ${{ matrix.attempts || 1 }} -- ./gradlew ${{ matrix.tasks }} --continue -Pandroid.testInstrumentationRunnerArguments.bookorbitUrl=http://10.0.2.2:3070
       - name: Server log
         if: failure() && matrix.server
         run: docker compose -f contract/docker-compose.yml logs --tail 300 app
