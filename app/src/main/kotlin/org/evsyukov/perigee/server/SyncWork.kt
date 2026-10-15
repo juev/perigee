@@ -56,7 +56,7 @@ internal class SyncWorker(context: Context, parameters: WorkerParameters) : Coro
 }
 
 internal object SyncWork {
-    private const val NAME = "sync"
+    const val NAME = "sync"
     private const val DELAY_SECONDS = 10L
 
     /**
