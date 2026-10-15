@@ -125,6 +125,37 @@ class ServerScreenTest {
     }
 
     @Test
+    fun screenSaysHowSyncingWentAndWhatIsNotSent() {
+        serverHas(book(7, "Listed Title", 70))
+        show()
+        signIn()
+        waitForText("Listed Title")
+        val id = bookFile.let { runBlocking { library.open(it, "Read Here", "").id } }
+        server.files[id] = 7L to 70L
+        runBlocking {
+            library.onServer(id, 7, 70)
+            library.savePosition(id, "/a", 0f)
+            library.savePosition(id, "/b", 0.5f)
+        }
+        waitForText(activity.resources.getQuantityString(R.plurals.server_unsent, 1, 1))
+
+        server.down = true
+        assertEquals(SyncOutcome.Later, runBlocking { syncRound(orbit, accounts) })
+        waitForStart(R.string.server_sync_unreachable)
+
+        server.down = false
+        assertEquals(SyncOutcome.Done, runBlocking { syncRound(orbit, accounts) })
+        waitUntilGone(activity.resources.getQuantityString(R.plurals.server_unsent, 1, 1))
+        waitForStart(R.string.server_synced_at)
+    }
+
+    /** Waits for a line that says [id], whatever is put into it. */
+    private fun waitForStart(id: Int) {
+        val start = string(id, "\u0000").substringBefore('\u0000')
+        waitFor("a line beginning '$start' is shown") { rule.onAllNodesWithText(start, substring = true).fetchSemanticsNodes().isNotEmpty() }
+    }
+
+    @Test
     fun passwordGoesOverPlainHttpOnlyAfterTheReaderAgrees() {
         show()
         fillIn(server.url, "reader", "right-password")

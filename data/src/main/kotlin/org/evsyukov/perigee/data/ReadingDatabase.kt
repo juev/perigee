@@ -204,6 +204,12 @@ internal interface ReadingDao {
     @Query("DELETE FROM accounts")
     suspend fun deleteAccount()
 
+    @Query("UPDATE accounts SET syncedAt = :at, unreachableSince = 0 WHERE id = ${Account.SINGLE}")
+    suspend fun roundDone(at: Long)
+
+    @Query("UPDATE accounts SET unreachableSince = :at WHERE id = ${Account.SINGLE} AND unreachableSince = 0")
+    suspend fun roundUnreachable(at: Long)
+
     /** Nothing was sent to the next server yet, and nothing was heard from it. */
     @Query(
         "UPDATE books SET serverBookId = NULL, serverFileId = NULL, serverCheckedAt = 0, pushedAt = 0, statePushedAt = 0, " +
@@ -369,12 +375,12 @@ internal class EpubsReadAgain : AutoMigrationSpec {
         Book::class, Bookmark::class, Quote::class, Folder::class, BookCollection::class, CollectionBook::class,
         Catalog::class, Account::class, RemotePosition::class, PageRead::class,
     ],
-    version = 11,
+    version = 12,
     autoMigrations = [
         AutoMigration(from = 1, to = 2), AutoMigration(from = 2, to = 3), AutoMigration(from = 3, to = 4),
         AutoMigration(from = 4, to = 5), AutoMigration(from = 5, to = 6), AutoMigration(from = 6, to = 7),
         AutoMigration(from = 7, to = 8), AutoMigration(from = 8, to = 9, spec = EpubsReadAgain::class),
-        AutoMigration(from = 9, to = 10), AutoMigration(from = 10, to = 11),
+        AutoMigration(from = 9, to = 10), AutoMigration(from = 10, to = 11), AutoMigration(from = 11, to = 12),
     ],
 )
 internal abstract class ReadingDatabase : RoomDatabase() {

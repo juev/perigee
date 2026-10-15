@@ -50,6 +50,29 @@ class SyncStateTest {
     }
 
     @Test
+    fun bookTheServerHasSaysWhileAnythingDoneInItIsNotSent() = runBlocking<Unit> {
+        val id = opened("unsent.fb2").id
+        library.savePosition(id, "/a", 0f)
+        library.savePosition(id, "/b", 0.1f)
+        assertFalse("a book the server has not has nothing to send", book(id).syncUnsent)
+
+        library.onServer(id, 7, 70)
+        assertTrue("a place, and the status opening the book set", book(id).syncUnsent)
+        library.placeSent(id, book(id).movedAt)
+        assertTrue("the status", book(id).syncUnsent)
+        library.stateSent(id, book(id).stateChangedAt)
+        assertFalse(book(id).syncUnsent)
+
+        library.setRating(id, 4)
+        assertTrue("a rating", book(id).syncUnsent)
+        library.stateSent(id, book(id).stateChangedAt)
+        assertFalse(book(id).syncUnsent)
+
+        library.addBookmark(id, "/b", "a page", null)
+        assertTrue("a bookmark", book(id).syncUnsent)
+    }
+
+    @Test
     fun placeSentWhileTheReaderMovedOnIsStillToBeSent() = runBlocking<Unit> {
         val id = opened("moving.fb2").id
         library.savePosition(id, "/a", 0f)

@@ -93,6 +93,8 @@ data class ServerState(
     val onDevice: Map<Long, String> = emptyMap(),
     /** A download that waits for the reader to say where downloaded books should go. */
     val asking: Pair<RemoteBook, RemoteFile>? = null,
+    /** How many books have something the reader did in them still to reach the server. */
+    val unsent: Int = 0,
 )
 
 /** The bookOrbit server: signing in to it, looking through its books, downloading them into the library. */
@@ -131,7 +133,7 @@ class ServerViewModel(
                 _state.update {
                     ServerState(
                         loaded = true, account = account, sessionOver = over, signingIn = it.signingIn,
-                        signInFailure = it.signInFailure, onDevice = it.onDevice,
+                        signInFailure = it.signInFailure, onDevice = it.onDevice, unsent = it.unsent,
                     )
                 }
                 if (account != null && !over) open()
@@ -140,7 +142,7 @@ class ServerViewModel(
         viewModelScope.launch {
             library.books().collect { books ->
                 val there = books.mapNotNull { book -> book.serverFileId?.let { it to book.id } }.toMap()
-                _state.update { it.copy(onDevice = there) }
+                _state.update { it.copy(onDevice = there, unsent = books.count { book -> book.syncUnsent }) }
             }
         }
     }

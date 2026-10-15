@@ -187,6 +187,13 @@
     <string name="server_channel_switched_off">Syncing with reading devices is switched off in your KOReader settings on the server, so reading will not be synced.</string>
     <string name="server_unsupported">This app was not made for a server of version %1$s. Its books can be downloaded, but nothing is synced with it, so that nothing gets spoiled.</string>
     <string name="book_on_server">on the server</string>
+    <string name="book_on_server_unsent">on the server, not synced yet</string>
+    <string name="server_synced_at">Reading synced %1$s.</string>
+    <string name="server_sync_unreachable">Syncing does not reach the server (first try %1$s). The app tries again by itself.</string>
+    <plurals name="server_unsent">
+        <item quantity="one">%1$d book has changes not sent yet.</item>
+        <item quantity="other">%1$d books have changes not sent yet.</item>
+    </plurals>
     <plurals name="rate_stars">
         <item quantity="one">%1$d star</item>
         <item quantity="other">%1$d stars</item>

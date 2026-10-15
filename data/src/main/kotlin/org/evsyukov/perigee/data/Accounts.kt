@@ -71,6 +71,12 @@ class Accounts internal constructor(private val database: ReadingDatabase, priva
     /** Remembers the library of the server, and the folder in it, the reader sends books to; forgotten with the server. */
     suspend fun saveUploadPlace(libraryId: Long?, folderId: Long?) = dao.updateUploadPlace(libraryId, folderId)
 
+    /** A round of syncing went through. */
+    suspend fun roundDone() = dao.roundDone(now())
+
+    /** A round of syncing could not reach the server; the first of such rounds in a row is remembered. */
+    suspend fun roundUnreachable() = dao.roundUnreachable(now())
+
     /** Forgets the server and what was known of its books. The books themselves stay. */
     suspend fun signOut() = database.withTransaction {
         dao.deleteAccount()

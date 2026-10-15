@@ -65,6 +65,31 @@ class SyncRoundTest {
     }
 
     @Test
+    fun roundsAreRememberedForTheServersScreen() = runBlocking<Unit> {
+        orbit.signIn(server.url, "reader", "right-password")
+        readSomething()
+        syncRound(orbit, accounts)
+        val synced = clock
+        assertEquals(listOf(synced, 0L), accounts.current()!!.let { listOf(it.syncedAt, it.unreachableSince) })
+
+        server.down = true
+        clock += 60_000
+        val failed = clock
+        syncRound(orbit, accounts)
+        clock += 60_000
+        syncRound(orbit, accounts)
+        assertEquals(
+            "the round that went through, and the first of those that failed",
+            listOf(synced, failed), accounts.current()!!.let { listOf(it.syncedAt, it.unreachableSince) },
+        )
+
+        server.down = false
+        clock += 60_000
+        syncRound(orbit, accounts)
+        assertEquals(listOf(clock, 0L), accounts.current()!!.let { listOf(it.syncedAt, it.unreachableSince) })
+    }
+
+    @Test
     fun whatOnlyTheReaderCanPutRightIsNotTriedOverAndOver() = runBlocking<Unit> {
         orbit.signIn(server.url, "reader", "right-password")
         readSomething()

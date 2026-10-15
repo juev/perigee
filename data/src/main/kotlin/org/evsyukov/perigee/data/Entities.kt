@@ -89,6 +89,9 @@ data class Book(
     /** Whether it is the status that the reader changed since the server last heard. */
     val statusUnsent: Boolean get() = statusChangedAt > statePushedAt
 
+    /** Whether the server has the book and something the reader did in it here is still to reach the server. */
+    val syncUnsent: Boolean get() = serverFileId != null && (placeUnsent || stateUnsent || marksUnsent)
+
     val authors: List<String> get() = author.split('\n').filter { it.isNotBlank() }
 
     /** Authors on one line, for showing. */
@@ -254,6 +257,10 @@ data class Account(
     /** The library of the server, and the folder in it, the reader chose to send books to; null until they have. */
     @ColumnInfo(defaultValue = "NULL") val uploadLibraryId: Long? = null,
     @ColumnInfo(defaultValue = "NULL") val uploadFolderId: Long? = null,
+    /** When a round of syncing last went through; zero for never. */
+    @ColumnInfo(defaultValue = "0") val syncedAt: Long = 0,
+    /** When the rounds since then began to fail to reach the server; zero while the last one went through. */
+    @ColumnInfo(defaultValue = "0") val unreachableSince: Long = 0,
 ) {
     companion object {
         const val SINGLE = 1L
