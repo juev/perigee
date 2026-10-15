@@ -132,6 +132,10 @@ jobs:
           arch: x86_64
           profile: pixel_6
           disable-animations: true
+          # The runner's default options with -gpu swiftshader: its default swiftshader_indirect is
+          # deprecated since emulator 36.4.9. Ten runs of the app's tests under each failed no more
+          # often with this one (#38).
+          emulator-options: -no-window -gpu swiftshader -no-snapshot -noaudio -no-boot-anim
           # The emulator reaches the server on the runner at 10.0.2.2.
           script: python3 .github/scripts/device_tests.py --attempts ${{ matrix.attempts || 1 }} -- ./gradlew ${{ matrix.tasks }} --continue -Pandroid.testInstrumentationRunnerArguments.bookorbitUrl=http://10.0.2.2:3070
       - name: Server log
