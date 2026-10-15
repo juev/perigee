@@ -211,11 +211,11 @@ internal interface ReadingDao {
     )
     suspend fun forgetServer()
 
-    /** The next server has every quote and bookmark still to hear of. */
-    @Query("UPDATE quotes SET sentAt = 0")
+    /** The next server has every quote and bookmark still to hear of, and stars with them. */
+    @Query("UPDATE quotes SET sentAt = 0, serverId = NULL, starUnsent = starred")
     suspend fun unsendQuotes()
 
-    @Query("UPDATE bookmarks SET sent = 0")
+    @Query("UPDATE bookmarks SET sent = 0, serverId = NULL")
     suspend fun unsendBookmarks()
 
     @Query("UPDATE books SET marksChangedAt = :at WHERE id = :id")
@@ -252,6 +252,26 @@ internal interface ReadingDao {
     /** A change that came from the server: nothing of it is to be sent back. */
     @Query("UPDATE quotes SET text = :text, note = :note, color = :color, chapter = :chapter, updatedAt = :at, sentAt = :at WHERE id = :id")
     suspend fun takeQuote(id: Long, text: String, note: String?, color: Int, chapter: String?, at: Long)
+
+    @Query("UPDATE quotes SET serverId = :serverId WHERE id = :id")
+    suspend fun linkQuote(id: Long, serverId: Long)
+
+    @Query("UPDATE bookmarks SET serverId = :serverId WHERE id = :id")
+    suspend fun linkBookmark(id: Long, serverId: Long)
+
+    @Query("UPDATE quotes SET starred = :starred, starUnsent = 1 WHERE id = :id")
+    suspend fun starQuote(id: Long, starred: Boolean)
+
+    /** The server has the star as it is; one changed again meanwhile is still to be sent. */
+    @Query("UPDATE quotes SET starUnsent = 0 WHERE id = :id AND starred = :starred")
+    suspend fun starSent(id: Long, starred: Boolean)
+
+    /** A star given or taken off on the server; one changed here and not sent yet stands. */
+    @Query("UPDATE quotes SET starred = :starred WHERE id = :id AND starUnsent = 0")
+    suspend fun takeStar(id: Long, starred: Boolean)
+
+    @Query("UPDATE bookmarks SET text = :title WHERE id = :id")
+    suspend fun titleBookmark(id: Long, title: String)
 
     @Query("UPDATE books SET serverBookId = :serverBookId, serverFileId = :serverFileId, serverCheckedAt = :at WHERE id = :id")
     suspend fun setServerFile(id: String, serverBookId: Long?, serverFileId: Long?, at: Long)
@@ -349,12 +369,12 @@ internal class EpubsReadAgain : AutoMigrationSpec {
         Book::class, Bookmark::class, Quote::class, Folder::class, BookCollection::class, CollectionBook::class,
         Catalog::class, Account::class, RemotePosition::class, PageRead::class,
     ],
-    version = 10,
+    version = 11,
     autoMigrations = [
         AutoMigration(from = 1, to = 2), AutoMigration(from = 2, to = 3), AutoMigration(from = 3, to = 4),
         AutoMigration(from = 4, to = 5), AutoMigration(from = 5, to = 6), AutoMigration(from = 6, to = 7),
         AutoMigration(from = 7, to = 8), AutoMigration(from = 8, to = 9, spec = EpubsReadAgain::class),
-        AutoMigration(from = 9, to = 10),
+        AutoMigration(from = 9, to = 10), AutoMigration(from = 10, to = 11),
     ],
 )
 internal abstract class ReadingDatabase : RoomDatabase() {

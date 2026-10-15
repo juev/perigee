@@ -323,13 +323,18 @@ class Library internal constructor(internal val database: ReadingDatabase, priva
      */
     suspend fun takeQuote(
         bookId: String, stamp: String, start: String, end: String, text: String, note: String?, color: Int, chapter: String?,
+        serverId: Long? = null,
     ) = database.withTransaction {
-        if (dao.quotesNow(bookId).any { it.stamp == stamp && it.start == start }) return@withTransaction
+        val had = dao.quotesNow(bookId).firstOrNull { it.stamp == stamp && it.start == start }
+        if (had != null) {
+            if (serverId != null) dao.linkQuote(had.id, serverId)
+            return@withTransaction
+        }
         val at = now()
         dao.insert(
             Quote(
                 bookId = bookId, start = start, end = end, text = text, note = note?.takeIf { it.isNotBlank() }, color = color,
-                chapter = chapter, createdAt = at, updatedAt = at, stamp = stamp, sentAt = at,
+                chapter = chapter, createdAt = at, updatedAt = at, stamp = stamp, sentAt = at, serverId = serverId,
             ),
         )
     }
@@ -337,6 +342,26 @@ class Library internal constructor(internal val database: ReadingDatabase, priva
     /** A quote changed somewhere else. What the reader changed here since is overruled: the later word wins. */
     suspend fun takeQuoteChange(id: Long, text: String, note: String?, color: Int, chapter: String?) =
         dao.takeQuote(id, text, note?.takeIf { it.isNotBlank() }, color, chapter, now())
+
+    /** The quote here is the one the server knows by [serverId]. */
+    suspend fun linkQuote(id: Long, serverId: Long) = dao.linkQuote(id, serverId)
+
+    suspend fun linkBookmark(id: Long, serverId: Long) = dao.linkBookmark(id, serverId)
+
+    /** Gives a quote a star or takes it off; the server is told of it. */
+    suspend fun starQuote(id: Long, starred: Boolean) = database.withTransaction {
+        dao.marksChangedByQuote(id, now())
+        dao.starQuote(id, starred)
+    }
+
+    /** The server has the quote [starred] or not, as told. */
+    suspend fun starSent(id: Long, starred: Boolean) = dao.starSent(id, starred)
+
+    /** A star given or taken off on the server. One changed here and not sent yet stands. */
+    suspend fun takeStar(id: Long, starred: Boolean) = dao.takeStar(id, starred)
+
+    /** A bookmark given a title on the server is shown by it. */
+    suspend fun titleBookmark(id: Long, title: String) = dao.titleBookmark(id, title)
 
     /** A quote or bookmark removed somewhere else is removed here; nothing of it is told back. */
     suspend fun dropQuote(id: Long) = dao.deleteQuote(id)
@@ -347,13 +372,16 @@ class Library internal constructor(internal val database: ReadingDatabase, priva
      * A bookmark made somewhere else. Returns it as the library has it: the
      * one that was on that place already, or the new one, stamped now.
      */
-    suspend fun takeBookmark(bookId: String, xpointer: String, text: String): Bookmark = database.withTransaction {
+    suspend fun takeBookmark(bookId: String, xpointer: String, text: String, serverId: Long? = null): Bookmark = database.withTransaction {
         val at = now()
-        dao.insert(Bookmark(bookId = bookId, xpointer = xpointer, text = text, chapter = null, createdAt = at, stamp = Stamps.of(at), sent = true))
+        dao.insert(
+            Bookmark(bookId = bookId, xpointer = xpointer, text = text, chapter = null, createdAt = at, stamp = Stamps.of(at), sent = true, serverId = serverId),
+        )
         dao.stampBookmarks()
         val taken = dao.bookmarksNow(bookId).first { it.xpointer == xpointer }
         dao.bookmarkSent(taken.id)
-        taken.copy(sent = true)
+        if (serverId != null) dao.linkBookmark(taken.id, serverId)
+        taken.copy(sent = true, serverId = serverId ?: taken.serverId)
     }
 
     companion object {

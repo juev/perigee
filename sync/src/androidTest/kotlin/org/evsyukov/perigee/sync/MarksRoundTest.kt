@@ -321,6 +321,91 @@ class MarksRoundTest {
     }
 
     @Test
+    fun starGivenHereIsGivenOnTheServerToTheQuoteWithTheSameWords() = runBlocking<Unit> {
+        val first = library.addQuote(book.id, "/a", "/b", "the same words", 1, null)
+        val second = library.addQuote(book.id, "/c", "/d", "the same words", 1, null)
+        library.addQuote(book.id, "/e", "/f", " other words ", 1, null)
+        orbit.sync()
+
+        library.starQuote(second, true)
+        assertEquals(1, orbit.sync().marksSent)
+
+        assertEquals("the second of two alike, as they were made", listOf(false, true, false), onServer().map { it.starred })
+        assertFalse(quotes().single { it.id == second }.starUnsent)
+        assertEquals("each quote knows its number there", onServer().map { it.serverId }, quotes().map { it.serverId })
+
+        library.starQuote(second, false)
+        library.starQuote(first, true)
+        orbit.sync()
+        assertEquals(listOf(true, false, false), onServer().map { it.starred })
+        assertEquals("one PATCH a change", 3, server.seen.count { it.method == "PATCH" })
+    }
+
+    @Test
+    fun starGivenOnTheServerComesHereUnlessOneGivenHereWaits() = runBlocking<Unit> {
+        val web = server.webQuote(book.id, "/a", "/b", "from the web")
+        orbit.syncMarks(book.id)
+        val taken = quotes().single()
+        assertEquals("tied by the number it was handed over with", web.serverId, taken.serverId)
+
+        web.starred = true
+        assertEquals(1, orbit.syncMarks(book.id).marksTaken)
+        assertTrue(quotes().single().starred)
+        assertFalse("taken, not to be sent back", quotes().single().starUnsent)
+
+        // Taken off here meanwhile: the reader's own word goes up, not the server's down.
+        library.starQuote(taken.id, false)
+        orbit.sync()
+        assertFalse(web.starred)
+        assertFalse(quotes().single().starred)
+    }
+
+    @Test
+    fun starOfAQuoteTheServerHasNotYetGoesWithItInOneRound() = runBlocking<Unit> {
+        val id = library.addQuote(book.id, "/a", "/b", "new and starred", 1, null)
+        library.starQuote(id, true)
+
+        orbit.sync()
+
+        assertTrue(onServer().single().starred)
+        assertFalse(quotes().single().starUnsent)
+    }
+
+    @Test
+    fun starsGoToTheNextServerAnew() = runBlocking<Unit> {
+        val id = library.addQuote(book.id, "/a", "/b", "starred once", 1, null)
+        library.starQuote(id, true)
+        orbit.sync()
+        orbit.signOut()
+        server.quotes.clear()
+
+        signInAgain()
+        orbit.sync()
+
+        assertTrue("sent with the quote to what is a new device to the server", onServer().single().starred)
+    }
+
+    @Test
+    fun bookmarkTitleGivenOnTheServerIsShownHere() = runBlocking<Unit> {
+        library.addBookmark(book.id, "/body/p[5]", "  The first words of the page ", "One")
+        library.addBookmark(book.id, "/body/p[9]", "", "Chapter Two")
+        val web = server.webBookmark(book.id, "/body/p[12]", "Marked in the browser")
+        orbit.sync()
+        assertEquals("the titles the server made are no titles of the reader's", 0, orbit.syncMarks(book.id).marksTaken)
+        assertEquals(listOf("  The first words of the page ", "", "Marked in the browser"), bookmarks().map { it.text })
+        assertTrue("each knows its number there", bookmarks().all { it.serverId != null })
+
+        marksOnServer().first { it.pos == "/body/p[5]" }.title = "Where she leaves"
+        marksOnServer().first { it.pos == "/body/p[9]" }.title = "Chapter Two, the end"
+        web.title = "Renamed in the browser"
+        assertEquals(3, orbit.syncMarks(book.id).marksTaken)
+
+        assertEquals(listOf("Where she leaves", "Chapter Two, the end", "Renamed in the browser"), bookmarks().map { it.text })
+        assertEquals("taken once", 0, orbit.syncMarks(book.id).marksTaken)
+        assertTrue("not sent back", exchanges("bookmarks").last().getJSONArray("changes").length() == 0)
+    }
+
+    @Test
     fun bookTheServerHasNoMoreKeepsItsMarksHere() = runBlocking<Unit> {
         library.addQuote(book.id, "/a", "/b", "mine", 1, null)
         server.files.clear()
