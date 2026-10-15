@@ -12,6 +12,7 @@ import org.evsyukov.perigee.data.Fb2Archive
 import org.evsyukov.perigee.data.FoundBook
 import org.evsyukov.perigee.data.Library
 import org.evsyukov.perigee.data.LibraryPreferences
+import org.evsyukov.perigee.engine.Engine
 
 /**
  * Where downloaded books go: into the folder the reader chose for them, as
@@ -22,12 +23,14 @@ class Arrivals(
     private val library: Library,
     private val covers: Covers,
     private val preferences: LibraryPreferences,
+    /** What a downloaded file says about itself. */
+    private val describe: Describe = Engine::describe,
     /** The folder downloads are put into, by its tree URI. */
     private val sinkOf: (String) -> BookSink,
 ) {
     constructor(context: Context) : this(
         context.applicationContext, Library.get(context), Covers.get(context), LibraryPreferences.get(context),
-        { uri -> TreeSink(context.applicationContext.contentResolver, Uri.parse(uri)) },
+        sinkOf = { uri -> TreeSink(context.applicationContext.contentResolver, Uri.parse(uri)) },
     )
 
     /** Whether the reader was asked where downloads should go, whatever they answered. */
@@ -49,7 +52,7 @@ class Arrivals(
      */
     suspend fun keep(file: File, format: String): String? = withContext(Dispatchers.IO) {
         val book = ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY).use {
-            readBook(context, covers, it, file.name, format)
+            readBook(context, covers, it, file.name, format, describe)
         } ?: return@withContext null
         val folderUri = preferences.prefs.first().downloadsFolder
         if (folderUri != null) {

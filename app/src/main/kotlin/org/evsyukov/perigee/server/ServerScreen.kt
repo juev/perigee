@@ -379,8 +379,7 @@ private fun BookRow(book: RemoteBook, state: ServerState, model: ServerViewModel
                     maxLines = 1, overflow = TextOverflow.Ellipsis,
                 )
             }
-            // One file per format the app reads; the server's first of each.
-            val files = book.files.filter { it.format in Library.FORMATS }.distinctBy { it.format }
+            val files = readableFiles(book)
             // A book that is in the library in one format is not offered in another as if it were not there.
             val kept = files.firstNotNullOfOrNull { state.onDevice[it.id] }
             when {
@@ -394,6 +393,10 @@ private fun BookRow(book: RemoteBook, state: ServerState, model: ServerViewModel
         }
     }
 }
+
+/** The files of [book] the app reads: one per format, the server's first of each. */
+internal fun readableFiles(book: RemoteBook): List<RemoteFile> =
+    book.files.filter { it.format in Library.FORMATS }.distinctBy { it.format }
 
 @Composable
 private fun InLibrary(bookId: String, model: ServerViewModel, onOpen: (File) -> Unit) {
