@@ -189,9 +189,11 @@ class ServerViewModelTest {
         serverHas(book(7, "Listed Title", 70))
         signIn()
 
-        val asked = listed("Listed Title")
-        assertEquals(DeviceChannel.PasswordNeeded, asked.channel)
-        assertEquals("kindle-of-mine", asked.account?.deviceUser)
+        // The question, the list and the account each come their own way: all three are waited for.
+        until("the password is asked for, with the list shown") { state ->
+            state.channel == DeviceChannel.PasswordNeeded && state.account?.deviceUser == "kindle-of-mine" &&
+                state.books.any { it.title == "Listed Title" }
+        }
 
         model.devicePassword("a guess")
         until("the password is turned down") { it.channelPasswordWrong && !it.channelBusy }
