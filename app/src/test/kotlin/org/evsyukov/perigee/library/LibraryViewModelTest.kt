@@ -153,8 +153,12 @@ class LibraryViewModelTest {
         assertEquals("the one library there is, without a question", 1L, sent.libraryId)
         assertEquals(sent.bookId, stored(id)?.serverBookId)
         untilTrue("the change is told") { changes.get() == 1 }
-        val after = until("the book is sent") { id !in it.sending }
-        assertFalse("what the server has is not offered to be sent", after.canSend(shown("Sent Book")))
+        // The list shows the book on the server a moment after the library has it there.
+        val after = until("the book is shown on the server") { state ->
+            id !in state.sending && (state.listing as? Listing.Books)?.books?.singleOrNull { it.id == id }?.serverFileId != null
+        }
+        val book = (after.listing as Listing.Books).books.single { it.id == id }
+        assertFalse("what the server has is not offered to be sent", after.canSend(book))
     }
 
     @Test
