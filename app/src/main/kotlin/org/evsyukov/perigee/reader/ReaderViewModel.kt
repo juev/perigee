@@ -2,6 +2,7 @@ package org.evsyukov.perigee.reader
 
 import android.app.Application
 import android.util.Log
+import android.graphics.Point
 import android.graphics.Rect
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -53,7 +54,13 @@ data class Viewport(
 )
 
 /** Text the reader is selecting, with where it lies on the page shown. */
-data class Selection(val range: TextRange, val rects: List<Rect>, val anchorX: Int, val anchorY: Int)
+data class Selection(val range: TextRange, val rects: List<Rect>, val anchorX: Int, val anchorY: Int) {
+    /** A point on the first glyph selected: the selection stretched from it keeps its start. */
+    val startPoint: Point? get() = rects.firstOrNull()?.let { Point(it.left, it.centerY()) }
+
+    /** A point on the last glyph selected: the selection stretched from it keeps its end. */
+    val endPoint: Point? get() = rects.lastOrNull()?.let { Point(it.right - 1, it.centerY()) }
+}
 
 /** A quote the reader touched, with where it lies on the page shown. */
 data class QuoteTouch(val quote: Quote, val rects: List<Rect>)
@@ -125,7 +132,8 @@ class ReaderViewModel(application: Application) : AndroidViewModel(application) 
     private var turnsWaiting = 0
 
     // A finger moves faster than the engine answers: only its latest place matters.
-    private data class SelectRequest(val x: Int, val y: Int, val extend: Boolean)
+    // [from] is where the stretch starts when it is not where the selection was started.
+    private data class SelectRequest(val x: Int, val y: Int, val extend: Boolean, val from: Point? = null)
     private val selectRequests = Channel<SelectRequest>(Channel.CONFLATED)
     private var watching: Job? = null
 
@@ -336,12 +344,20 @@ class ReaderViewModel(application: Application) : AndroidViewModel(application) 
         selectRequests.trySend(SelectRequest(x, y, extend))
     }
 
+    /**
+     * Stretches the selection from a point to another, as a handle at one of its
+     * ends is dragged: [from] is a point on the end that stays.
+     */
+    fun stretch(from: Point, x: Int, y: Int) {
+        selectRequests.trySend(SelectRequest(x, y, extend = true, from = from))
+    }
+
     private suspend fun select(request: SelectRequest) {
         val open = reader ?: return
         val (x, y, extend) = request
         val anchor = _state.value.selection?.takeIf { extend }
-        val fromX = anchor?.anchorX ?: x
-        val fromY = anchor?.anchorY ?: y
+        val fromX = request.from?.x ?: anchor?.anchorX ?: x
+        val fromY = request.from?.y ?: anchor?.anchorY ?: y
         val selection = open.read { document ->
             document.select(fromX, fromY, x, y)?.let { range ->
                 Selection(range, document.rects(range.start, range.end), fromX, fromY)

@@ -121,7 +121,7 @@ A touch is sorted out in this order:
 
 Swipes turn pages along the direction chosen in "Turn pages": sideways or up and down. Volume keys turn pages. Sliding along the left edge changes brightness when that is switched on.
 
-Holding a word selects it; dragging on stretches the selection by whole words. The selection offers four highlight colours, a note, copy, share, the system's text-processing apps (translators, dictionaries) and a web search. Not done: handles to adjust a selection after the finger is lifted.
+Holding a word selects it; dragging on without lifting the finger stretches the selection by whole words, across lines, and does not turn the page. Handles hang under both ends of the selection: dragging one moves that end, and the other stays. The selection offers four highlight colours, a note, copy, share, the system's text-processing apps (translators, dictionaries) and a web search. Not done: stretching a selection onto the next page.
 
 ### Menu
 

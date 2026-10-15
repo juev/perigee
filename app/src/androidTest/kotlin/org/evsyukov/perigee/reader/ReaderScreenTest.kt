@@ -26,6 +26,7 @@ import androidx.compose.ui.test.performImeAction
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.swipe
 import androidx.compose.ui.test.swipeLeft
 import androidx.compose.ui.test.swipeRight
 import androidx.compose.ui.test.swipeUp
@@ -401,6 +402,36 @@ class ReaderScreenTest {
         val text = model().state.value.selection!!.range.text
         assertTrue("several words are selected: '$text'", text.trim().contains(' '))
         assertEquals("stretching a selection does not turn the page", pageBefore, shownPage())
+    }
+
+    @Test
+    fun handlesMoveTheEndsOfTheSelectionAndTheQuoteTakesItAll() {
+        show()
+        waitForBook()
+        val pageBefore = shownPage()
+        rule.onNodeWithTag("page").performTouchInput { longClick(Offset(width * 0.5f, height * 0.4f)) }
+        waitFor("a word is selected") { model().state.value.selection != null }
+        val word = model().state.value.selection!!.range.text.trim()
+        waitForTag("selection-end")
+
+        // The end handle is dragged a few lines down: the selection follows it over the lines.
+        rule.onNodeWithTag("selection-end").performTouchInput { swipe(center, center + Offset(0f, height * 2f), 500) }
+        waitFor("the selection takes more than one line") { (model().state.value.selection?.rects?.size ?: 0) > 1 }
+        val stretched = model().state.value.selection!!.range.text
+        assertTrue("the selection starts with the word held: '$stretched'", stretched.trim().startsWith(word))
+
+        // The start handle is dragged to the left: the selection gains words before, and keeps its end.
+        rule.onNodeWithTag("selection-start").performTouchInput { swipe(center, center - Offset(width * 3f, 0f), 500) }
+        waitFor("the selection starts earlier") { model().state.value.selection!!.range.text.length > stretched.length }
+        val whole = model().state.value.selection!!.range.text
+        assertTrue("the end stays where it was: '$whole'", whole.trimEnd().endsWith(stretched.trimEnd()))
+        assertEquals("handles do not turn the page", pageBefore, shownPage())
+
+        rule.onNodeWithContentDescription(string(R.string.action_note)).performClick()
+        rule.onNodeWithTag("note-field").performTextInput("the whole phrase")
+        rule.onNodeWithText(string(R.string.action_save)).performClick()
+        waitFor("the quote is kept") { model().state.value.quotes.size == 1 }
+        assertEquals(whole, model().state.value.quotes.single().text)
     }
 
     @Test

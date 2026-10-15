@@ -2,6 +2,7 @@ package org.evsyukov.perigee.reader
 
 import android.app.Activity
 import android.content.Intent
+import android.graphics.Point
 import android.view.WindowManager
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.LocalActivity
@@ -32,8 +33,10 @@ import androidx.compose.foundation.layout.displayCutout
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.requiredWidth
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
@@ -58,7 +61,10 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.LayoutCoordinates
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.layout.positionInParent
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -67,6 +73,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.core.net.toUri
@@ -278,6 +285,7 @@ fun ReaderScreen(file: File, onClose: () -> Unit, viewModel: ReaderViewModel = v
                             },
                     )
                     Marks(state, offsetX, ink)
+                    state.selection?.let { SelectionHandles(it, offsetX, viewModel::stretch) }
                     ProgressLine(
                         progress = shown.progress,
                         chapters = state.toc.filter { it.depth == 1 }.map { it.page.toFloat() / shown.pageCount },
@@ -415,6 +423,63 @@ private fun Marks(state: ReaderState, offsetX: Int, ink: Color) {
     }
 }
 
+/** Handles under both ends of the selection: dragging one moves that end, and the other stays. */
+@Composable
+private fun SelectionHandles(selection: Selection, offsetX: Int, onStretch: (from: Point, x: Int, y: Int) -> Unit) {
+    val first = selection.rects.firstOrNull() ?: return
+    val last = selection.rects.last()
+    // A drag outlives the selection it started with: each move makes a new one.
+    val current by rememberUpdatedState(selection)
+    SelectionHandle("selection-start", first.left - offsetX, first.bottom, offsetX, { current.startPoint }, { current.endPoint }, onStretch)
+    SelectionHandle("selection-end", last.right - offsetX, last.bottom, offsetX, { current.endPoint }, { current.startPoint }, onStretch)
+}
+
+/**
+ * One handle, hanging under the line at [x], [y] of the screen. [own] is the
+ * end it moves, [other] the end that stays; both are read as the drag starts.
+ */
+@Composable
+private fun SelectionHandle(
+    tag: String, x: Int, y: Int, offsetX: Int,
+    own: () -> Point?, other: () -> Point?,
+    onStretch: (from: Point, x: Int, y: Int) -> Unit,
+) {
+    var place by remember { mutableStateOf<LayoutCoordinates?>(null) }
+    val shift by rememberUpdatedState(offsetX)
+    Canvas(
+        Modifier
+            .offset { IntOffset(x - HANDLE_SIZE.roundToPx() / 2, y) }
+            .size(HANDLE_SIZE)
+            .onGloballyPositioned { place = it }
+            .testTag(tag)
+            .pointerInput(Unit) {
+                // The handle moves as the selection follows it: where the finger is is taken on the page, not on the handle.
+                fun onPage(at: Offset) = (place?.positionInParent() ?: Offset.Zero) + at + Offset(shift.toFloat(), 0f)
+                var from: Point? = null
+                var grab = Offset.Zero
+                detectDragGestures(
+                    onDragStart = { at ->
+                        from = other()
+                        // The finger holds the handle below the line; the end keeps as far from the finger.
+                        grab = own()?.let { Offset(it.x.toFloat(), it.y.toFloat()) - onPage(at) } ?: Offset.Zero
+                    },
+                    onDragEnd = { from = null },
+                    onDragCancel = { from = null },
+                    onDrag = { change, _ ->
+                        change.consume()
+                        val to = onPage(change.position) + grab
+                        from?.let { onStretch(it, to.x.roundToInt(), to.y.roundToInt()) }
+                    },
+                )
+            },
+    ) {
+        val middle = size.width / 2
+        val radius = HANDLE_RADIUS.toPx()
+        drawLine(HANDLE, Offset(middle, 0f), Offset(middle, HANDLE_STEM.toPx()), 2.dp.toPx())
+        drawCircle(HANDLE, radius, Offset(middle, HANDLE_STEM.toPx() + radius))
+    }
+}
+
 /** A thin line along the bottom edge: how far the reader is, with a tick where each chapter starts. */
 @Composable
 private fun ProgressLine(progress: Float, chapters: List<Float>, color: Color, modifier: Modifier) {
@@ -481,3 +546,7 @@ private const val EDGE_SHARE = 0.15f
 private const val MIN_BRIGHTNESS = 0.01f
 private const val TURN_MILLIS = 180
 private val SELECTION = Color(0x553D8BFD)
+private val HANDLE = Color(0xFF3D8BFD)
+private val HANDLE_SIZE = 40.dp
+private val HANDLE_STEM = 6.dp
+private val HANDLE_RADIUS = 8.dp
