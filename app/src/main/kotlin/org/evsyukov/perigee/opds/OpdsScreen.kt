@@ -306,8 +306,7 @@ private fun EntryRow(entry: OpdsEntry, state: OpdsState, model: OpdsViewModel, o
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-            // One file per format the app reads; the catalog's first choice of each.
-            val files = entry.downloads.filter { it.format.isNotEmpty() }.distinctBy { it.format }
+            val files = readableDownloads(entry)
             for (link in files) DownloadLine(entry, link, state.downloads[link.url], model, onOpen)
             if (entry.downloads.isNotEmpty() && files.isEmpty()) {
                 Text(
@@ -318,6 +317,10 @@ private fun EntryRow(entry: OpdsEntry, state: OpdsState, model: OpdsViewModel, o
         }
     }
 }
+
+/** The files of [entry] the app reads: one per format, the catalog's first choice of each. */
+internal fun readableDownloads(entry: OpdsEntry): List<OpdsLink> =
+    entry.downloads.filter { it.format.isNotEmpty() }.distinctBy { it.format }
 
 @Composable
 private fun DownloadLine(entry: OpdsEntry, link: OpdsLink, download: Download?, model: OpdsViewModel, onOpen: (File) -> Unit) {
