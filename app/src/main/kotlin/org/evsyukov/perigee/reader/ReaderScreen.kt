@@ -229,14 +229,6 @@ fun ReaderScreen(file: File, onClose: () -> Unit, viewModel: ReaderViewModel = v
                                     }
                                 }
                             }
-                            .pointerInput(offsetX) {
-                                detectDragGesturesAfterLongPress(
-                                    onDragStart = { at -> viewModel.select(at.x.toInt() + offsetX, at.y.toInt(), extend = false) },
-                                    onDrag = { change, _ ->
-                                        viewModel.select(change.position.x.toInt() + offsetX, change.position.y.toInt(), extend = true)
-                                    },
-                                )
-                            }
                             .pointerInput(Unit) {
                                 var moved = Offset.Zero
                                 var gesture = Drag.Undecided
@@ -271,6 +263,16 @@ fun ReaderScreen(file: File, onClose: () -> Unit, viewModel: ReaderViewModel = v
                                             val level = (startBrightness - moved.y / size.height).coerceIn(MIN_BRIGHTNESS, 1f)
                                             viewModel.updatePrefs { it.copy(brightness = level) }
                                         }
+                                    },
+                                )
+                            }
+                            // Last, so it sees a moving finger before the swipes above: once a finger has been
+                            // held, its movement stretches the selection and neither turns the page nor is lost.
+                            .pointerInput(offsetX) {
+                                detectDragGesturesAfterLongPress(
+                                    onDragStart = { at -> viewModel.select(at.x.toInt() + offsetX, at.y.toInt(), extend = false) },
+                                    onDrag = { change, _ ->
+                                        viewModel.select(change.position.x.toInt() + offsetX, change.position.y.toInt(), extend = true)
                                     },
                                 )
                             },
