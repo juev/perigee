@@ -11,6 +11,7 @@ import org.evsyukov.perigee.data.Covers
 import org.evsyukov.perigee.data.Folder
 import org.evsyukov.perigee.data.FoundBook
 import org.evsyukov.perigee.data.Library
+import org.evsyukov.perigee.engine.Engine
 
 /** What a look through a folder changed. */
 data class ScanResult(val found: Int, val lost: Int, val unreadable: Int)
@@ -26,6 +27,7 @@ class LibraryScanner(
     private val covers: Covers,
     /** Notes about files being read, kept across runs of the app. */
     private val notes: File = File(context.filesDir, "scan"),
+    private val describe: Describe = Engine::describe,
 ) {
     private val reading = File(notes, "reading")
     private val skipped = File(notes, "skipped")
@@ -81,7 +83,7 @@ class LibraryScanner(
         try {
             val descriptor = context.contentResolver.openFileDescriptor(Uri.parse(file.uri), "r") ?: return null
             return descriptor.use {
-                val book = readBook(context, covers, it, file.name, format) ?: return null
+                val book = readBook(context, covers, it, file.name, format, describe) ?: return null
                 FoundBook(
                     book.id, file.uri, file.size, file.modified, book.format, book.title, book.authors, book.language,
                     book.series, book.seriesNumber, book.hasCover, book.description,

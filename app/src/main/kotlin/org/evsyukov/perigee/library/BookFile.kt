@@ -54,12 +54,14 @@ internal suspend fun unpackKept(context: Context, library: Library) = withContex
  * cover, authors, series — and joins the library with that. An archive of one
  * FB2 must have been unpacked before. False when the engine cannot read the file.
  */
-internal suspend fun describeKeptFile(context: Context, library: Library, covers: Covers, file: File): Boolean =
+internal suspend fun describeKeptFile(
+    context: Context, library: Library, covers: Covers, file: File, describe: Describe = Engine::describe,
+): Boolean =
     withContext(Dispatchers.IO) {
         val format = Library.formatOf(file.name)
         if (format.isEmpty() || format == ARCHIVE) return@withContext false
         val said = ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY).use {
-            readBook(context, covers, it, file.name, format)
+            readBook(context, covers, it, file.name, format, describe)
         } ?: return@withContext false
         library.keep(file, said)
         true
@@ -71,14 +73,16 @@ internal suspend fun describeKeptFile(context: Context, library: Library, covers
  * series. One kept as an archive becomes the FB2 inside on the way, with what
  * the reader left in it.
  */
-internal suspend fun describeKept(context: Context, library: Library, covers: Covers) = withContext(Dispatchers.IO) {
+internal suspend fun describeKept(
+    context: Context, library: Library, covers: Covers, describe: Describe = Engine::describe,
+) = withContext(Dispatchers.IO) {
     for (book in library.keptUndescribed()) {
         val file = File(book.path)
         if (!file.isFile) continue
         val format = book.format.ifEmpty { Library.formatOf(file.name) }
         if (format.isEmpty()) continue
         val said = ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY).use {
-            readBook(context, covers, it, file.name, format)
+            readBook(context, covers, it, file.name, format, describe)
         } ?: continue
         var kept = file
         if (said.id != book.id) {

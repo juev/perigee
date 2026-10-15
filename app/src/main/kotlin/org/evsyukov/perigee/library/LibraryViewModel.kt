@@ -33,6 +33,7 @@ import org.evsyukov.perigee.data.Library
 import org.evsyukov.perigee.data.LibraryPreferences
 import org.evsyukov.perigee.data.ReadingStatus
 import org.evsyukov.perigee.data.Shelf
+import org.evsyukov.perigee.engine.Engine
 import org.evsyukov.perigee.server.Server
 import org.evsyukov.perigee.server.SyncWork
 import org.evsyukov.perigee.sync.BookOrbit
@@ -138,6 +139,8 @@ class LibraryViewModel(
     /** The server books are sent to, and who is signed in to it; without them nothing is offered to be sent. */
     private val orbit: BookOrbit? = null,
     private val accounts: Accounts? = null,
+    /** What a book file says about itself. */
+    private val describe: Describe = Engine::describe,
     private val sourceOf: (Folder) -> BookSource,
 ) : AndroidViewModel(application) {
 
@@ -147,10 +150,10 @@ class LibraryViewModel(
         { Server.matchNewBooks(application) },
         { SyncWork.soon(application) },
         Server.get(application), Accounts.get(application),
-        { folder -> TreeSource(application.contentResolver, Uri.parse(folder.uri)) },
+        sourceOf = { folder -> TreeSource(application.contentResolver, Uri.parse(folder.uri)) },
     )
 
-    private val scanner = LibraryScanner(application, library, covers)
+    private val scanner = LibraryScanner(application, library, covers, describe = describe)
 
     private data class Looking(val query: String = "", val group: Group? = null, val scanning: Boolean = false)
     private data class Stored(
@@ -398,7 +401,7 @@ class LibraryViewModel(
                 scan = viewModelScope.launch {
                     looking.update { it.copy(scanning = true) }
                     try {
-                        describeKept(getApplication(), library, covers)
+                        describeKept(getApplication(), library, covers, describe)
                         unpackKept(getApplication(), library)
                         for (folder in library.folders().first()) scanner.scan(folder, sourceOf(folder))
                     } finally {

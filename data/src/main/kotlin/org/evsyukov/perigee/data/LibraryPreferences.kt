@@ -1,12 +1,15 @@
 package org.evsyukov.perigee.data
 
 import android.content.Context
+import java.io.File
 import androidx.datastore.core.DataStore
+import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 
@@ -76,5 +79,9 @@ class LibraryPreferences private constructor(private val store: DataStore<Prefer
         fun get(context: Context): LibraryPreferences = instance ?: synchronized(this) {
             instance ?: LibraryPreferences(context.applicationContext.libraryStore).also { instance = it }
         }
+
+        /** Preferences kept in [file] for as long as [scope] lives, for tests: each test has its own. */
+        fun inFile(file: File, scope: CoroutineScope): LibraryPreferences =
+            LibraryPreferences(PreferenceDataStoreFactory.create(scope = scope) { file })
     }
 }
