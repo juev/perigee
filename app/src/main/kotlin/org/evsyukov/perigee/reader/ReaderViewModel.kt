@@ -111,7 +111,7 @@ data class ReaderState(
 class ReaderViewModel(
     application: Application,
     private val library: Library,
-    /** Asks the server about a book just opened, see [Server.bookOpened]. */
+    /** Asks the server about a book just opened, or come back to, see [Server.bookOpened]. */
     private val bookOpened: suspend (bookId: String) -> Unit,
 ) : AndroidViewModel(application) {
 
@@ -148,6 +148,9 @@ class ReaderViewModel(
     /** The page the reader is looking at and since when, for the time spent on it. */
     private data class Looking(val bookId: String, val page: Int, val pageCount: Int, val since: Long)
     private var looking: Looking? = null
+
+    /** The app was put away with the book open: the reader may have read on in it elsewhere meanwhile. */
+    private var away = false
 
     init {
         viewModelScope.launch {
@@ -209,6 +212,7 @@ class ReaderViewModel(
 
     /** The app is put away: the page is looked at no more, and what was read is to be sent. */
     fun paused() {
+        if (_state.value.book != null) away = true
         act { open -> open.saveCache() }
         viewModelScope.launch {
             stopLooking()
@@ -216,9 +220,17 @@ class ReaderViewModel(
         }
     }
 
-    /** The app is back: the page shown is looked at again. */
+    /**
+     * The app is back: the page shown is looked at again, and the server is
+     * asked, as when the book was opened, about a later place and the marks
+     * made elsewhere meanwhile.
+     */
     fun resumed() {
         val book = _state.value.book ?: return
+        if (away) {
+            away = false
+            viewModelScope.launch { bookOpened(book.id) }
+        }
         val page = _state.value.page ?: return
         if (looking == null) looking = Looking(book.id, page.index, page.pageCount, clock())
     }

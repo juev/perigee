@@ -3,6 +3,8 @@ package org.evsyukov.perigee.reader
 import android.app.Application
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.ViewModelStore
+import androidx.lifecycle.viewmodel.initializer
+import androidx.lifecycle.viewmodel.viewModelFactory
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import java.io.File
@@ -54,12 +56,20 @@ class ReaderViewModelTest {
     /** The model is driven as the screen drives it: on the main thread. */
     private fun onMain(block: () -> Unit) = instrumentation.runOnMainSync(block)
 
-    /** A model of its own, as a new start of the app, with the book open at the size of a phone's page. */
-    private fun opened(): ReaderViewModel {
+    /**
+     * A model of its own, as a new start of the app, with the book open at the size of a phone's page.
+     * With [asked], the server is not there, and the books it would be asked about are put into it.
+     */
+    private fun opened(asked: MutableList<String>? = null): ReaderViewModel {
         lateinit var model: ReaderViewModel
         onMain {
             val store = ViewModelStore().also(stores::add)
-            model = ViewModelProvider(store, ViewModelProvider.AndroidViewModelFactory.getInstance(context))[ReaderViewModel::class.java]
+            val factory = if (asked == null) {
+                ViewModelProvider.AndroidViewModelFactory.getInstance(context)
+            } else {
+                viewModelFactory { initializer { ReaderViewModel(context, library) { id -> synchronized(asked) { asked += id } } } }
+            }
+            model = ViewModelProvider(store, factory)[ReaderViewModel::class.java]
             model.open(book)
             model.setViewport(Viewport(WIDTH, HEIGHT, DENSITY, DENSITY_DPI))
         }
@@ -180,6 +190,22 @@ class ReaderViewModelTest {
         assertEquals(1, model.shown())
         assertNull(runBlocking { library.pendingOffer(id) })
         assertEquals("remembered as seen", 100L, runBlocking { library.book(id) }!!.remoteSeenAt)
+    }
+
+    @Test
+    fun serverIsAskedAgainWhenTheReaderComesBackToTheBook() {
+        val asked = mutableListOf<String>()
+        val model = opened(asked)
+        val id = model.state.value.book!!.id
+        untilTrue("the server is asked about the book opened") { synchronized(asked) { asked == listOf(id) } }
+
+        // The screen shows the book that was just opened: nothing new to ask about.
+        onMain { model.resumed() }
+        // The reader puts the app away, reads on elsewhere, and comes back.
+        onMain { model.paused() }
+        onMain { model.resumed() }
+
+        untilTrue("the server is asked again") { synchronized(asked) { asked == listOf(id, id) } }
     }
 
     @Test
