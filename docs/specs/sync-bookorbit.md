@@ -106,7 +106,7 @@ Requirements R7 and R9. `BookOrbit.sync()` is one round: the reader's places, st
 - A place from elsewhere that is the same share of the book as here, within a thousandth, is not offered: xpointers of one place differ between the engine and the server and cannot be compared as text.
 - A place known only as a share — FB2 read in the web reader — is offered and gone to by the share.
 - The server answers a book it has no more with 404; the book stops being synced and stays the reader's.
-- A place is asked about when its book is opened, and in every round for books being read and books with something to send.
+- A place is asked about when its book is opened or the reader comes back to the open book from elsewhere, and in every round for books being read and books with something to send.
 
 The server orders places by whole seconds, and a later place there is "later" by the clocks of the devices that sent it: a device whose clock is wrong offers, or fails to offer, accordingly.
 
@@ -151,7 +151,7 @@ The devices' channel carries neither the stars of quotes nor a title given to a 
 
 - A round is asked for when the app starts, when a book is closed, when the app is put away with a book open, and when a status or a rating is changed. It runs through WorkManager some seconds later, when there is a network; a round that could not reach the server is tried again with growing pauses.
 - What only the reader can put right — a session that ended, the KOReader password, a server of another version — is not tried over and over; it is said on the server's screen.
-- There is no round on a timer: what was read elsewhere is learnt when the app is next opened, or the book is.
+- There is no round on a timer. A book left open while the app was put away is asked about again, place and marks, when the reader comes back to it: a place read elsewhere meanwhile is offered then. What was read elsewhere in other books is learnt when the app is next opened, or the book is.
 
 Sending is safe to repeat: the last place wins by its own time, status and rating are set to a value, and pages read are deduplicated by the server.
 
@@ -246,7 +246,7 @@ Checked by hand on the emulator against the same server: signing in over `http:/
 - Tying a book to the server's one by its title and authors.
 - OIDC.
 - Download progress, cancelling, resuming.
-- A round of syncing on a timer, and one while a book is open: a place read elsewhere meanwhile is learnt when the book is next opened.
+- A round of syncing on a timer: a place read elsewhere while the open book stays on the screen is learnt when the reader next comes back to it.
 - A sign in the library or the reader that something waits to be sent, or could not be.
 - The reader's review of a book, and the statuses `on_hold` and `abandoned`.
 - Styles of a quote other than a highlight (underline, strike-through), which the server has and the app shows as highlights.
