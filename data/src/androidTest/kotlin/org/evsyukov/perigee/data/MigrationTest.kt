@@ -91,6 +91,41 @@ class MigrationTest {
         }
     }
 
+    @Test
+    fun epubsReadBeforeTheyWereToldFromAListAreReadAgain() = runBlocking {
+        helper.createDatabase(NAME, 8).use { db ->
+            db.execSQL("INSERT INTO folders (id, uri, name, addedAt) VALUES (3, 'content://tree/books', 'Books', 1)")
+            // Kept in the app, as one opened by hand or from the server.
+            db.execSQL(
+                "INSERT INTO books (id, path, title, author, xpointer, progress, openedAt, format, series, description) " +
+                    "VALUES ('kept', '/data/books/kept.epub', 'Kept', '', '/body/p[9]', 0.5, 7, 'epub', 'The Guardian''s Best 100 Novels', 'About it')",
+            )
+            db.execSQL(
+                "INSERT INTO books (id, path, title, author, xpointer, progress, openedAt, uri, folderId, fileSize, fileModified, format, series, description) " +
+                    "VALUES ('found', '', 'Found', '', NULL, 0, 0, 'content://tree/books/f.epub', 3, 10, 20, 'epub', 'A Reading List', '')",
+            )
+            db.execSQL(
+                "INSERT INTO books (id, path, title, author, xpointer, progress, openedAt, uri, folderId, fileSize, fileModified, format, series, description) " +
+                    "VALUES ('fb2', '', 'Not An EPUB', '', NULL, 0, 0, 'content://tree/books/b.fb2', 3, 11, 21, 'fb2', 'Its Series', 'About')",
+            )
+        }
+        helper.runMigrationsAndValidate(NAME, 9, true).close()
+
+        val database = Room.databaseBuilder(instrumentation.targetContext, ReadingDatabase::class.java, NAME).build()
+        try {
+            val library = Library(database) { 1000 }
+            assertEquals(listOf("kept"), library.keptUndescribed().map { it.id })
+            val files = library.filesIn(3).associateBy { it.id }
+            assertFalse("read again at the next look at the folder", files.getValue("found").described)
+            assertTrue("other books are not read again", files.getValue("fb2").described)
+            val kept = checkNotNull(library.book("kept"))
+            assertEquals("where the reader stopped is kept", "/body/p[9]", kept.xpointer)
+            assertEquals(7L, kept.openedAt)
+        } finally {
+            database.close()
+        }
+    }
+
     private companion object {
         const val NAME = "migration-test.db"
     }
