@@ -618,6 +618,7 @@ private fun Books(
 @Composable
 internal fun serverLine(book: Book, signedIn: Boolean, sending: Sending?): String? = when {
     sending is Sending.Running -> stringResource(R.string.send_running, sending.percent)
+    book.syncUnsent && signedIn -> stringResource(R.string.book_on_server_unsent)
     book.serverFileId != null -> stringResource(R.string.book_on_server)
     book.serverLikeId != null -> stringResource(R.string.book_like_on_server)
     // Said only once the server was asked: before that it is not known.

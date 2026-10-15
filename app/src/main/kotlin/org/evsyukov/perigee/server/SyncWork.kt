@@ -28,11 +28,16 @@ internal enum class SyncOutcome {
     Waiting,
 }
 
-/** One round of syncing, with what is wrong told apart by whether trying again can help. */
+/**
+ * One round of syncing, with what is wrong told apart by whether trying again
+ * can help. A round that went through, and one that could not reach the
+ * server, are remembered with the account for the server's screen to say.
+ */
 internal suspend fun syncRound(orbit: BookOrbit, accounts: Accounts): SyncOutcome {
     if (accounts.current() == null) return SyncOutcome.Done
     return try {
         orbit.sync()
+        accounts.roundDone()
         SyncOutcome.Done
     } catch (e: SignedOutException) {
         SyncOutcome.Waiting
@@ -41,6 +46,7 @@ internal suspend fun syncRound(orbit: BookOrbit, accounts: Accounts): SyncOutcom
     } catch (e: IncompatibleServerException) {
         SyncOutcome.Waiting
     } catch (e: IOException) {
+        accounts.roundUnreachable()
         SyncOutcome.Later
     }
 }

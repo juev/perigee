@@ -1,6 +1,7 @@
 package org.evsyukov.perigee.server
 
 import android.content.Intent
+import android.text.format.DateUtils
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -68,6 +69,7 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
@@ -295,6 +297,8 @@ private fun Books(padding: PaddingValues, state: ServerState, model: ServerViewM
             if (channel != null && channel != DeviceChannel.Ready) {
                 item("channel") { Channel(channel, state, model::devicePassword, model::newDevicePassword) }
             }
+            val account = state.account
+            if (channel == DeviceChannel.Ready && account != null) item("sync") { Synced(account, state.unsent) }
             state.failure?.let { failure ->
                 item("failure") {
                     Column(
@@ -321,6 +325,31 @@ private fun Books(padding: PaddingValues, state: ServerState, model: ServerViewM
                 BookRow(book, state, model, onOpen)
                 HorizontalDivider()
             }
+        }
+    }
+}
+
+/** How the syncing of reading went last, and what is still to reach the server. */
+@Composable
+private fun Synced(account: Account, unsent: Int) {
+    val now = System.currentTimeMillis()
+    fun ago(at: Long) = DateUtils.getRelativeTimeSpanString(at, now, DateUtils.MINUTE_IN_MILLIS).toString()
+    Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp).testTag("server-sync")) {
+        when {
+            account.unreachableSince > 0 -> Text(
+                stringResource(R.string.server_sync_unreachable, ago(account.unreachableSince)),
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error,
+            )
+            account.syncedAt > 0 -> Text(
+                stringResource(R.string.server_synced_at, ago(account.syncedAt)),
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        if (unsent > 0) {
+            Text(
+                pluralStringResource(R.plurals.server_unsent, unsent, unsent),
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
     }
 }

@@ -170,6 +170,25 @@ class ServerViewModelTest {
     }
 
     @Test
+    fun booksWithSomethingNotSentAreCounted() {
+        val hash = keepBookFile()
+        server.files[hash] = 7L to 70L
+        serverHas(book(7, "Listed Title", 70))
+        signIn()
+        until("the book is known to be on the server") { it.onDevice[70L] == hash }
+        assertEquals(0, model.state.value.unsent)
+
+        runBlocking {
+            library.savePosition(hash, "/a", 0f)
+            library.savePosition(hash, "/b", 0.5f)
+        }
+        until("the place read is counted as not sent") { it.unsent == 1 }
+
+        runBlocking { library.placeSent(hash, checkNotNull(library.book(hash)).movedAt) }
+        until("the place sent is not") { it.unsent == 0 }
+    }
+
+    @Test
     fun bookTheReaderAlreadyHasIsFoundOnTheServer() {
         // The book came to the device some other way; the server has the same file.
         val hash = keepBookFile()

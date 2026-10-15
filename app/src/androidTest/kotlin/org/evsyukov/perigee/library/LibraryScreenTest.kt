@@ -152,6 +152,21 @@ class LibraryScreenTest {
     }
 
     @Test
+    fun bookWithAPlaceNotSentYetSaysSo() {
+        shelve(found("Read Book"))
+        signIn()
+        runBlocking {
+            library.onServer("Read Book", serverBookId = 7, serverFileId = 70)
+            library.savePosition("Read Book", "/a", 0f)
+            library.savePosition("Read Book", "/b", 0.5f)
+        }
+        show()
+        rule.waitUntil(TIMEOUT) {
+            rule.onAllNodesWithText(string(R.string.book_on_server_unsent), substring = true).fetchSemanticsNodes().isNotEmpty()
+        }
+    }
+
+    @Test
     fun bookIsSentToTheServerFromItsMenu() {
         val id = keep("Sent Book")
         signIn()
