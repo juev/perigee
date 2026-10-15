@@ -18,6 +18,9 @@
     <string name="action_share">Поделиться</string>
     <string name="action_translate">Перевод, словарь</string>
     <string name="action_web_search">Искать в интернете</string>
+    <string name="action_star">Отметить звездой</string>
+    <string name="action_unstar">Снять звезду</string>
+    <string name="quote_starred">Со звездой</string>
     <string name="action_note">Заметка</string>
     <string name="action_save">Сохранить</string>
     <string name="action_cancel">Отмена</string>

@@ -42,11 +42,17 @@ internal object Server {
      * nothing when the server cannot be asked; the next round of syncing asks.
      */
     suspend fun bookOpened(context: Context, bookId: String) {
+        // Without an account there is no server to make.
         if (Accounts.get(context).current() == null) return
+        bookOpened(Accounts.get(context), get(context), bookId)
+    }
+
+    suspend fun bookOpened(accounts: Accounts, orbit: BookOrbit, bookId: String) {
+        if (accounts.current() == null) return
         try {
-            get(context).syncPlace(bookId)
+            orbit.syncPlace(bookId)
             // Quotes and bookmarks made elsewhere appear in the open book as they arrive.
-            get(context).syncMarks(bookId)
+            orbit.syncMarks(bookId)
         } catch (e: IOException) {
             // The reader came to read; whatever is wrong with the server is told on its own screen.
         }
