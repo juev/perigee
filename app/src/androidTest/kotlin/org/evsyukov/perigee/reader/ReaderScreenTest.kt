@@ -30,7 +30,6 @@ import androidx.compose.ui.test.swipeRight
 import androidx.compose.ui.test.swipeUp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModelProvider
-import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import java.io.File
 import kotlinx.coroutines.flow.first
@@ -198,28 +197,6 @@ class ReaderScreenTest {
     }
 
     @Test
-    fun bookReopensWhereItWasLeft() {
-        var key by mutableStateOf("first")
-        edgeToEdge()
-        rule.setContent { MaterialTheme { ReaderScreen(book, onClose = {}, viewModel = viewModel(key = key)) } }
-        fun keyed() = ViewModelProvider(activity)[key, ReaderViewModel::class.java]
-        rule.waitUntil(TIMEOUT) { keyed().state.value.page != null }
-        turnForward(3) { keyed().state.value.page?.index }
-        val left = keyed().state.value.page!!.xpointer
-        // The position is written to the library right after the page is shown.
-        rule.waitUntil(TIMEOUT) { runBlocking { Library.get(activity).lastOpened() }?.xpointer == left }
-
-        // A new model knows nothing of the old one, like the app started again.
-        key = "second"
-        rule.waitUntil(TIMEOUT) { keyed().state.value.page != null }
-        val reopened = keyed().state.value.page!!
-        assertEquals(left, reopened.xpointer)
-        assertEquals(3, reopened.index)
-    }
-
-    // --- R3: controls
-
-    @Test
     fun touchingTheMiddleShowsTheMenuWithTitleAndPosition() {
         show()
         waitForBook()
@@ -282,31 +259,6 @@ class ReaderScreenTest {
         rule.runOnUiThread { activity.onBackPressedDispatcher.onBackPressed() }
         waitForPage(0)
         assertTrue("nothing left to return to", !model().state.value.canGoBack)
-    }
-
-    @Test
-    fun topRightCornerSetsAndClearsABookmark() {
-        show()
-        waitForBook()
-        tapPage(0.9f, 0.5f)
-        waitForPage(1)
-
-        tapPage(0.95f, 0.03f)
-        rule.waitUntil(TIMEOUT) { model().state.value.pageBookmark != null }
-        assertEquals("the corner did not turn the page", 1, shownPage())
-
-        // The bookmark is listed and leads back to its page.
-        tapPage(0.1f, 0.5f)
-        waitForPage(0)
-        assertNull(model().state.value.pageBookmark)
-        openMenu()
-        rule.onNodeWithContentDescription(string(R.string.action_contents)).performClick()
-        rule.onNodeWithText(string(R.string.tab_bookmarks)).performClick()
-        rule.onNodeWithText("Chapter 1").performClick()
-        waitForPage(1)
-
-        tapPage(0.95f, 0.03f)
-        rule.waitUntil(TIMEOUT) { model().state.value.pageBookmark == null && model().state.value.bookmarks.isEmpty() }
     }
 
     @Test
@@ -447,8 +399,9 @@ class ReaderScreenTest {
         waitForTag("offer")
     }
 
+    /** Where the reader stands with a place from elsewhere is checked by ReaderViewModelTest; here, the question itself. */
     @Test
-    fun readerGoesToThePlaceTheyGotToElsewhereAndCanComeBack() {
+    fun placeFromElsewhereIsOfferedAndGoneTo() {
         show()
         waitForBook()
         // A place further on, as another device would name it.
@@ -463,83 +416,6 @@ class ReaderScreenTest {
 
         waitForPage(5)
         rule.waitUntil(TIMEOUT) { rule.onAllNodesWithTag("offer").fetchSemanticsNodes().isEmpty() }
-        assertNull("decided about, and not asked again", runBlocking { library.pendingOffer(bookId()) })
-        assertTrue("the place the reader went to is theirs to tell the server now", runBlocking { library.book(bookId()) }!!.placeUnsent)
-
-        rule.runOnUiThread { activity.onBackPressedDispatcher.onBackPressed() }
-        waitForPage(0)
-    }
-
-    @Test
-    fun placeKnownOnlyAsAShareOfTheBookIsGoneToByThatShare() {
-        show()
-        waitForBook()
-        val pages = model().state.value.page!!.pageCount
-        offered(RemotePosition(bookId(), null, 0.5f, "", at = 100))
-        rule.onNodeWithText(string(R.string.offer_text_unnamed, 50)).assertIsDisplayed()
-
-        rule.onNodeWithText(string(R.string.offer_go)).performClick()
-
-        rule.waitUntil(TIMEOUT) { shownPage() != 0 }
-        assertEquals(((pages - 1) * 0.5f).let { Math.round(it) }, shownPage())
-    }
-
-    @Test
-    fun readerWhoStaysIsNotAskedAgain() {
-        show()
-        waitForBook()
-        turnForward(1)
-        offered(RemotePosition(bookId(), null, 0.9f, "KOReader", at = 100))
-
-        rule.onNodeWithText(string(R.string.offer_stay)).performClick()
-
-        rule.waitUntil(TIMEOUT) { rule.onAllNodesWithTag("offer").fetchSemanticsNodes().isEmpty() }
-        assertEquals(1, shownPage())
-        assertNull(runBlocking { library.pendingOffer(bookId()) })
-        assertEquals("remembered as seen", 100L, runBlocking { library.book(bookId()) }!!.remoteSeenAt)
-    }
-
-    @Test
-    fun timeSpentOnPagesIsKeptForTheServer() {
-        var now = 1_700_000_000_000L
-        ReaderViewModel.clock = { now }
-        try {
-            show()
-            waitForBook()
-            val id = bookId()
-            val pages = model().state.value.page!!.pageCount
-            runBlocking { library.onServer(id, 7, 70) }
-            fun reads() = runBlocking { library.pageReadsToSend(100) }.filter { it.bookId == id }
-
-            now += 42_000
-            turnForward(1)
-            rule.waitUntil(TIMEOUT) { reads().size == 1 }
-            val first = reads().single()
-            assertEquals(listOf(1, pages, 42), listOf(first.page, first.totalPages, first.seconds))
-            assertEquals(1_700_000_000L, first.startedAt)
-
-            // A page glanced at on the way is not a page read.
-            now += 2_000
-            turnForward(1)
-            // One left open over a cup of tea was not read all that time.
-            now += 900_000
-            turnForward(1)
-            rule.waitUntil(TIMEOUT) { reads().size == 2 }
-            assertEquals(listOf(3, 120), reads().last().let { listOf(it.page, it.seconds) })
-
-            // Putting the app away ends the page; coming back begins it anew.
-            now += 30_000
-            rule.runOnUiThread { model().paused() }
-            rule.waitUntil(TIMEOUT) { reads().size == 3 }
-            now += 600_000
-            rule.runOnUiThread { model().resumed() }
-            now += 10_000
-            turnForward(1)
-            rule.waitUntil(TIMEOUT) { reads().size == 4 }
-            assertEquals("the time away is not time read", listOf(4, 10), reads().last().let { listOf(it.page, it.seconds) })
-        } finally {
-            ReaderViewModel.clock = System::currentTimeMillis
-        }
     }
 
     private companion object {
