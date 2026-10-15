@@ -386,6 +386,24 @@ class ReaderScreenTest {
     }
 
     @Test
+    fun fingerHeldAndMovedStretchesTheSelectionOverLines() {
+        show()
+        waitForBook()
+        val pageBefore = shownPage()
+        rule.onNodeWithTag("page").performTouchInput {
+            down(Offset(width * 0.3f, height * 0.4f))
+            advanceEventTime(viewConfiguration.longPressTimeoutMillis + 100)
+            // In small steps, as a finger moves, to a line further down.
+            repeat(10) { step -> moveTo(Offset(width * (0.3f + 0.04f * (step + 1)), height * (0.4f + 0.01f * (step + 1)))) }
+            up()
+        }
+        waitFor("the selection takes more than one line") { (model().state.value.selection?.rects?.size ?: 0) > 1 }
+        val text = model().state.value.selection!!.range.text
+        assertTrue("several words are selected: '$text'", text.trim().contains(' '))
+        assertEquals("stretching a selection does not turn the page", pageBefore, shownPage())
+    }
+
+    @Test
     fun colourDotTurnsTheSelectionIntoAQuoteOfThatColour() {
         show()
         waitForBook()
