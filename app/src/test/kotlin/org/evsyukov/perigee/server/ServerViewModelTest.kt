@@ -4,6 +4,10 @@ import android.app.Application
 import android.os.Looper
 import androidx.test.core.app.ApplicationProvider
 import java.io.File
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.evsyukov.perigee.FakeAndroidKeyStore
@@ -46,6 +50,8 @@ class ServerViewModelTest {
     private val accounts = Accounts.of(library)
     private val orbit = BookOrbit(accounts, library, "0.0.1")
     private val server = FakeOrbit()
+    private val storeScope = CoroutineScope(Dispatchers.IO + Job())
+    private val preferences = LibraryPreferences.inFile(File(context.filesDir, "library.preferences_pb"), storeScope)
     private val bookFile = File(context.cacheDir, "server-book.fb2").apply { writeText("<FictionBook>a book</FictionBook>") }
 
     /** A file the engine would read, as it would describe it; the engine itself does not run on the JVM. */
@@ -55,14 +61,17 @@ class ServerViewModelTest {
 
     private val model by lazy {
         val arrivals = Arrivals(
-            context, library, Covers(File(context.cacheDir, "server-covers")), LibraryPreferences.get(context),
+            context, library, Covers(File(context.cacheDir, "server-covers")), preferences,
             { c, file, name -> describe(c, file, name) },
         ) { BookSink { _, _ -> null } }
         ServerViewModel(context, orbit, accounts, library, arrivals)
     }
 
     @After
-    fun stopServer() = server.close()
+    fun stopServer() {
+        server.close()
+        storeScope.cancel()
+    }
 
     /** Tokens are sealed as on a device, with a key of the JVM's. */
     @Before
@@ -71,7 +80,7 @@ class ServerViewModelTest {
     /** Downloaded books stay in the app, as after the reader said so. */
     @Before
     fun downloadsStayInTheApp() = runBlocking<Unit> {
-        LibraryPreferences.get(context).update { LibraryPrefs(downloadsFolder = null, downloadsAsked = true) }
+        preferences.update { LibraryPrefs(downloadsFolder = null, downloadsAsked = true) }
     }
 
     /** Lets the model's work on the main thread run until [done] holds of its state. */

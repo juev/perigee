@@ -1,6 +1,7 @@
 package org.evsyukov.perigee.library
 
 import android.content.Intent
+import android.content.res.Resources
 import android.graphics.BitmapFactory
 import android.net.Uri
 import android.util.LruCache
@@ -539,22 +540,27 @@ private fun ShelfEmpty(shelf: Shelf, query: String, inGroup: Boolean) {
         EmptyState(Icons.Filled.Search, stringResource(R.string.nothing_found), text = stringResource(R.string.nothing_found_for, query.trim()))
         return
     }
+    val hint = shelfEmptyHint(LocalContext.current.resources, shelf, inGroup)
+    val icon = if (shelf == Shelf.Favorites && !inGroup) Icons.Filled.FavoriteBorder else OpenBookIcon
+    EmptyState(icon, stringResource(R.string.shelf_empty), text = hint)
+}
+
+/** What would put books on an empty [shelf]; null when there is nothing to say. */
+internal fun shelfEmptyHint(resources: Resources, shelf: Shelf, inGroup: Boolean): String? {
     val status = when (shelf) {
         Shelf.Reading -> R.string.shelf_reading
         Shelf.ToRead -> R.string.shelf_to_read
         Shelf.Read -> R.string.shelf_read
         else -> null
     }
-    val hint = when {
-        status != null -> stringResource(R.string.shelf_empty_status, stringResource(status))
+    return when {
+        status != null -> resources.getString(R.string.shelf_empty_status, resources.getString(status))
         inGroup -> null
-        shelf == Shelf.Favorites -> stringResource(R.string.shelf_empty_favorites)
-        shelf == Shelf.Collections -> stringResource(R.string.shelf_empty_collections)
-        shelf == Shelf.Series -> stringResource(R.string.shelf_empty_series)
+        shelf == Shelf.Favorites -> resources.getString(R.string.shelf_empty_favorites)
+        shelf == Shelf.Collections -> resources.getString(R.string.shelf_empty_collections)
+        shelf == Shelf.Series -> resources.getString(R.string.shelf_empty_series)
         else -> null
     }
-    val icon = if (shelf == Shelf.Favorites && !inGroup) Icons.Filled.FavoriteBorder else OpenBookIcon
-    EmptyState(icon, stringResource(R.string.shelf_empty), text = hint)
 }
 
 @Composable

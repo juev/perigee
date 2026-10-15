@@ -45,6 +45,11 @@ android {
     testOptions {
         unitTests.isIncludeAndroidResources = true
     }
+    // Books and folders made up for the tests serve both the JVM's and the device's.
+    sourceSets {
+        getByName("test").kotlin.srcDir("src/sharedTest/kotlin")
+        getByName("androidTest").kotlin.srcDir("src/sharedTest/kotlin")
+    }
 }
 
 // The license texts the app shows are the files of the source tree.
