@@ -127,6 +127,27 @@ class SyncStateTest {
     }
 
     @Test
+    fun reviewIsKeptAsTheServerKeepsItAndGivesWayToNone() = runBlocking<Unit> {
+        val id = opened("reviewed.fb2").id
+        library.setReview(id, "  Worth it.\n")
+        assertEquals("no white space at its ends, as the server keeps it", "Worth it.", book(id).review)
+        assertTrue(book(id).reviewUnsent)
+
+        library.takeReview(id, "From the browser.")
+        assertEquals("the reader's own is not undone before the server heard of it", "Worth it.", book(id).review)
+        library.reviewSent(id, book(id).reviewChangedAt)
+        library.takeReview(id, "From the browser.")
+        assertEquals("From the browser.", book(id).review)
+        assertFalse("what came from the server is not sent back to it", book(id).reviewUnsent)
+
+        library.setReview(id, "x".repeat(Library.REVIEW_MAX_LENGTH + 5))
+        assertEquals("no longer than the server keeps", Library.REVIEW_MAX_LENGTH, book(id).review?.length)
+        library.setReview(id, " \n ")
+        assertNull("nothing but white space takes it off", book(id).review)
+        assertTrue("and that is news for the server", book(id).reviewUnsent)
+    }
+
+    @Test
     fun placeFromElsewhereWaitsForTheReaderToDecide() = runBlocking<Unit> {
         val id = opened("offered.fb2").id
         assertNull(library.offerOf(id).first())
@@ -182,6 +203,8 @@ class SyncStateTest {
         library.onServer(id, 7, 70)
         library.placeSent(id, book(id).movedAt)
         library.stateSent(id, book(id).stateChangedAt)
+        library.setReview(id, "Worth it.")
+        library.reviewSent(id, book(id).reviewChangedAt)
         library.offer(RemotePosition(id, "/z", 0.9f, "web", at = 700))
 
         accounts.signOut()
@@ -189,6 +212,7 @@ class SyncStateTest {
         val after = book(id)
         assertTrue("the next server has not heard where the reader is", after.placeUnsent)
         assertTrue(after.stateUnsent)
+        assertTrue("nor the reader's review", after.reviewUnsent)
         assertEquals(0L, after.remoteSeenAt)
         assertNull("an offer of the server left behind is dropped", library.pendingOffer(id))
         assertEquals("the reader's place stays", "/b", after.xpointer)

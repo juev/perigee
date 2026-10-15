@@ -112,6 +112,7 @@ import org.evsyukov.perigee.data.BookCollection
 import org.evsyukov.perigee.data.BookSort
 import org.evsyukov.perigee.data.Covers
 import org.evsyukov.perigee.data.Folder
+import org.evsyukov.perigee.data.Library
 import org.evsyukov.perigee.data.ReadingStatus
 import org.evsyukov.perigee.data.Shelf
 import org.evsyukov.perigee.ui.Centred
@@ -144,6 +145,7 @@ fun LibraryScreen(
     var searching by rememberSaveable { mutableStateOf(false) }
     var showFolders by rememberSaveable { mutableStateOf(false) }
     var collectionsOf by remember { mutableStateOf<String?>(null) }
+    var reviewOf by remember { mutableStateOf<String?>(null) }
     var aboutOf by rememberSaveable { mutableStateOf<String?>(null) }
     var naming by remember { mutableStateOf<Naming?>(null) }
 
@@ -237,6 +239,7 @@ fun LibraryScreen(
                 onFavorite = { model.setFavorite(it, !it.favorite) },
                 onStatus = model::setStatus,
                 onRating = model::setRating,
+                onReview = { reviewOf = it.id },
                 onCollections = { collectionsOf = it.id },
                 onAbout = { aboutOf = it.id },
             )
@@ -270,6 +273,17 @@ fun LibraryScreen(
             },
             onFavorite = { model.setFavorite(about, !about.favorite) },
             onClose = { aboutOf = null },
+        )
+    }
+    val reviewed = (state.listing as? Listing.Books)?.books?.firstOrNull { it.id == reviewOf }
+    if (reviewed != null) {
+        ReviewDialog(
+            reviewed,
+            onSave = {
+                model.setReview(reviewed, it)
+                reviewOf = null
+            },
+            onClose = { reviewOf = null },
         )
     }
     val shelved = (state.listing as? Listing.Books)?.books?.firstOrNull { it.id == collectionsOf }
@@ -574,6 +588,7 @@ private fun Books(
     onFavorite: (Book) -> Unit,
     onStatus: (Book, ReadingStatus) -> Unit,
     onRating: (Book, Int) -> Unit,
+    onReview: (Book) -> Unit,
     onCollections: (Book) -> Unit,
     onAbout: (Book) -> Unit,
 ) {
@@ -593,7 +608,7 @@ private fun Books(
             items(books, key = { it.id }) { book ->
                 BookCell(
                     book, covers, state.signedIn, state.sending[book.id], if (state.canSend(book)) onSend else null,
-                    onOpen, onFavorite, onStatus, onRating, onCollections, onAbout,
+                    onOpen, onFavorite, onStatus, onRating, onReview, onCollections, onAbout,
                 )
             }
         }
@@ -607,7 +622,7 @@ private fun Books(
             items(books, key = { it.id }) { book ->
                 BookRow(
                     book, covers, state.signedIn, state.sending[book.id], if (state.canSend(book)) onSend else null,
-                    onOpen, onFavorite, onStatus, onRating, onCollections, onAbout,
+                    onOpen, onFavorite, onStatus, onRating, onReview, onCollections, onAbout,
                 )
             }
         }
@@ -652,6 +667,7 @@ private fun BookRow(
     onFavorite: (Book) -> Unit,
     onStatus: (Book, ReadingStatus) -> Unit,
     onRating: (Book, Int) -> Unit,
+    onReview: (Book) -> Unit,
     onCollections: (Book) -> Unit,
     onAbout: (Book) -> Unit,
 ) {
@@ -694,13 +710,13 @@ private fun BookRow(
                 Icon(Icons.Filled.FavoriteBorder, stringResource(R.string.favorite_add, book.title))
             }
         }
-        BookActions(book, onSend, onStatus, onRating, onCollections, onAbout, onFavorite = null)
+        BookActions(book, onSend, onStatus, onRating, onReview, onCollections, onAbout, onFavorite = null)
     }
 }
 
 /**
  * The button of a book's menu and the menu: the book's own page, status,
- * stars, collections, sending to the server. [onFavorite] puts the favourite mark into the menu,
+ * stars, the reader's review, collections, sending to the server. [onFavorite] puts the favourite mark into the menu,
  * for where the book has no heart of its own beside it.
  */
 @Composable
@@ -710,6 +726,7 @@ private fun BookActions(
     onSend: ((Book) -> Unit)?,
     onStatus: (Book, ReadingStatus) -> Unit,
     onRating: (Book, Int) -> Unit,
+    onReview: (Book) -> Unit,
     onCollections: (Book) -> Unit,
     onAbout: (Book) -> Unit,
     onFavorite: ((Book) -> Unit)?,
@@ -771,6 +788,14 @@ private fun BookActions(
                     }
                 }
             }
+            DropdownMenuItem(
+                text = { Text(stringResource(if (book.review == null) R.string.action_review else R.string.action_review_edit)) },
+                leadingIcon = { Tick(false) },
+                onClick = {
+                    open = false
+                    onReview(book)
+                },
+            )
             HorizontalDivider()
             DropdownMenuItem(
                 text = { Text(stringResource(R.string.action_collections)) },
@@ -807,6 +832,7 @@ private fun BookCell(
     onFavorite: (Book) -> Unit,
     onStatus: (Book, ReadingStatus) -> Unit,
     onRating: (Book, Int) -> Unit,
+    onReview: (Book) -> Unit,
     onCollections: (Book) -> Unit,
     onAbout: (Book) -> Unit,
 ) {
@@ -822,7 +848,7 @@ private fun BookCell(
             // On the cover, so that the title under it has the whole width; darkened behind to be seen on any cover.
             CompositionLocalProvider(LocalContentColor provides Color.White) {
                 BookActions(
-                    book, onSend, onStatus, onRating, onCollections, onAbout, onFavorite,
+                    book, onSend, onStatus, onRating, onReview, onCollections, onAbout, onFavorite,
                     Modifier.align(Alignment.TopEnd).padding(4.dp).size(32.dp).background(Color.Black.copy(alpha = 0.4f), CircleShape),
                 )
             }
@@ -1011,6 +1037,31 @@ private fun NameDialog(title: String, initial: String, onDone: (String) -> Unit,
         },
         confirmButton = {
             TextButton(enabled = name.isNotBlank(), onClick = { onDone(name) }) { Text(stringResource(R.string.action_save)) }
+        },
+        dismissButton = { TextButton(onClick = onClose) { Text(stringResource(R.string.action_cancel)) } },
+    )
+}
+
+/** What the reader writes of a book; saved empty, it takes the review off. */
+@Composable
+private fun ReviewDialog(book: Book, onSave: (String) -> Unit, onClose: () -> Unit) {
+    val initial = book.review.orEmpty()
+    var field by remember { mutableStateOf(TextFieldValue(initial, TextRange(initial.length))) }
+    AlertDialog(
+        onDismissRequest = onClose,
+        title = { Text(stringResource(R.string.review_title)) },
+        text = {
+            OutlinedTextField(
+                value = field,
+                onValueChange = { if (it.text.length <= Library.REVIEW_MAX_LENGTH) field = it },
+                minLines = 4,
+                maxLines = 12,
+                label = { Text(book.title, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                modifier = Modifier.fillMaxWidth().testTag("review-text"),
+            )
+        },
+        confirmButton = {
+            TextButton(enabled = field.text != initial, onClick = { onSave(field.text) }) { Text(stringResource(R.string.action_save)) }
         },
         dismissButton = { TextButton(onClick = onClose) { Text(stringResource(R.string.action_cancel)) } },
     )

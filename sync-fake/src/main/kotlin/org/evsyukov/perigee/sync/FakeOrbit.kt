@@ -126,6 +126,9 @@ class FakeOrbit : AutoCloseable {
     val statuses = HashMap<Long, String>()
     val ratings = HashMap<Long, Int?>()
 
+    /** The reader's review by book, as the reader's session sets it; the server keeps none for nothing but white space. */
+    val reviews = HashMap<Long, String>()
+
     /** Pages read the server took, and how many of them it had been told of before. */
     val pagesRead = ArrayList<JSONObject>()
     var pagesTwice = 0
@@ -412,6 +415,27 @@ class FakeOrbit : AutoCloseable {
                 if (path.endsWith("/rating")) ratings[id] = if (body.isNull("rating")) null else body.getInt("rating")
                 return Answer(200, "{}")
             }
+            if (path == "/koreader/plugin/book-states") {
+                val books = body.getJSONArray("books")
+                val results = JSONArray()
+                val unmatched = JSONArray()
+                for (i in 0 until books.length()) {
+                    val hash = books.getJSONObject(i).getString("hash")
+                    val file = files[hash]
+                    if (file == null) {
+                        unmatched.put(hash)
+                        continue
+                    }
+                    val review = reviews[file.first]
+                    results.put(
+                        JSONObject().put("hash", hash).put("statusApplied", false).put("ratingApplied", false).put("reviewApplied", false)
+                            .put("rating", ratings[file.first] ?: JSONObject.NULL).put("ratingSet", ratings[file.first] != null)
+                            .put("ratingUpdatedAt", JSONObject.NULL).put("reviewNote", review ?: JSONObject.NULL)
+                            .put("reviewNoteSet", review != null).put("reviewUpdatedAt", if (review == null) JSONObject.NULL else "2031-01-01T00:00:00.000Z"),
+                    )
+                }
+                return Answer(201, JSONObject().put("results", results).put("unmatched", unmatched).toString())
+            }
             when (path) {
                 "/koreader/plugin/annotations/exchange" -> return exchangeQuotes(body)
                 "/koreader/plugin/annotations/exchange-ack" -> return ackQuotes(body)
@@ -471,6 +495,13 @@ class FakeOrbit : AutoCloseable {
                     deviceKey = md5(body.getString("password"))
                     Answer(201, "{\"success\":true}")
                 }
+            }
+            Regex("/books/\\d+/personal-note").matches(path) && request.method == "PATCH" -> {
+                val id = path.removePrefix("/books/").substringBefore('/').toLong()
+                if (hashOf(id) == null) return error(404, "Book not found")
+                val note = if (body.isNull("note")) "" else body.getString("note").trim()
+                if (note.isEmpty()) reviews.remove(id) else reviews[id] = note
+                Answer(200, JSONObject().put("id", id).put("personalNote", reviews[id] ?: JSONObject.NULL).toString())
             }
             path == "/books/query" -> queryAnswer ?: Answer(201, JSONObject().put("items", page(body)).put("total", total ?: books.length()).put("page", body.getJSONObject("pagination").getInt("page")).toString())
             Regex("/books/\\d+/(annotations|bookmarks)(/\\d+)?").matches(path) -> marksOfBook(request, path)

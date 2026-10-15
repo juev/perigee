@@ -17,6 +17,7 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performTextReplacement
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import java.io.File
 import kotlinx.coroutines.flow.first
@@ -190,6 +191,32 @@ class LibraryScreenTest {
         rule.onNodeWithContentDescription(string(R.string.book_actions, title)).performClick()
         inMenu(R.string.action_about_book).performClick()
         rule.waitUntil(TIMEOUT) { rule.onAllNodesWithTag("book-page").fetchSemanticsNodes().isNotEmpty() }
+    }
+
+    @Test
+    fun reviewIsWrittenFromTheMenuAndShownOnTheBooksPage() {
+        shelve(found("Reviewed"))
+        show()
+        waitForText("Reviewed")
+
+        rule.onNodeWithContentDescription(string(R.string.book_actions, "Reviewed")).performClick()
+        inMenu(R.string.action_review).performClick()
+        rule.onNodeWithTag("review-text").performTextReplacement("Slow, then gripping.")
+        rule.onNodeWithText(string(R.string.action_save)).performClick()
+        rule.waitUntil(TIMEOUT) { runBlocking { library.book("Reviewed") }?.review == "Slow, then gripping." }
+
+        openPageOf("Reviewed")
+        onPage(hasText(string(R.string.review_title))).assertIsDisplayed()
+        onPage(hasText("Slow, then gripping.")).assertIsDisplayed()
+        onPage(hasContentDescription(string(R.string.action_back))).performClick()
+        rule.waitUntil(TIMEOUT) { rule.onAllNodesWithTag("book-page").fetchSemanticsNodes().isEmpty() }
+
+        // Emptied, it is taken off.
+        rule.onNodeWithContentDescription(string(R.string.book_actions, "Reviewed")).performClick()
+        inMenu(R.string.action_review_edit).performClick()
+        rule.onNodeWithTag("review-text").performTextReplacement("")
+        rule.onNodeWithText(string(R.string.action_save)).performClick()
+        rule.waitUntil(TIMEOUT) { runBlocking { library.book("Reviewed") }?.review == null }
     }
 
     @Test

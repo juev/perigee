@@ -73,6 +73,11 @@ data class Book(
     @ColumnInfo(defaultValue = "") val serverLikeName: String = "",
     /** The places the reader last jumped from, oldest first, one to a line; see [jumpedFrom]. */
     @ColumnInfo(defaultValue = "") val jumps: String = "",
+    /** What the reader wrote of the book; null when nothing. */
+    @ColumnInfo(defaultValue = "NULL") val review: String? = null,
+    /** When the reader last changed [review], and which of those changes the server last took. */
+    @ColumnInfo(defaultValue = "0") val reviewChangedAt: Long = 0,
+    @ColumnInfo(defaultValue = "0") val reviewPushedAt: Long = 0,
 ) {
     /** The places the reader last jumped from, oldest first: Back returns to the last of them. */
     val jumpedFrom: List<String> get() = jumps.lines().filter { it.isNotEmpty() }
@@ -89,8 +94,11 @@ data class Book(
     /** Whether it is the status that the reader changed since the server last heard. */
     val statusUnsent: Boolean get() = statusChangedAt > statePushedAt
 
+    /** Whether the reader's review is still to be sent to the server. */
+    val reviewUnsent: Boolean get() = reviewChangedAt > reviewPushedAt
+
     /** Whether the server has the book and something the reader did in it here is still to reach the server. */
-    val syncUnsent: Boolean get() = serverFileId != null && (placeUnsent || stateUnsent || marksUnsent)
+    val syncUnsent: Boolean get() = serverFileId != null && (placeUnsent || stateUnsent || marksUnsent || reviewUnsent)
 
     val authors: List<String> get() = author.split('\n').filter { it.isNotBlank() }
 

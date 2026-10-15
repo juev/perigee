@@ -187,6 +187,9 @@
     <string name="server_channel_switched_off">Синхронизация с устройствами для чтения выключена в ваших настройках KOReader на сервере, поэтому чтение синхронизироваться не будет.</string>
     <string name="server_unsupported">Приложение не рассчитано на сервер версии %1$s. Книги с него скачивать можно, но синхронизация выключена, чтобы ничего не испортить.</string>
     <string name="book_on_server">на сервере</string>
+    <string name="action_review">Написать отзыв</string>
+    <string name="action_review_edit">Изменить отзыв</string>
+    <string name="review_title">Ваш отзыв</string>
     <string name="book_on_server_unsent">на сервере, ещё не синхронизирована</string>
     <string name="server_synced_at">Чтение синхронизировано %1$s.</string>
     <string name="server_sync_unreachable">Синхронизация не доходит до сервера (первая попытка — %1$s). Приложение пробует снова само.</string>

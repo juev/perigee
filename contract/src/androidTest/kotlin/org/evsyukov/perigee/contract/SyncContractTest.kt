@@ -21,7 +21,7 @@ import org.junit.runner.RunWith
 
 /**
  * Rounds of syncing against a real bookOrbit server: the reader's place both
- * ways, status and rating both ways, and the pages read. Requirements R7 and R9.
+ * ways, status, rating and review both ways, and the pages read. Requirements R7 and R9.
  */
 @RunWith(AndroidJUnit4::class)
 class SyncContractTest {
@@ -210,6 +210,30 @@ class SyncContractTest {
         device.orbit.sync()
         assertEquals("on_hold", card(title).getJSONObject("readStatus").getString("status"))
         assertEquals(5, card(title).getInt("rating"))
+    }
+
+    @Test
+    fun reviewGoesBothWays() = runBlocking<Unit> {
+        val (book, _) = onDevice("Contract Plain")
+        fun theirs(): Any? = server.jwt("GET", "/books/${book.serverBookId}").json().opt("personalNote")
+
+        device.library.setReview(book.id, "Read it twice.\nThe second time slower.")
+        device.orbit.sync()
+        assertEquals("the web pages show it", "Read it twice.\nThe second time slower.", theirs())
+        assertFalse(fresh(book).reviewUnsent)
+
+        // Changed in the web pages.
+        val note = JSONObject().put("note", "Changed in the browser.")
+        assertEquals(200, server.jwt("PATCH", "/books/${book.serverBookId}/personal-note", note).code)
+        device.orbit.sync()
+        assertEquals("Changed in the browser.", fresh(book).review)
+        assertFalse("what came from the server is not sent back", fresh(book).reviewUnsent)
+
+        // Taken off here, it is taken off there.
+        device.library.setReview(book.id, "")
+        device.orbit.sync()
+        assertEquals(JSONObject.NULL, theirs())
+        assertNull(fresh(book).review)
     }
 
     @Test

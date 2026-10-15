@@ -42,7 +42,7 @@ import org.evsyukov.perigee.ui.READABLE_WIDTH
 
 /**
  * A book's own page: its cover, who wrote it, where it stands in a series,
- * how far it is read and what it says it is about. It lies over the library,
+ * how far it is read, what it says it is about and what the reader wrote of it. It lies over the library,
  * and the way back returns there. [server] is where the book stands with the
  * server, when there is something to say.
  */
@@ -124,6 +124,13 @@ internal fun BookPage(
                     } else {
                         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             for (paragraph in about.lines()) Text(paragraph, style = MaterialTheme.typography.bodyMedium)
+                        }
+                    }
+                    val review = book.review
+                    if (review != null) {
+                        Column(Modifier.fillMaxWidth().testTag("book-review"), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text(stringResource(R.string.review_title), style = MaterialTheme.typography.titleSmall)
+                            for (paragraph in review.lines()) Text(paragraph, style = MaterialTheme.typography.bodyMedium)
                         }
                     }
                 }

@@ -84,6 +84,16 @@ internal interface ReadingDao {
     @Query("UPDATE books SET statePushedAt = :changedAt WHERE id = :id")
     suspend fun statePushed(id: String, changedAt: Long)
 
+    @Query("UPDATE books SET review = :review, reviewChangedAt = :at WHERE id = :id")
+    suspend fun setReview(id: String, review: String?, at: Long)
+
+    @Query("UPDATE books SET reviewPushedAt = :changedAt WHERE id = :id")
+    suspend fun reviewPushed(id: String, changedAt: Long)
+
+    /** The server's review, unless the reader changed theirs since the server last took it. */
+    @Query("UPDATE books SET review = :review WHERE id = :id AND reviewChangedAt <= reviewPushedAt")
+    suspend fun takeReview(id: String, review: String?)
+
     @Query("UPDATE books SET pushedAt = :movedAt WHERE id = :id")
     suspend fun placePushed(id: String, movedAt: Long)
 
@@ -212,7 +222,7 @@ internal interface ReadingDao {
 
     /** Nothing was sent to the next server yet, and nothing was heard from it. */
     @Query(
-        "UPDATE books SET serverBookId = NULL, serverFileId = NULL, serverCheckedAt = 0, pushedAt = 0, statePushedAt = 0, " +
+        "UPDATE books SET serverBookId = NULL, serverFileId = NULL, serverCheckedAt = 0, pushedAt = 0, statePushedAt = 0, reviewPushedAt = 0, " +
             "remoteSeenAt = 0, marksSyncedAt = 0, serverLikeId = NULL, serverLikeName = ''",
     )
     suspend fun forgetServer()
@@ -375,12 +385,13 @@ internal class EpubsReadAgain : AutoMigrationSpec {
         Book::class, Bookmark::class, Quote::class, Folder::class, BookCollection::class, CollectionBook::class,
         Catalog::class, Account::class, RemotePosition::class, PageRead::class,
     ],
-    version = 12,
+    version = 13,
     autoMigrations = [
         AutoMigration(from = 1, to = 2), AutoMigration(from = 2, to = 3), AutoMigration(from = 3, to = 4),
         AutoMigration(from = 4, to = 5), AutoMigration(from = 5, to = 6), AutoMigration(from = 6, to = 7),
         AutoMigration(from = 7, to = 8), AutoMigration(from = 8, to = 9, spec = EpubsReadAgain::class),
         AutoMigration(from = 9, to = 10), AutoMigration(from = 10, to = 11), AutoMigration(from = 11, to = 12),
+        AutoMigration(from = 12, to = 13),
     ],
 )
 internal abstract class ReadingDatabase : RoomDatabase() {
