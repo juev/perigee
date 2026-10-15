@@ -222,6 +222,7 @@ class LibraryScannerTest {
         library.savePosition(oldId, "/body/p[1]", 0.1f)
         library.savePosition(oldId, "/body/p[7]", 0.4f)
         library.addBookmark(oldId, "/body/p[3]", "marked words", null)
+        covers.save(oldId, TestFolder.cover(Color.BLUE))
 
         scan()
 
@@ -232,6 +233,10 @@ class LibraryScannerTest {
         assertEquals("marked words", library.bookmarks(book.id).first().single().text)
         assertNull(library.book(oldId))
         assertFalse("the archive the app kept for reading is not needed any more", kept.exists())
+        assertFalse("nor the cover kept under the archive's fingerprint", covers.file(oldId).exists())
+        val last = checkNotNull(library.lastOpened())
+        assertEquals("the app starts on the book as before", book.id, last.id)
+        assertArrayEquals("from the book unpacked out of the archive it kept", inside, File(last.path).readBytes())
         assertArrayEquals(inside, checkNotNull(localCopy(context, library, book)).readBytes())
         assertEquals("and it is not read over again at every look", ScanResult(found = 0, lost = 0, unreadable = 0), scan())
     }
@@ -243,14 +248,17 @@ class LibraryScannerTest {
         archive.delete()
         val old = library.open(kept, "Kept In The App", "")
         library.addBookmark(old.id, "/body/p[3]", "marked words", null)
+        covers.save(old.id, TestFolder.cover(Color.BLUE))
 
-        unpackKept(context, library)
+        unpackKept(context, library, covers)
 
         val book = books().single()
         assertEquals(fingerprint(inside), book.id)
         assertEquals("fb2", book.format)
         assertArrayEquals(inside, File(book.path).readBytes())
         assertFalse(kept.exists())
+        assertTrue("the cover goes along with the book", covers.file(book.id).length() > 0)
+        assertFalse(covers.file(old.id).exists())
         assertEquals("marked words", library.bookmarks(book.id).first().single().text)
         assertEquals("the book the app starts on is still there", book.id, library.lastOpened()?.id)
     }
@@ -304,6 +312,7 @@ class LibraryScannerTest {
         plain.delete()
         val old = library.open(kept, "Archived Long Ago", "")
         library.addBookmark(old.id, "/body/p[3]", "marked words", null)
+        covers.save(old.id, TestFolder.cover(Color.BLUE))
 
         describeKept(context, library, covers)
 
@@ -313,6 +322,7 @@ class LibraryScannerTest {
         assertTrue(book.hasCover)
         assertArrayEquals(inside, File(book.path).readBytes())
         assertFalse(kept.exists())
+        assertFalse("the cover kept under the archive's fingerprint is not needed any more", covers.file(old.id).exists())
         assertEquals("marked words", library.bookmarks(book.id).first().single().text)
     }
 

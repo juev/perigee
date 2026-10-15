@@ -12,6 +12,16 @@ class Covers(private val dir: File) {
     fun file(bookId: String): File = File(dir, "$bookId.jpg")
 
     /**
+     * A book now known by another fingerprint takes its cover along. A cover
+     * already kept under the new fingerprint stays, and the old one is removed.
+     */
+    fun move(fromId: String, toId: String) {
+        val from = file(fromId)
+        if (!from.isFile) return
+        if (file(toId).isFile || !from.renameTo(file(toId))) from.delete()
+    }
+
+    /**
      * Keeps a reduced copy of a cover as the book carries it. Returns false
      * when the bytes are not a picture the system can read.
      */

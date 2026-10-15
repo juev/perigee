@@ -402,7 +402,7 @@ class LibraryViewModel(
                     looking.update { it.copy(scanning = true) }
                     try {
                         describeKept(getApplication(), library, covers, describe)
-                        unpackKept(getApplication(), library)
+                        unpackKept(getApplication(), library, covers)
                         for (folder in library.folders().first()) scanner.scan(folder, sourceOf(folder))
                     } finally {
                         looking.update { it.copy(scanning = false) }
