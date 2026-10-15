@@ -10,6 +10,8 @@ import androidx.room.Query
 import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.room.Update
+import androidx.room.migration.AutoMigrationSpec
+import androidx.sqlite.db.SupportSQLiteDatabase
 import kotlinx.coroutines.flow.Flow
 
 @Dao
@@ -327,16 +329,28 @@ internal interface ReadingDao {
     suspend fun deleteQuote(id: Long)
 }
 
+/**
+ * EPUBs were read before the engine stopped taking a list a book is on, such
+ * as a hundred best novels, for its series. The library reads a file only
+ * once, so every EPUB is marked as not read yet, and the next look at the
+ * library reads it again, series and all.
+ */
+internal class EpubsReadAgain : AutoMigrationSpec {
+    override fun onPostMigrate(db: SupportSQLiteDatabase) {
+        db.execSQL("UPDATE books SET description = NULL WHERE format = 'epub'")
+    }
+}
+
 @Database(
     entities = [
         Book::class, Bookmark::class, Quote::class, Folder::class, BookCollection::class, CollectionBook::class,
         Catalog::class, Account::class, RemotePosition::class, PageRead::class,
     ],
-    version = 8,
+    version = 9,
     autoMigrations = [
         AutoMigration(from = 1, to = 2), AutoMigration(from = 2, to = 3), AutoMigration(from = 3, to = 4),
         AutoMigration(from = 4, to = 5), AutoMigration(from = 5, to = 6), AutoMigration(from = 6, to = 7),
-        AutoMigration(from = 7, to = 8),
+        AutoMigration(from = 7, to = 8), AutoMigration(from = 8, to = 9, spec = EpubsReadAgain::class),
     ],
 )
 internal abstract class ReadingDatabase : RoomDatabase() {
