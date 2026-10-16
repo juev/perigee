@@ -17,6 +17,7 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextReplacement
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import java.io.File
@@ -218,6 +219,22 @@ class LibraryScreenTest {
         rule.onNodeWithTag("review-text").performTextReplacement("")
         rule.onNodeWithText(string(R.string.action_save)).performClick()
         rule.waitUntil(TIMEOUT) { runBlocking { library.book("Reviewed") }?.review == null }
+    }
+
+    @Test
+    fun bookIsDeletedFromTheMenuAfterAWarning() {
+        val id = keep("Doomed Book")
+        show()
+        waitForText("Doomed Book")
+
+        rule.onNodeWithContentDescription(string(R.string.book_actions, "Doomed Book")).performClick()
+        inMenu(R.string.action_remove_book).performScrollTo().performClick()
+        // The server does not have the book: the reader is told what goes with it.
+        waitForText(string(R.string.remove_book_lost, "Doomed Book"))
+        rule.onNodeWithText(string(R.string.action_delete)).performClick()
+
+        rule.waitUntil(TIMEOUT) { runBlocking { library.book(id) } == null }
+        rule.waitUntil(TIMEOUT) { rule.onAllNodesWithText("Doomed Book").fetchSemanticsNodes().isEmpty() }
     }
 
     @Test

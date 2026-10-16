@@ -4,6 +4,7 @@ import android.content.Intent
 import android.content.res.Resources
 import android.graphics.BitmapFactory
 import android.net.Uri
+import android.provider.DocumentsContract
 import android.util.LruCache
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -151,9 +152,21 @@ fun LibraryScreen(
 
     val folderPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
         if (uri != null) {
-            // Without this the folder is ours only until the app is put away.
-            context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            // Without this the folder is ours only until the app is put away. Writing lets the reader remove books from it.
+            context.contentResolver.takePersistableUriPermission(
+                uri, Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION,
+            )
             model.addFolder(uri.toString(), folderName(context, uri))
+        }
+    }
+    // A folder added when the app only read its folders is picked again to let it remove a book there.
+    val writePicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+        val asked = state.removal as? Removal.NoWriteAccess ?: return@rememberLauncherForActivityResult
+        if (uri != null && uri.toString() == asked.folder.uri) {
+            context.contentResolver.takePersistableUriPermission(
+                uri, Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION,
+            )
+            model.remove(asked.book)
         }
     }
     val downloadsPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
@@ -249,6 +262,7 @@ fun LibraryScreen(
                 onReview = { reviewOf = it.id },
                 onCollections = { collectionsOf = it.id },
                 onAbout = { aboutOf = it.id },
+                onRemove = model::askRemove,
             )
         }
     }
@@ -262,9 +276,14 @@ fun LibraryScreen(
             onRemove = { folder ->
                 model.removeFolder(folder)
                 runCatching {
-                    val grant = Intent.FLAG_GRANT_READ_URI_PERMISSION or
-                        if (folder.uri == state.downloadsFolder) Intent.FLAG_GRANT_WRITE_URI_PERMISSION else 0
-                    context.contentResolver.releasePersistableUriPermission(Uri.parse(folder.uri), grant)
+                    val tree = Uri.parse(folder.uri)
+                    // Whatever the app was let do there: folders added before it asked to write were only read.
+                    val held = context.contentResolver.persistedUriPermissions.firstOrNull { it.uri == tree }
+                    if (held != null) {
+                        val grant = (if (held.isReadPermission) Intent.FLAG_GRANT_READ_URI_PERMISSION else 0) or
+                            (if (held.isWritePermission) Intent.FLAG_GRANT_WRITE_URI_PERMISSION else 0)
+                        context.contentResolver.releasePersistableUriPermission(tree, grant)
+                    }
                 }
             },
             onClose = { showFolders = false },
@@ -330,6 +349,17 @@ fun LibraryScreen(
             dismissButton = { TextButton(onClick = model::dontSend) { Text(stringResource(R.string.action_cancel)) } },
         )
         null -> Unit
+    }
+    state.removal?.let { removal ->
+        RemovalDialog(
+            removal,
+            onRemove = { model.remove(removal.book) },
+            onPickFolder = { folder ->
+                val tree = Uri.parse(folder.uri)
+                writePicker.launch(DocumentsContract.buildDocumentUriUsingTree(tree, DocumentsContract.getTreeDocumentId(tree)))
+            },
+            onClose = model::dontRemove,
+        )
     }
     naming?.let { asked ->
         NameDialog(
@@ -598,6 +628,7 @@ private fun Books(
     onReview: (Book) -> Unit,
     onCollections: (Book) -> Unit,
     onAbout: (Book) -> Unit,
+    onRemove: (Book) -> Unit,
 ) {
     if (state.grid) {
         val around = PaddingValues(
@@ -615,7 +646,7 @@ private fun Books(
             items(books, key = { it.id }) { book ->
                 BookCell(
                     book, covers, state.signedIn, state.sending[book.id], if (state.canSend(book)) onSend else null,
-                    onOpen, onFavorite, onStatus, onRating, onReview, onCollections, onAbout,
+                    onOpen, onFavorite, onStatus, onRating, onReview, onCollections, onAbout, onRemove,
                 )
             }
         }
@@ -629,7 +660,7 @@ private fun Books(
             items(books, key = { it.id }) { book ->
                 BookRow(
                     book, covers, state.signedIn, state.sending[book.id], if (state.canSend(book)) onSend else null,
-                    onOpen, onFavorite, onStatus, onRating, onReview, onCollections, onAbout,
+                    onOpen, onFavorite, onStatus, onRating, onReview, onCollections, onAbout, onRemove,
                 )
             }
         }
@@ -677,6 +708,7 @@ private fun BookRow(
     onReview: (Book) -> Unit,
     onCollections: (Book) -> Unit,
     onAbout: (Book) -> Unit,
+    onRemove: (Book) -> Unit,
 ) {
     Row(
         Modifier.fillMaxWidth().clickable { onOpen(book) }.padding(start = 16.dp, top = 8.dp, bottom = 8.dp, end = 4.dp),
@@ -717,13 +749,14 @@ private fun BookRow(
                 Icon(Icons.Filled.FavoriteBorder, stringResource(R.string.favorite_add, book.title))
             }
         }
-        BookActions(book, onSend, onStatus, onRating, onReview, onCollections, onAbout, onFavorite = null)
+        BookActions(book, onSend, onStatus, onRating, onReview, onCollections, onAbout, onRemove, onFavorite = null)
     }
 }
 
 /**
  * The button of a book's menu and the menu: the book's own page, status,
- * stars, the reader's review, collections, sending to the server. [onFavorite] puts the favourite mark into the menu,
+ * stars, the reader's review, collections, sending to the server, removing
+ * it from the device. [onFavorite] puts the favourite mark into the menu,
  * for where the book has no heart of its own beside it.
  */
 @Composable
@@ -736,6 +769,7 @@ private fun BookActions(
     onReview: (Book) -> Unit,
     onCollections: (Book) -> Unit,
     onAbout: (Book) -> Unit,
+    onRemove: (Book) -> Unit,
     onFavorite: ((Book) -> Unit)?,
     modifier: Modifier = Modifier,
 ) {
@@ -822,6 +856,15 @@ private fun BookActions(
                     },
                 )
             }
+            HorizontalDivider()
+            DropdownMenuItem(
+                text = { Text(stringResource(R.string.action_remove_book)) },
+                leadingIcon = { Tick(false) },
+                onClick = {
+                    open = false
+                    onRemove(book)
+                },
+            )
         }
     }
 }
@@ -842,6 +885,7 @@ private fun BookCell(
     onReview: (Book) -> Unit,
     onCollections: (Book) -> Unit,
     onAbout: (Book) -> Unit,
+    onRemove: (Book) -> Unit,
 ) {
     Column(Modifier.clip(RoundedCornerShape(8.dp)).clickable { onOpen(book) }.padding(4.dp)) {
         Box {
@@ -855,7 +899,7 @@ private fun BookCell(
             // On the cover, so that the title under it has the whole width; darkened behind to be seen on any cover.
             CompositionLocalProvider(LocalContentColor provides Color.White) {
                 BookActions(
-                    book, onSend, onStatus, onRating, onReview, onCollections, onAbout, onFavorite,
+                    book, onSend, onStatus, onRating, onReview, onCollections, onAbout, onRemove, onFavorite,
                     Modifier.align(Alignment.TopEnd).padding(4.dp).size(32.dp).background(Color.Black.copy(alpha = 0.4f), CircleShape),
                 )
             }
@@ -1071,5 +1115,42 @@ private fun ReviewDialog(book: Book, onSave: (String) -> Unit, onClose: () -> Un
             TextButton(enabled = field.text != initial, onClick = { onSave(field.text) }) { Text(stringResource(R.string.action_save)) }
         },
         dismissButton = { TextButton(onClick = onClose) { Text(stringResource(R.string.action_cancel)) } },
+    )
+}
+
+/** What the reader is told before a book is removed from the device, and when it could not be. */
+@Composable
+private fun RemovalDialog(removal: Removal, onRemove: () -> Unit, onPickFolder: (Folder) -> Unit, onClose: () -> Unit) {
+    val title = removal.book.title
+    AlertDialog(
+        onDismissRequest = onClose,
+        title = { Text(stringResource(R.string.remove_book_title)) },
+        text = {
+            Text(
+                when (removal) {
+                    is Removal.Lost -> stringResource(R.string.remove_book_lost, title)
+                    is Removal.Syncing -> stringResource(R.string.remove_book_syncing, title)
+                    is Removal.Kept -> stringResource(R.string.remove_book_kept, title)
+                    is Removal.Unsent -> stringResource(R.string.remove_book_unsent, title)
+                    is Removal.NoWriteAccess -> stringResource(R.string.remove_book_no_access, removal.folder.name)
+                    is Removal.Failed -> stringResource(R.string.remove_book_failed, title)
+                },
+                Modifier.testTag("removal"),
+            )
+        },
+        confirmButton = {
+            when (removal) {
+                is Removal.NoWriteAccess -> TextButton(onClick = { onPickFolder(removal.folder) }) {
+                    Text(stringResource(R.string.remove_book_pick_folder))
+                }
+                is Removal.Failed -> TextButton(onClick = onClose) { Text(stringResource(R.string.action_done)) }
+                else -> TextButton(onClick = onRemove, enabled = removal !is Removal.Syncing) {
+                    Text(stringResource(R.string.action_delete))
+                }
+            }
+        },
+        dismissButton = {
+            if (removal !is Removal.Failed) TextButton(onClick = onClose) { Text(stringResource(R.string.action_cancel)) }
+        },
     )
 }

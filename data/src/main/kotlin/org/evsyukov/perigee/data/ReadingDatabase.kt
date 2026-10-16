@@ -59,6 +59,9 @@ internal interface ReadingDao {
     @Query("SELECT path FROM books WHERE path != ''")
     suspend fun copies(): List<String>
 
+    @Query("SELECT EXISTS(SELECT 1 FROM page_reads WHERE bookId = :bookId)")
+    suspend fun hasPageReads(bookId: String): Boolean
+
     @Query("UPDATE OR IGNORE bookmarks SET bookId = :to WHERE bookId = :from")
     suspend fun moveBookmarks(from: String, to: String)
 

@@ -4,7 +4,10 @@ import android.content.ContentResolver
 import android.net.Uri
 import android.provider.DocumentsContract
 import android.provider.DocumentsContract.Document
+import java.io.FileNotFoundException
 import java.io.IOException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 /** A file somewhere under a folder of the library. [uri] opens it through the system. */
 data class SourceFile(val uri: String, val name: String, val size: Long, val modified: Long)
@@ -62,4 +65,33 @@ class TreeSource(private val resolver: ContentResolver, private val tree: Uri) :
             Document.COLUMN_SIZE, Document.COLUMN_LAST_MODIFIED,
         )
     }
+}
+
+/** Removes a document from a folder; false when it is there still. */
+typealias DeleteDocument = suspend (uri: String) -> Boolean
+
+/**
+ * Removes a document through the system. A document that is not there any
+ * more counts as removed.
+ *
+ * @throws SecurityException when the app may only read the folder
+ */
+internal fun deleteDocument(resolver: ContentResolver): DeleteDocument = { uri ->
+    withContext(Dispatchers.IO) {
+        val document = Uri.parse(uri)
+        try {
+            DocumentsContract.deleteDocument(resolver, document)
+        } catch (e: FileNotFoundException) {
+            // Said of a document that is gone, and by some providers of one they did not remove.
+            !exists(resolver, document)
+        }
+    }
+}
+
+private fun exists(resolver: ContentResolver, document: Uri): Boolean = try {
+    resolver.query(document, arrayOf(Document.COLUMN_DOCUMENT_ID), null, null, null)?.use { it.moveToFirst() } ?: false
+} catch (e: FileNotFoundException) {
+    false
+} catch (e: IllegalArgumentException) {
+    false
 }

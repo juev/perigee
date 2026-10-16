@@ -146,6 +146,19 @@ class Library internal constructor(internal val database: ReadingDatabase, priva
         old.path
     }
 
+    /**
+     * The book leaves the library with everything the reader left in it: the
+     * place, bookmarks, quotes, collections, pages read. Its files are the
+     * caller's to remove.
+     */
+    suspend fun remove(bookId: String) = dao.deleteBook(bookId)
+
+    /** Whether the reader left anything in the book that the server has not been told of yet, as far as it is to be told. */
+    suspend fun unsent(bookId: String): Boolean {
+        val book = dao.book(bookId) ?: return false
+        return book.syncUnsent || (book.serverFileId != null && dao.hasPageReads(bookId))
+    }
+
     fun folders(): Flow<List<Folder>> = dao.folders()
 
     /** Adding a folder twice keeps one. */

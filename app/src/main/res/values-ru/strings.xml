@@ -220,6 +220,15 @@
     <string name="book_like_on_server">похожая есть на сервере</string>
     <string name="book_not_on_server">нет на сервере</string>
     <string name="action_send_to_server">Отправить на сервер</string>
+    <string name="action_remove_book">Удалить с устройства</string>
+    <string name="remove_book_title">Удалить книгу?</string>
+    <string name="remove_book_lost">«%1$s» будет удалена с устройства. На сервере этой книги нет, поэтому вместе с ней удалятся позиция, цитаты, закладки, статус, оценка, отзыв и коллекции. Чтобы их сохранить, отмените удаление и сначала отправьте книгу на сервер.</string>
+    <string name="remove_book_syncing">Отправляем изменения в «%1$s» на сервер…</string>
+    <string name="remove_book_kept">«%1$s» будет удалена с устройства. На сервере она останется вместе с позицией, цитатами и закладками: скачайте её снова, чтобы читать дальше.</string>
+    <string name="remove_book_unsent">«%1$s» будет удалена с устройства. Сервер недоступен, и изменения, сделанные здесь после последней синхронизации, пропадут. Чтобы их сохранить, отмените удаление и повторите, когда сервер станет доступен.</string>
+    <string name="remove_book_no_access">Приложению нельзя удалять файлы в папке «%1$s». Выберите эту папку ещё раз, чтобы разрешить.</string>
+    <string name="remove_book_pick_folder">Выбрать папку</string>
+    <string name="remove_book_failed">Не удалось удалить файл «%1$s».</string>
     <string name="send_running">отправляется на сервер… %1$d%%</string>
     <string name="send_failed_too_large">Не отправлена: файл больше, чем принимает сервер.</string>
     <string name="send_failed_format">Не отправлена: сервер не принимает файлы этого формата.</string>

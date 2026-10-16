@@ -214,6 +214,15 @@
     <string name="book_like_on_server">a similar one on the server</string>
     <string name="book_not_on_server">not on the server</string>
     <string name="action_send_to_server">Send to the server</string>
+    <string name="action_remove_book">Delete from the device</string>
+    <string name="remove_book_title">Delete the book?</string>
+    <string name="remove_book_lost">“%1$s” will be deleted from this device. The server does not have it, so your place, quotes, bookmarks, status, rating, review and collections for this book will be deleted too. To keep them, cancel and send the book to the server first.</string>
+    <string name="remove_book_syncing">Sending the changes in “%1$s” to the server…</string>
+    <string name="remove_book_kept">“%1$s” will be deleted from this device. It stays on the server with your place, quotes and bookmarks: download it again to read on.</string>
+    <string name="remove_book_unsent">“%1$s” will be deleted from this device. The server cannot be reached, and the changes made here since the last sync will be lost. To keep them, cancel and try again when the server can be reached.</string>
+    <string name="remove_book_no_access">The app may not delete files in the folder “%1$s”. Pick this folder again to allow it.</string>
+    <string name="remove_book_pick_folder">Pick the folder</string>
+    <string name="remove_book_failed">The file of “%1$s” could not be deleted.</string>
     <string name="send_running">sending to the server… %1$d%%</string>
     <string name="send_failed_too_large">Not sent: the file is larger than the server takes.</string>
     <string name="send_failed_format">Not sent: the server does not take files of this format.</string>
