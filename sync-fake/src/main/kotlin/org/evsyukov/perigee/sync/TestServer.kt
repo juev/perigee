@@ -18,6 +18,11 @@ class Answer(
     val headers: Map<String, String> = emptyMap(),
 ) {
     constructor(code: Int, json: String) : this(code, json.toByteArray())
+
+    companion object {
+        /** No answer at all: the connection is closed, as when the network goes. */
+        val Dropped = Answer(0)
+    }
 }
 
 /** A server that answers as the test tells it to and remembers what it was asked. */
@@ -57,6 +62,7 @@ class TestServer(private val answers: (Seen) -> Answer) : AutoCloseable {
         val request = Seen(first[0], first.getOrElse(1) { "" }, headers, body.decodeToString()).also { it.bytes = body }
         seen += request
         val answer = answers(request)
+        if (answer === Answer.Dropped) return
         client.getOutputStream().apply {
             val extra = answer.headers.entries.joinToString("") { "${it.key}: ${it.value}\r\n" }
             write(

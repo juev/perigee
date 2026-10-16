@@ -46,10 +46,10 @@ internal class Http(base: String) {
         }
 
     /**
-     * Sends a file as the one part of a form, under [name]. [sent] is told how
-     * many bytes of the file have gone, as they go.
+     * Sends [count] bytes of a file from [from] on as the one part of a form,
+     * under [name]. [sent] is told how many bytes of the part have gone, as they go.
      */
-    fun upload(path: String, headers: Map<String, String>, file: File, name: String, sent: (Long) -> Unit): Reply =
+    fun upload(path: String, headers: Map<String, String>, file: File, name: String, from: Long, count: Long, sent: (Long) -> Unit): Reply =
         open("POST", path, headers) { connection ->
             val boundary = "perigee-" + java.util.UUID.randomUUID()
             // The name goes as it is, in UTF-8, as browsers send it; a quote or a line end would break the header.
@@ -60,20 +60,20 @@ internal class Http(base: String) {
                 ).toByteArray()
             val tail = "\r\n--$boundary--\r\n".toByteArray()
             connection.doOutput = true
-            // The server answers once it has filed the book away, not as the last byte arrives.
             connection.readTimeout = UPLOAD_TIMEOUT_MS
             connection.setRequestProperty("Content-Type", "multipart/form-data; boundary=$boundary")
             // Streamed: a book is not worth holding whole in memory.
-            connection.setFixedLengthStreamingMode(head.size + file.length() + tail.size)
+            connection.setFixedLengthStreamingMode(head.size + count + tail.size)
             try {
                 connection.outputStream.use { out ->
                     out.write(head)
-                    file.inputStream().use { input ->
+                    java.io.RandomAccessFile(file, "r").use { input ->
+                        input.seek(from)
                         val buffer = ByteArray(64 * 1024)
                         var total = 0L
-                        while (true) {
-                            val read = input.read(buffer)
-                            if (read < 0) break
+                        while (total < count) {
+                            val read = input.read(buffer, 0, minOf(buffer.size.toLong(), count - total).toInt())
+                            if (read < 0) throw IOException("the file got shorter while it was being sent")
                             out.write(buffer, 0, read)
                             total += read
                             sent(total)

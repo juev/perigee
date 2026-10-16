@@ -14,6 +14,9 @@ import java.time.format.DateTimeParseException
 import kotlin.math.abs
 import kotlin.math.roundToInt
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.job
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -361,45 +364,180 @@ class BookOrbit(
      * and the book to be synced with it from then on. The server is asked first
      * whether it has the file: one that got there meanwhile is not sent again.
      *
-     * The file goes under a name made of the book's title. The server files it
-     * away by what the file says of itself, and by this name when it says
-     * nothing, as FB2 does to this server.
+     * The file goes in parts through an upload session of the server, which the
+     * book keeps until the file is there. A file cut off on its way, by the
+     * network or by the app being closed, goes on from what the server got when
+     * it is sent again; [place] is then the one it was first sent to.
+     *
+     * The server files the book away by what the file says of itself, and by
+     * the file's name when it says nothing, as FB2 does to this server: [name]
+     * when it ends as the book's format does, a name made of the title otherwise.
+     *
+     * Cancelling the coroutine stops the file between two of its bytes, and
+     * leaves the session to go on with or to call off, see [cancelUpload].
      *
      * @param progress told how many bytes of the file have gone, as they go
      * @throws UploadRefusedException when the server does not take the file
      * @throws NotAllowedException when the reader may not send books, or not into this library
      * @throws DeviceChannelException when the server cannot be asked which files it has
-     * @throws IOException when the server cannot be reached; nothing is known to have been sent
+     * @throws IOException when the server cannot be reached; what it got so far is kept, and the rest is sent the next time
      */
-    suspend fun upload(book: Book, file: File, place: UploadPlace, progress: (Long) -> Unit = {}): Uploaded = sending.withLock {
-        if (alreadyThere(book.id)) return Uploaded.WasThere
+    suspend fun upload(book: Book, file: File, place: UploadPlace, name: String? = null, progress: (Long) -> Unit = {}): Uploaded =
+        sending.withLock {
+            if (alreadyThere(book.id)) return Uploaded.WasThere
+            val size = file.length()
+            val stored = library.book(book.id)?.uploadSession
+            var session = stored?.let { uploadSession(it) }
+            if (session != null && session.status in FINISHED) return finished(book.id)
+            if (session != null && (session.status != "receiving" || session.size != size)) session = null
+            if (session == null) {
+                // Gone, called off, run out, or for a file that has changed since: begun anew.
+                if (stored != null) library.uploadEnded(book.id)
+                session = openUpload(book, size, place, uploadName(book, name))
+                library.uploadStarted(book.id, session.id)
+            }
+
+            val job = currentCoroutineContext().job
+            var offset = session.received
+            while (offset < size) {
+                val from = offset
+                val count = minOf(session.chunk, size - from)
+                val reply = withToken { token ->
+                    Http(token.first).upload("/uploads/${session.id}/chunks", bearer(token.second) + ("Upload-Offset" to "$from"), file, "part", from, count) {
+                        // Told from the thread the file goes from: a cancelled send stops there, not at the end of the part.
+                        job.ensureActive()
+                        progress(from + it)
+                    }
+                }
+                offset = when {
+                    reply.ok -> reply.json()?.optLong("receivedBytes", from + count) ?: (from + count)
+                    // The server got more, or less, of the part than was known here: it says from where to go on.
+                    reply.errorCode == "UPLOAD_OFFSET_MISMATCH" ->
+                        reply.json()?.optLong("expectedOffset", -1)?.takeIf { it in 0..size } ?: throw failure(reply)
+                    else -> throw givenUp(book.id, session.id, reply)
+                }
+            }
+            val reply = jwt("POST", "/uploads/${session.id}/complete")
+            if (!reply.ok) throw givenUp(book.id, session.id, reply)
+            finished(book.id)
+        }
+
+    /**
+     * The reader called off a book's file on its way to the server: the server
+     * lets go of what it got. Once the server has the whole file it is filed
+     * away all the same, and the book turns out to be there.
+     */
+    suspend fun cancelUpload(bookId: String) = sending.withLock {
+        val session = library.book(bookId)?.uploadSession ?: return@withLock
+        try {
+            jwt("DELETE", "/uploads/$session")
+        } catch (e: IOException) {
+            // What the server got runs out there by itself.
+        }
+        library.uploadEnded(bookId)
+    }
+
+    /**
+     * Looks up the files that were on their way to the server when the app was
+     * last closed or the network went: one the server filed away is marked as
+     * there, one it let go of is forgotten here, one it still waits for the
+     * rest of stays for the reader to send again or call off. Nothing is done
+     * while a file is being sent.
+     */
+    suspend fun settleUploads() {
+        if (!sending.tryLock()) return
+        try {
+            for (book in library.booksSending()) {
+                val session = uploadSession(book.uploadSession ?: continue)
+                when {
+                    session?.status in FINISHED -> finished(book.id)
+                    session?.status != "receiving" -> library.uploadEnded(book.id)
+                }
+            }
+        } finally {
+            sending.unlock()
+        }
+    }
+
+    /** An upload session as the server has it; null when it has none such. */
+    private class UploadSession(val id: String, val status: String, val size: Long, val received: Long, val chunk: Long)
+
+    private suspend fun uploadSession(id: String): UploadSession? {
+        val reply = jwt("GET", "/uploads/$id")
+        if (reply.code == 404 || reply.code == 400) return null
+        if (!reply.ok) throw failure(reply)
+        return sessionOf(reply)
+    }
+
+    private fun sessionOf(reply: Reply): UploadSession {
+        val json = reply.json() ?: throw ServerResponseException(reply.code, "no upload session")
+        val id = json.textOf("id").ifEmpty { throw ServerResponseException(reply.code, "no upload session") }
+        return UploadSession(
+            id, json.textOf("status"), json.optLong("sizeBytes"), json.optLong("receivedBytes"),
+            json.optLong("chunkSizeBytes").takeIf { it > 0 } ?: DEFAULT_CHUNK,
+        )
+    }
+
+    /** Asks the server where the file goes, after seeing for itself that it takes such files there. */
+    private suspend fun openUpload(book: Book, size: Long, place: UploadPlace, name: String): UploadSession {
         val options = uploadOptions()
         if (!options.allowed) throw NotAllowedException("the account may not send books to the server")
         if (book.format !in options.formats) throw UploadRefusedException(UploadRefusal.Format, "")
         val target = options.libraries.firstOrNull { it.id == place.libraryId } ?: throw UploadRefusedException(UploadRefusal.NoPlace, "")
         if (!target.takes(book.format)) throw UploadRefusedException(UploadRefusal.Format, "")
         if (place.folderId != null && target.folders.none { it.id == place.folderId }) throw UploadRefusedException(UploadRefusal.NoPlace, "")
-        if (file.length() > options.maxBytes) throw UploadRefusedException(UploadRefusal.TooLarge, "")
+        if (size > options.maxBytes) throw UploadRefusedException(UploadRefusal.TooLarge, "")
 
-        val name = safeName(book.title).ifEmpty { "book" } + "." + book.format
-        val path = "/libraries/${place.libraryId}/upload" + place.folderId?.let { "?folderId=$it" }.orEmpty()
-        var token = access(stale = null)
-        var reply = io { Http(token.first).upload(path, bearer(token.second), file, name, progress) }
-        if (reply.code == 401) {
-            token = access(stale = token.second)
-            reply = io { Http(token.first).upload(path, bearer(token.second), file, name, progress) }
-            if (reply.code == 401) throw signedOut()
-        }
+        val into = JSONObject().put("kind", "library").put("libraryId", place.libraryId)
+        place.folderId?.let { into.put("folderId", it) }
+        val body = JSONObject().put("filename", name).put("sizeBytes", size).put("target", into)
+            // The same key again, as when the answer was lost on the way, is the same session.
+            .put("idempotencyKey", "perigee-" + randomHex(16))
+        val reply = jwt("POST", "/uploads", body)
         if (!reply.ok) throw refusal(reply)
-        // The server answers with the book; which file of it this is, it tells by the fingerprint.
+        return sessionOf(reply)
+    }
+
+    /** A request with the session's token, asked again with a renewed one when it is not taken. */
+    private suspend fun withToken(request: (Pair<String, String>) -> Reply): Reply {
+        var token = access(stale = null)
+        repeat(2) { attempt ->
+            val reply = io { request(token) }
+            if (reply.code != 401) return reply
+            if (attempt == 0) token = access(stale = token.second)
+        }
+        throw signedOut()
+    }
+
+    /**
+     * The server would not take the rest of the file. Unless the trouble is its
+     * own, which passes, the session is let go of and the reason given.
+     */
+    private suspend fun givenUp(bookId: String, session: String, reply: Reply): IOException {
+        if (reply.code < 500) {
+            try {
+                jwt("DELETE", "/uploads/$session")
+            } catch (e: IOException) {
+                // Left to run out on the server.
+            }
+            library.uploadEnded(bookId)
+        }
+        return refusal(reply)
+    }
+
+    /** The server took the whole file; which file of its book it is, it tells by the fingerprint. */
+    private suspend fun finished(bookId: String): Uploaded {
         val known = try {
-            alreadyThere(book.id)
+            alreadyThere(bookId)
         } catch (e: IOException) {
             // The file is there all the same; which one it is will be asked in the next round.
             false
         }
-        if (!known) library.askServerAgain(book.id)
-        Uploaded.Sent
+        if (!known) {
+            library.uploadEnded(bookId)
+            library.askServerAgain(bookId)
+        }
+        return Uploaded.Sent
     }
 
     /** Asks the server whether it has the file of a book, and remembers it when it has. */
@@ -419,7 +557,8 @@ class BookOrbit(
             UploadRefusedException(UploadRefusal.NotABook, reply.message)
         reply.errorCode == "UPLOAD_STORAGE_FULL" || reply.code == 507 -> UploadRefusedException(UploadRefusal.NoRoom, reply.message)
         // A library that is gone, or a folder that is not of it.
-        reply.code == 404 || (reply.code == 400 && reply.message.contains("folder", ignoreCase = true)) -> UploadRefusedException(UploadRefusal.NoPlace, reply.message)
+        reply.errorCode == "UPLOAD_TARGET_INVALID" || reply.code == 404 || (reply.code == 400 && reply.message.contains("folder", ignoreCase = true)) ->
+            UploadRefusedException(UploadRefusal.NoPlace, reply.message)
         else -> failure(reply)
     }
 
@@ -438,6 +577,7 @@ class BookOrbit(
      * @throws IOException when the server cannot be reached; what was not sent is sent the next time
      */
     suspend fun sync(): SyncReport = syncing.withLock {
+        settleUploads()
         matchLibrary(all = false)
         val books = library.booksOnServer()
         var report = SyncReport()
@@ -957,6 +1097,12 @@ class BookOrbit(
         private const val MATCH_BATCH = 500
         private const val MAX_COVER = 4 * 1024 * 1024
 
+        /** The part of a file sent at a time, when the server does not say; what is cut off is sent again at most. */
+        private const val DEFAULT_CHUNK = 16L * 1024 * 1024
+
+        /** An upload session past these has the whole file, and the server files it away or has done so. */
+        private val FINISHED = setOf("processing", "completed")
+
         /** The shortest password the server takes for the devices' channel. */
         const val MIN_DEVICE_PASSWORD = 6
         private const val STATES_PAGE = 200
@@ -1089,5 +1235,16 @@ class BookOrbit(
         /** A name that stays inside the folder it is put in, whatever the server or a title says. */
         internal fun safeName(name: String): String =
             name.replace(Regex("[\\\\/:*?\"<>|\\p{Cntrl}]"), " ").replace(Regex("\\s+"), " ").trim().trim('.').take(120).trim()
+
+        /**
+         * The name a book's file goes to the server under: [given], the name the
+         * file had where it came from, when it ends as the book's format does;
+         * one made of the title otherwise.
+         */
+        internal fun uploadName(book: Book, given: String?): String {
+            val ending = "." + book.format
+            val stem = given?.takeIf { it.endsWith(ending, ignoreCase = true) }?.dropLast(ending.length)?.let(::safeName)?.ifEmpty { null }
+            return (stem ?: safeName(book.title).ifEmpty { "book" }) + ending
+        }
     }
 }

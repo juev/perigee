@@ -7,6 +7,10 @@ import java.io.File
 import java.util.zip.CRC32
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.job
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import org.evsyukov.perigee.data.Book
 import org.evsyukov.perigee.data.Fb2Archive
@@ -86,7 +90,7 @@ class UploadContractTest {
     private suspend fun onDevice(file: File, format: String, title: String, author: String): Book =
         device.library.keep(file, LocalBook(FileHash.partialMd5(file), format, title, listOf(author), "en", "", "", false))
 
-    private fun epub(name: String, title: String, author: String, text: String): File {
+    private fun epub(name: String, title: String, author: String, text: String, filler: Int = 0): File {
         val file = File(dir, "$name.epub")
         ZipOutputStream(file.outputStream()).use { zip ->
             // The first entry of an EPUB says what it is, and is not compressed.
@@ -128,6 +132,20 @@ class UploadContractTest {
                 """<?xml version="1.0" encoding="utf-8"?><html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops">
 <head><title>$title</title></head><body><nav epub:type="toc"><ol><li><a href="chapter.xhtml">One</a></li></ol></nav></body></html>""",
             )
+            if (filler > 0) {
+                // Bytes that do not pack, to make the file as large as wanted.
+                val bytes = ByteArray(filler).also { java.util.Random(7).nextBytes(it) }
+                zip.putNextEntry(
+                    ZipEntry("OEBPS/filler.bin").apply {
+                        method = ZipEntry.STORED
+                        size = bytes.size.toLong()
+                        compressedSize = bytes.size.toLong()
+                        crc = CRC32().apply { update(bytes) }.value
+                    },
+                )
+                zip.write(bytes)
+                zip.closeEntry()
+            }
             add(
                 "OEBPS/chapter.xhtml",
                 """<?xml version="1.0" encoding="utf-8"?><html xmlns="http://www.w3.org/1999/xhtml">
@@ -186,6 +204,57 @@ class UploadContractTest {
 
         // A device that never saw the book finds it by the fingerprint alone.
         assertEquals(sent.serverFileId, device.orbit.match(listOf(book.id))[book.id]?.id)
+    }
+
+    /** Sends a book until [stopAt] bytes of it have gone, and stops there as when the app is closed. */
+    private suspend fun cutOff(book: Book, file: File, stopAt: Long) = coroutineScope {
+        launch(Dispatchers.Default) {
+            val self = coroutineContext.job
+            device.orbit.upload(book, file, place()) { if (it >= stopAt) self.cancel() }
+        }.join()
+    }
+
+    private fun uploadSession(id: String): JSONObject = server.jwt("GET", "/uploads/$id").json()
+
+    @Test
+    fun bookCutOffOnItsWayGoesOnFromWhereTheServerGot() = runBlocking<Unit> {
+        val chunk = server.jwt("GET", "/uploads/capabilities").json().getLong("chunkSizeBytes")
+        val title = "Cut Off $run"
+        val file = epub("cut-off", title, "Upload Author", "A book sent in two goes.", filler = chunk.toInt() + 100_000)
+        val book = onDevice(file, "epub", title, "Upload Author")
+
+        cutOff(book, file, stopAt = chunk + 1)
+
+        val id = checkNotNull(device.library.book(book.id)?.uploadSession)
+        val half = uploadSession(id)
+        assertEquals("receiving", half.getString("status"))
+        assertEquals("the server kept the first part", chunk, half.getLong("receivedBytes"))
+        assertTrue(titled(title).isEmpty())
+
+        assertEquals(Uploaded.Sent, device.orbit.upload(checkNotNull(device.library.book(book.id)), file, place()))
+
+        val done = uploadSession(id)
+        assertTrue("the same session got the rest: $done", done.getString("status") in listOf("processing", "completed"))
+        assertEquals(file.length(), done.getLong("receivedBytes"))
+        val there = titled(title).single().getJSONArray("files").getJSONObject(0)
+        assertEquals(file.length(), there.getLong("sizeBytes"))
+        assertEquals("the file the server keeps is the one sent", there.getLong("id"), device.orbit.match(listOf(book.id))[book.id]?.id)
+        assertNull(device.library.book(book.id)?.uploadSession)
+    }
+
+    @Test
+    fun bookCalledOffOnItsWayIsLetGoOfByTheServer() = runBlocking<Unit> {
+        val title = "Called Off $run"
+        val file = epub("called-off", title, "Upload Author", "A book the reader thought better of.", filler = 300_000)
+        val book = onDevice(file, "epub", title, "Upload Author")
+        cutOff(book, file, stopAt = 1)
+        val id = checkNotNull(device.library.book(book.id)?.uploadSession)
+
+        device.orbit.cancelUpload(book.id)
+
+        assertEquals("cancelled", uploadSession(id).getString("status"))
+        assertNull(device.library.book(book.id)?.uploadSession)
+        assertTrue(titled(title).isEmpty())
     }
 
     @Test

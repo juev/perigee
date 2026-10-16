@@ -57,8 +57,20 @@ class FakeOrbit : AutoCloseable {
     var maxUploadBytes = 500L * 1024 * 1024
     var libraries = JSONArray("""[{"id":1,"name":"Books","allowedFormats":[],"organizationMode":"book_per_file","folders":[{"id":10,"name":"books"}]}]""")
 
-    /** What a file sent is answered with instead, while not null. */
+    /** What opening an upload session is answered with instead, while not null. */
     var uploadAnswer: Answer? = null
+
+    /** What finishing an upload session is answered with instead, while not null; the session fails with it. */
+    var completeAnswer: Answer? = null
+
+    /** The most of a file an upload session takes at a time. */
+    var chunkBytes = 16L * 1024 * 1024
+
+    /** How many of the next parts of files are taken and then not answered, as when the network goes. */
+    var droppedChunks = 0
+
+    /** While set, a finished file is filed away and the answer is not given, as when the app is closed meanwhile. */
+    var droppedCompletes = false
 
     /** A file the server took. */
     class Upload(val libraryId: Long, val folderId: Long?, val name: String, val bytes: ByteArray, val bookId: Long)
@@ -68,37 +80,117 @@ class FakeOrbit : AutoCloseable {
     /** Done once a file is taken, before the answer goes, as to have the server fail right after. */
     var afterUpload: () -> Unit = {}
 
-    private fun upload(request: Seen, path: String): Answer {
-        if (!uploadAllowed) return error(403, "Missing permission: library_upload")
+    /** An upload session, and what it got of its file so far. */
+    class Session(val id: String, val key: String, val libraryId: Long, val folderId: Long?, val name: String, val size: Long) {
+        val bytes = java.io.ByteArrayOutputStream()
+        var status = "receiving"
+        var bookId: Long? = null
+        var parts = 0
+    }
+
+    val sessions = LinkedHashMap<String, Session>()
+
+    private fun json(session: Session) = JSONObject().put("id", session.id).put("filename", session.name).put("sizeBytes", session.size)
+        .put("receivedBytes", session.bytes.size()).put("chunkSizeBytes", chunkBytes).put("status", session.status)
+        .put("bookId", session.bookId ?: JSONObject.NULL)
+        .put("target", JSONObject().put("kind", "library").put("libraryId", session.libraryId).apply { session.folderId?.let { put("folderId", it) } })
+
+    private fun openUpload(body: JSONObject): Answer {
+        if (!uploadAllowed) return error(403, "Library upload permission is required")
         uploadAnswer?.let { return it }
-        val libraryId = path.removePrefix("/libraries/").substringBefore('/').toLong()
-        val folderId = path.substringAfter("folderId=", "").toLongOrNull()
+        val key = body.getString("idempotencyKey")
+        sessions.values.firstOrNull { it.key == key }?.let { return Answer(201, json(it).toString()) }
+        val target = body.getJSONObject("target")
+        val libraryId = target.getLong("libraryId")
+        val folderId = if (target.has("folderId")) target.getLong("folderId") else null
         val library = (0 until libraries.length()).map { libraries.getJSONObject(it) }.firstOrNull { it.getLong("id") == libraryId }
-            ?: return error(404, "Library not found")
+            ?: return error(400, "Library not found", "UPLOAD_TARGET_INVALID")
         if (folderId != null) {
             val folders = library.getJSONArray("folders")
             if ((0 until folders.length()).none { folders.getJSONObject(it).getLong("id") == folderId }) {
-                return error(400, "Folder does not belong to this library")
+                return error(400, "Folder does not belong to this library", "UPLOAD_TARGET_INVALID")
             }
         }
-        val (name, bytes) = filePart(request) ?: return error(400, "No file provided")
+        val name = body.getString("filename")
+        val size = body.getLong("sizeBytes")
         val format = name.substringAfterLast('.', "").lowercase()
         if (format !in FORMATS) return error(400, "Unsupported file type .$format", "UPLOAD_FORMAT_UNSUPPORTED")
         val allowed = library.getJSONArray("allowedFormats")
         if (allowed.length() > 0 && (0 until allowed.length()).none { allowed.getString(it) == format }) {
             return error(400, "This library does not allow .$format files", "UPLOAD_FORMAT_NOT_ALLOWED")
         }
-        if (bytes.size > maxUploadBytes) return error(413, "File exceeds the upload limit", "UPLOAD_TOO_LARGE")
-        if (bytes.isEmpty()) return error(400, "File must not be empty", "UPLOAD_EMPTY")
-        // Filed by its name: the same name again is the same place.
-        if (uploads.any { it.libraryId == libraryId && it.name == name }) {
-            return error(409, "A file named \"$name\" already exists at the target location", "UPLOAD_DESTINATION_CONFLICT")
+        if (size > maxUploadBytes) return error(413, "File exceeds the upload limit", "UPLOAD_TOO_LARGE")
+        val session = Session(java.util.UUID.randomUUID().toString(), key, libraryId, folderId, name, size)
+        sessions[session.id] = session
+        return Answer(201, json(session).toString())
+    }
+
+    private fun takePart(request: Seen, session: Session): Answer {
+        if (session.status != "receiving") return error(409, "Upload session is ${session.status}", "UPLOAD_SESSION_STATE_INVALID")
+        val offset = request.headers["upload-offset"]?.toLongOrNull() ?: return error(400, "Upload-Offset must be a non-negative integer")
+        if (offset != session.bytes.size().toLong()) {
+            return Answer(
+                409,
+                JSONObject().put("statusCode", 409).put("errorCode", "UPLOAD_OFFSET_MISMATCH")
+                    .put("message", "Expected upload offset ${session.bytes.size()}, received $offset").put("expectedOffset", session.bytes.size()).toString(),
+            )
         }
+        val (_, bytes) = filePart(request) ?: return error(400, "No chunk provided")
+        if (bytes.isEmpty()) return error(400, "File must not be empty", "UPLOAD_EMPTY")
+        if (bytes.size > chunkBytes || offset + bytes.size > session.size) return error(413, "Chunk exceeds the remaining upload size", "UPLOAD_TOO_LARGE")
+        session.bytes.write(bytes)
+        session.parts++
+        if (droppedChunks > 0) {
+            droppedChunks--
+            return Answer.Dropped
+        }
+        return Answer(200, json(session).toString())
+    }
+
+    private fun complete(session: Session): Answer {
+        if (session.status == "processing" || session.status == "completed") return Answer(202, json(session).toString())
+        if (session.status != "receiving") return error(409, "Upload session is ${session.status}", "UPLOAD_SESSION_STATE_INVALID")
+        if (session.bytes.size().toLong() != session.size) {
+            return error(409, "Upload is incomplete: ${session.bytes.size()} of ${session.size} bytes received", "UPLOAD_SESSION_STATE_INVALID")
+        }
+        completeAnswer?.let {
+            session.status = "failed"
+            return it
+        }
+        // Filed by its name: the same name again is the same place.
+        if (uploads.any { it.libraryId == session.libraryId && it.name == session.name }) {
+            session.status = "failed"
+            return error(409, "A file named \"${session.name}\" already exists at the target location", "UPLOAD_DESTINATION_CONFLICT")
+        }
+        val bytes = session.bytes.toByteArray()
         val bookId = marks.incrementAndGet().toLong()
-        uploads += Upload(libraryId, folderId, name, bytes, bookId)
+        uploads += Upload(session.libraryId, session.folderId, session.name, bytes, bookId)
         files[partialMd5(bytes)] = bookId to bookId * 10
+        session.status = "processing"
+        session.bookId = bookId
         afterUpload()
-        return Answer(201, JSONObject().put("bookId", bookId).put("filename", name).put("format", format).put("sizeBytes", bytes.size).toString())
+        if (droppedCompletes) return Answer.Dropped
+        return Answer(202, json(session).toString())
+    }
+
+    private fun uploads(request: Seen, path: String, body: JSONObject): Answer {
+        if (path == "/uploads" && request.method == "POST") return openUpload(body)
+        val id = path.removePrefix("/uploads/").substringBefore('/')
+        val session = sessions[id] ?: return error(404, "Upload session not found")
+        return when {
+            request.method == "GET" -> Answer(200, json(session).toString())
+            request.method == "DELETE" -> when (session.status) {
+                "processing" -> error(409, "An upload cannot be cancelled after import processing begins", "UPLOAD_SESSION_STATE_INVALID")
+                "completed" -> Answer(200, json(session).toString())
+                else -> {
+                    session.status = "cancelled"
+                    Answer(200, json(session).toString())
+                }
+            }
+            path.endsWith("/chunks") -> takePart(request, session)
+            path.endsWith("/complete") -> complete(session)
+            else -> error(404, "Cannot ${request.method} $path")
+        }
     }
 
     /** The name and contents of the file a form carries. */
@@ -472,11 +564,11 @@ class FakeOrbit : AutoCloseable {
             path == "/app-info" -> Answer(200, JSONObject().put("version", version).put("features", JSONArray()).toString())
             path == "/uploads/capabilities" -> Answer(
                 200,
-                JSONObject().put("maxFileSizeBytes", maxUploadBytes).put("chunkSizeBytes", 16 * 1024 * 1024)
+                JSONObject().put("maxFileSizeBytes", maxUploadBytes).put("chunkSizeBytes", chunkBytes)
                     .put("supportedFormats", JSONArray(FORMATS)).put("canUploadToLibrary", uploadAllowed).put("canUseBookDock", false)
                     .put("libraries", if (uploadAllowed) libraries else JSONArray()).toString(),
             )
-            path.startsWith("/libraries/") && request.method == "POST" -> upload(request, path)
+            path == "/uploads" || path.startsWith("/uploads/") -> uploads(request, path, body)
             path == "/koreader/credentials" && !deviceAllowed -> error(403, "Missing permission: koreader_sync")
             path == "/koreader/credentials" && request.method == "GET" ->
                 Answer(200, deviceUser?.let { JSONObject().put("username", it).put("syncEnabled", true).toString() }.orEmpty())

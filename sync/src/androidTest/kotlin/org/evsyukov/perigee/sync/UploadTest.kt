@@ -4,9 +4,12 @@ import android.content.Context
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import java.io.File
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.job
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import org.evsyukov.perigee.data.Accounts
 import org.evsyukov.perigee.data.Book
@@ -18,6 +21,7 @@ import org.junit.After
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
@@ -59,7 +63,8 @@ class UploadTest {
         return kept to file
     }
 
-    private fun sentFiles() = server.seen.filter { it.path.startsWith("/api/v1/libraries/") }
+    /** The requests that sent a file, or began to. */
+    private fun sentFiles() = server.seen.filter { it.path == "/api/v1/uploads" || it.path.endsWith("/chunks") }
 
     private fun serverBook(id: Long, title: String, vararg authors: String, series: String? = null, number: String? = null) =
         """{"id":$id,"title":${quote(title)},"authors":${JSONArray(authors.toList())},"seriesName":${series?.let(::quote)},
@@ -140,7 +145,7 @@ class UploadTest {
 
         assertEquals(Uploaded.WasThere, orbit.upload(book, file, place))
 
-        assertEquals(1, sentFiles().size)
+        assertEquals(1, server.sessions.size)
     }
 
     @Test
@@ -192,7 +197,7 @@ class UploadTest {
         orbit.upload(book, file, UploadPlace(1))
 
         assertNull(server.uploads.single().folderId)
-        assertFalse("?" in sentFiles().single().path)
+        assertFalse("folderId" in server.asked("/uploads").single().body)
     }
 
     @Test
@@ -237,6 +242,7 @@ class UploadTest {
         assertEquals(UploadRefusal.NotABook, refused(400, "UPLOAD_CONTENT_INVALID").why)
         assertEquals(UploadRefusal.NotABook, refused(400, "UPLOAD_EMPTY").why)
         assertEquals(UploadRefusal.NoRoom, refused(507, "UPLOAD_STORAGE_FULL").why)
+        assertEquals(UploadRefusal.NoPlace, refused(400, "UPLOAD_TARGET_INVALID", "Library not found").why)
         assertEquals(UploadRefusal.NoPlace, refused(404, null, "Library not found").why)
         assertEquals(UploadRefusal.NoPlace, refused(400, null, "Folder does not belong to this library").why)
 
@@ -245,6 +251,21 @@ class UploadTest {
         server.uploadAnswer = Answer(500, """{"statusCode":500,"message":"Internal server error"}""")
         assertEquals(500, failing<ServerResponseException> { orbit.upload(book, file, place) }.code)
         assertNull("a book that was refused is not on the server", library.book(book.id)?.serverFileId)
+        assertNull(library.book(book.id)?.uploadSession)
+    }
+
+    @Test
+    fun refusalOnceTheWholeFileIsThereLetsTheSessionGo() = runBlocking<Unit> {
+        signIn()
+        val (book, file) = book("Not What It Says")
+        server.completeAnswer = Answer(400, """{"statusCode":400,"errorCode":"UPLOAD_CONTENT_INVALID","message":"Not a valid EPUB"}""")
+
+        assertEquals(UploadRefusal.NotABook, failing<UploadRefusedException> { orbit.upload(book, file, place) }.why)
+
+        assertNull(library.book(book.id)?.uploadSession)
+        server.completeAnswer = null
+        assertEquals("sent again, the file goes anew", Uploaded.Sent, orbit.upload(book, file, place))
+        assertEquals(2, server.sessions.size)
     }
 
     @Test
@@ -259,6 +280,7 @@ class UploadTest {
         assertEquals(UploadRefusal.NameTaken, refused.why)
         assertEquals(1, server.uploads.size)
         assertNull(library.book(second.id)?.serverFileId)
+        assertNull("nothing is left to go on with", library.book(second.id)?.uploadSession)
     }
 
     @Test
@@ -350,5 +372,169 @@ class UploadTest {
         val now = checkNotNull(library.book(book.id))
         assertNull(now.serverLikeId)
         assertEquals(server.uploads.single().bookId, now.serverBookId)
+    }
+
+    @Test
+    fun fileGoesInPartsAndACutOffOneGoesOnFromWhereTheServerGot() = runBlocking<Unit> {
+        signIn()
+        server.chunkBytes = 1000
+        val (book, file) = book("Cut Off")
+        file.writeBytes(ByteArray(3500) { (it * 7).toByte() })
+        val kept = library.keep(file, LocalBook(FileHash.partialMd5(file), "epub", book.title, emptyList(), "", "", "", false))
+        // The first part gets there, the answer does not: the network went.
+        server.droppedChunks = 1
+
+        failing<java.io.IOException> { orbit.upload(kept, file, place) }
+
+        val session = server.sessions.values.single()
+        assertEquals(1000, session.bytes.size())
+        assertEquals("the book keeps the session to go on with", session.id, library.book(kept.id)?.uploadSession)
+        assertNull(library.book(kept.id)?.serverFileId)
+
+        // The app was closed and opened again meanwhile.
+        val again = BookOrbit(accounts, library, "0.0.1")
+        val steps = ArrayList<Long>()
+        assertEquals(Uploaded.Sent, again.upload(checkNotNull(library.book(kept.id)), file, place) { steps += it })
+
+        assertEquals("no second session", 1, server.sessions.size)
+        assertEquals("the part the server had was not sent again", 4, session.parts)
+        assertArrayEquals(file.readBytes(), server.uploads.single().bytes)
+        assertTrue("it went on from the first part: ${steps.first()}", steps.first() > 1000)
+        assertEquals(3500L, steps.last())
+        val now = checkNotNull(library.book(kept.id))
+        assertEquals(server.uploads.single().bookId * 10, now.serverFileId)
+        assertNull("done with", now.uploadSession)
+    }
+
+    @Test
+    fun partTheServerGotMoreOfThanWasKnownGoesOnFromWhereItSays() = runBlocking<Unit> {
+        signIn()
+        server.chunkBytes = 1000
+        val (book, file) = book("Told Where")
+        file.writeBytes(ByteArray(2500) { it.toByte() })
+        val kept = library.keep(file, LocalBook(FileHash.partialMd5(file), "epub", book.title, emptyList(), "", "", "", false))
+        server.droppedChunks = 1
+        failing<java.io.IOException> { orbit.upload(kept, file, place) }
+        val session = server.sessions.values.single()
+        // The server got a second part meanwhile, which the session as asked about does not say yet.
+        server.droppedChunks = 0
+        session.bytes.write(file.readBytes(), 1000, 1000)
+
+        assertEquals(Uploaded.Sent, orbit.upload(checkNotNull(library.book(kept.id)), file, place))
+
+        assertArrayEquals(file.readBytes(), server.uploads.single().bytes)
+    }
+
+    @Test
+    fun fileTheServerFiledAwayWhileTheAppWasClosedIsFoundThere() = runBlocking<Unit> {
+        signIn()
+        val (book, file) = book("Closed Meanwhile")
+        server.droppedCompletes = true
+
+        failing<java.io.IOException> { orbit.upload(book, file, place) }
+        assertNull(library.book(book.id)?.serverFileId)
+        assertNotNull(library.book(book.id)?.uploadSession)
+        server.droppedCompletes = false
+
+        orbit.sync()
+
+        val now = checkNotNull(library.book(book.id))
+        assertEquals(server.uploads.single().bookId * 10, now.serverFileId)
+        assertNull(now.uploadSession)
+        assertEquals("sent once", 1, server.uploads.size)
+    }
+
+    @Test
+    fun sessionTheServerLetGoOfIsForgottenAndTheFileSentAnew() = runBlocking<Unit> {
+        signIn()
+        server.chunkBytes = 1000
+        val (book, file) = book("Ran Out")
+        file.writeBytes(ByteArray(2500))
+        val kept = library.keep(file, LocalBook(FileHash.partialMd5(file), "epub", book.title, emptyList(), "", "", "", false))
+        server.droppedChunks = 1
+        failing<java.io.IOException> { orbit.upload(kept, file, place) }
+        server.sessions.values.single().status = "expired"
+
+        orbit.settleUploads()
+        assertNull("the server let it go", library.book(kept.id)?.uploadSession)
+
+        assertEquals(Uploaded.Sent, orbit.upload(checkNotNull(library.book(kept.id)), file, place))
+        assertEquals(2, server.sessions.size)
+        assertArrayEquals(file.readBytes(), server.uploads.single().bytes)
+    }
+
+    @Test
+    fun sessionStillWaitingForTheRestIsKept() = runBlocking<Unit> {
+        signIn()
+        server.chunkBytes = 1000
+        val (book, file) = book("Half Way")
+        file.writeBytes(ByteArray(2500))
+        val kept = library.keep(file, LocalBook(FileHash.partialMd5(file), "epub", book.title, emptyList(), "", "", "", false))
+        server.droppedChunks = 1
+        failing<java.io.IOException> { orbit.upload(kept, file, place) }
+
+        orbit.settleUploads()
+
+        assertEquals(server.sessions.keys.single(), library.book(kept.id)?.uploadSession)
+    }
+
+    @Test
+    fun cancelledFileStopsOnTheWayAndTheServerLetsGoOfIt() = runBlocking<Unit> {
+        signIn()
+        val (book, file) = book("Thought Better Of It")
+        file.writeBytes(ByteArray(2_000_000))
+        val kept = library.keep(file, LocalBook(FileHash.partialMd5(file), "epub", book.title, emptyList(), "", "", "", false))
+        var stoppedAt = 0L
+
+        val job = launch(Dispatchers.Default) {
+            val self = coroutineContext.job
+            orbit.upload(kept, file, place) { sent ->
+                if (stoppedAt == 0L) {
+                    stoppedAt = sent
+                    self.cancel()
+                }
+            }
+        }
+        job.join()
+
+        assertTrue(job.isCancelled)
+        val session = server.sessions.values.single()
+        assertEquals("the part was not finished", 0, session.bytes.size())
+        assertEquals(session.id, library.book(kept.id)?.uploadSession)
+
+        orbit.cancelUpload(kept.id)
+
+        assertEquals("cancelled", session.status)
+        assertNull(library.book(kept.id)?.uploadSession)
+        assertTrue(server.uploads.isEmpty())
+    }
+
+    @Test
+    fun fileGoesUnderTheNameItHadWhenItEndsAsTheFormatDoes() = runBlocking<Unit> {
+        signIn()
+        val (book, file) = book("A Title", format = "fb2")
+        val (other, otherFile) = book("Another Title", format = "fb2")
+
+        orbit.upload(book, file, place, name = "Original: name.FB2")
+        orbit.upload(other, otherFile, place, name = "named otherwise.zip")
+
+        assertEquals(listOf("Original name.fb2", "Another Title.fb2"), server.uploads.map { it.name })
+    }
+
+    @Test
+    fun sessionOfAFileThatChangedSinceIsNotGoneOnWith() = runBlocking<Unit> {
+        signIn()
+        server.chunkBytes = 1000
+        val (book, file) = book("Changed")
+        file.writeBytes(ByteArray(2500))
+        val kept = library.keep(file, LocalBook(FileHash.partialMd5(file), "epub", book.title, emptyList(), "", "", "", false))
+        server.droppedChunks = 1
+        failing<java.io.IOException> { orbit.upload(kept, file, place) }
+        file.writeBytes(ByteArray(3000) { 1 })
+
+        assertEquals(Uploaded.Sent, orbit.upload(checkNotNull(library.book(kept.id)), file, place))
+
+        assertEquals(2, server.sessions.size)
+        assertArrayEquals(file.readBytes(), server.uploads.single().bytes)
     }
 }
