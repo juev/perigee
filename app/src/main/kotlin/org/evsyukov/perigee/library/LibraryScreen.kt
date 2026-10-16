@@ -12,6 +12,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -40,8 +41,10 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.List
+import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Favorite
@@ -149,6 +152,10 @@ fun LibraryScreen(
     var reviewOf by remember { mutableStateOf<String?>(null) }
     var aboutOf by rememberSaveable { mutableStateOf<String?>(null) }
     var naming by remember { mutableStateOf<Naming?>(null) }
+    // The ids of the books picked by a long press, to be sent to the server together.
+    var selected by rememberSaveable { mutableStateOf(emptySet<String>()) }
+    val shown = (state.listing as? Listing.Books)?.books.orEmpty()
+    val picked = shown.filter { it.id in selected }
 
     val folderPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
         if (uri != null) {
@@ -191,12 +198,35 @@ fun LibraryScreen(
     BackHandler(enabled = searching || state.group != null) {
         if (searching) stopSearch() else model.openGroup(null)
     }
+    BackHandler(enabled = picked.isNotEmpty()) { selected = emptySet() }
 
     Scaffold(
         snackbarHost = { SnackbarHost(snackbar) },
         topBar = {
             Column {
-                if (searching) {
+                if (picked.isNotEmpty()) {
+                    val sendable = picked.filter { state.canSend(it) }
+                    TopAppBar(
+                        title = { Text(pluralStringResource(R.plurals.books_selected, picked.size, picked.size)) },
+                        navigationIcon = {
+                            IconButton(onClick = { selected = emptySet() }) {
+                                Icon(Icons.Filled.Close, stringResource(R.string.action_clear_selection))
+                            }
+                        },
+                        actions = {
+                            if (sendable.isNotEmpty()) {
+                                IconButton(
+                                    onClick = {
+                                        model.send(sendable)
+                                        selected = emptySet()
+                                    },
+                                ) {
+                                    Icon(Icons.AutoMirrored.Filled.Send, stringResource(R.string.action_send_to_server))
+                                }
+                            }
+                        },
+                    )
+                } else if (searching) {
                     SearchBar(state.query, model::setQuery, stopSearch)
                 } else {
                     TopAppBar(
@@ -253,8 +283,10 @@ fun LibraryScreen(
                 onRemove = { model.removeCollection(it.key.toLong()) },
             )
             listing is Listing.Books -> Books(
-                padding, listing.books, model.covers, state,
+                padding, listing.books, model.covers, state, selected,
+                onSelect = { book -> selected = if (book.id in selected) selected - book.id else selected + book.id },
                 onSend = model::send,
+                onCancelSending = model::cancelSending,
                 onOpen = open,
                 onFavorite = { model.setFavorite(it, !it.favorite) },
                 onStatus = model::setStatus,
@@ -325,10 +357,28 @@ fun LibraryScreen(
     when (val question = state.question) {
         is SendQuestion.Alike -> AlertDialog(
             onDismissRequest = model::dontSend,
-            title = { Text(stringResource(R.string.send_alike_title)) },
-            text = { Text(stringResource(R.string.send_alike_text, question.book.serverLikeName)) },
-            confirmButton = { TextButton(onClick = { model.sendAnyway(question.book) }) { Text(stringResource(R.string.send_anyway)) } },
-            dismissButton = { TextButton(onClick = model::dontSend) { Text(stringResource(R.string.action_cancel)) } },
+            title = { Text(stringResource(if (question.books.size == 1) R.string.send_alike_title else R.string.send_alike_many_title)) },
+            text = {
+                val alike = question.books
+                Text(
+                    if (alike.size == 1) {
+                        stringResource(R.string.send_alike_text, alike[0].serverLikeName)
+                    } else {
+                        val names = alike.map { stringResource(R.string.send_alike_name, it.serverLikeName) }
+                        stringResource(R.string.send_alike_many_text, names.joinToString(", "))
+                    },
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = { model.sendAnyway(question.books + question.others) }) { Text(stringResource(R.string.send_anyway)) }
+            },
+            dismissButton = {
+                if (question.others.isEmpty()) {
+                    TextButton(onClick = model::dontSend) { Text(stringResource(R.string.action_cancel)) }
+                } else {
+                    TextButton(onClick = { model.sendAnyway(question.others) }) { Text(stringResource(R.string.send_skip_alike)) }
+                }
+            },
         )
         is SendQuestion.Where -> AlertDialog(
             onDismissRequest = model::dontSend,
@@ -339,7 +389,7 @@ fun LibraryScreen(
                     items(question.places) { offered ->
                         Text(
                             if (offered.folder.isEmpty()) offered.library else stringResource(R.string.send_place_folder, offered.library, offered.folder),
-                            Modifier.fillMaxWidth().clickable { model.sendTo(question.book, offered.place) }.padding(vertical = 12.dp),
+                            Modifier.fillMaxWidth().clickable { model.sendTo(question.books, offered.place) }.padding(vertical = 12.dp),
                             style = MaterialTheme.typography.bodyLarge,
                         )
                     }
@@ -620,7 +670,11 @@ private fun Books(
     books: List<Book>,
     covers: Covers,
     state: LibraryState,
+    /** The ids of the books picked to be sent together; while there are any, a tap picks a book rather than opens it. */
+    selected: Set<String>,
+    onSelect: (Book) -> Unit,
     onSend: (Book) -> Unit,
+    onCancelSending: (Book) -> Unit,
     onOpen: (Book) -> Unit,
     onFavorite: (Book) -> Unit,
     onStatus: (Book, ReadingStatus) -> Unit,
@@ -645,8 +699,8 @@ private fun Books(
             }
             items(books, key = { it.id }) { book ->
                 BookCell(
-                    book, covers, state.signedIn, state.sending[book.id], if (state.canSend(book)) onSend else null,
-                    onOpen, onFavorite, onStatus, onRating, onReview, onCollections, onAbout, onRemove,
+                    book, covers, state.signedIn, state.sending[book.id], picking(book, selected, onSelect, onOpen),
+                    sendingOf(book, state, onSend, onCancelSending), onFavorite, onStatus, onRating, onReview, onCollections, onAbout, onRemove,
                 )
             }
         }
@@ -659,18 +713,35 @@ private fun Books(
             }
             items(books, key = { it.id }) { book ->
                 BookRow(
-                    book, covers, state.signedIn, state.sending[book.id], if (state.canSend(book)) onSend else null,
-                    onOpen, onFavorite, onStatus, onRating, onReview, onCollections, onAbout, onRemove,
+                    book, covers, state.signedIn, state.sending[book.id], picking(book, selected, onSelect, onOpen),
+                    sendingOf(book, state, onSend, onCancelSending), onFavorite, onStatus, onRating, onReview, onCollections, onAbout, onRemove,
                 )
             }
         }
     }
 }
 
+/** What a tap and a long press on a book do, and whether it is picked. */
+private class Picking(val picked: Boolean, val onTap: () -> Unit, val onLongPress: () -> Unit)
+
+private fun picking(book: Book, selected: Set<String>, onSelect: (Book) -> Unit, onOpen: (Book) -> Unit) = Picking(
+    picked = book.id in selected,
+    onTap = { if (selected.isEmpty()) onOpen(book) else onSelect(book) },
+    onLongPress = { onSelect(book) },
+)
+
+/** What can be done about a book and the server from its menu; null for what cannot. */
+private class SendActions(val onSend: ((Book) -> Unit)?, val onCancel: ((Book) -> Unit)?)
+
+private fun sendingOf(book: Book, state: LibraryState, onSend: (Book) -> Unit, onCancel: (Book) -> Unit) =
+    SendActions(if (state.canSend(book)) onSend else null, if (state.canCancel(book)) onCancel else null)
+
 /** Where a book stands with the server, for a reader who is signed in to one; null when there is nothing to say. */
 @Composable
 internal fun serverLine(book: Book, signedIn: Boolean, sending: Sending?): String? = when {
     sending is Sending.Running -> stringResource(R.string.send_running, sending.percent)
+    sending == Sending.Waiting -> stringResource(R.string.send_waiting)
+    book.uploadSession != null && book.serverFileId == null -> stringResource(R.string.book_partly_sent)
     book.syncUnsent && signedIn -> stringResource(R.string.book_on_server_unsent)
     book.serverFileId != null -> stringResource(R.string.book_on_server)
     book.serverLikeId != null -> stringResource(R.string.book_like_on_server)
@@ -699,9 +770,8 @@ private fun BookRow(
     covers: Covers,
     signedIn: Boolean,
     sending: Sending?,
-    /** Null when the book cannot be sent to the server. */
-    onSend: ((Book) -> Unit)?,
-    onOpen: (Book) -> Unit,
+    picking: Picking,
+    send: SendActions,
     onFavorite: (Book) -> Unit,
     onStatus: (Book, ReadingStatus) -> Unit,
     onRating: (Book, Int) -> Unit,
@@ -711,10 +781,13 @@ private fun BookRow(
     onRemove: (Book) -> Unit,
 ) {
     Row(
-        Modifier.fillMaxWidth().clickable { onOpen(book) }.padding(start = 16.dp, top = 8.dp, bottom = 8.dp, end = 4.dp),
+        Modifier.fillMaxWidth().picked(picking).padding(start = 16.dp, top = 8.dp, bottom = 8.dp, end = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Cover(book, covers, Modifier.size(width = 52.dp, height = 76.dp))
+        Box {
+            Cover(book, covers, Modifier.size(width = 52.dp, height = 76.dp))
+            if (picking.picked) PickedMark(Modifier.align(Alignment.Center))
+        }
         Column(Modifier.weight(1f).padding(horizontal = 12.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Text(book.title, style = MaterialTheme.typography.titleSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
             if (book.author.isNotEmpty()) {
@@ -749,7 +822,7 @@ private fun BookRow(
                 Icon(Icons.Filled.FavoriteBorder, stringResource(R.string.favorite_add, book.title))
             }
         }
-        BookActions(book, onSend, onStatus, onRating, onReview, onCollections, onAbout, onRemove, onFavorite = null)
+        BookActions(book, send, onStatus, onRating, onReview, onCollections, onAbout, onRemove, onFavorite = null)
     }
 }
 
@@ -762,8 +835,7 @@ private fun BookRow(
 @Composable
 private fun BookActions(
     book: Book,
-    /** Null when the book cannot be sent to the server. */
-    onSend: ((Book) -> Unit)?,
+    send: SendActions,
     onStatus: (Book, ReadingStatus) -> Unit,
     onRating: (Book, Int) -> Unit,
     onReview: (Book) -> Unit,
@@ -846,13 +918,23 @@ private fun BookActions(
                     onCollections(book)
                 },
             )
-            if (onSend != null) {
+            send.onSend?.let { onSend ->
                 DropdownMenuItem(
-                    text = { Text(stringResource(R.string.action_send_to_server)) },
+                    text = { Text(stringResource(if (book.uploadSession != null) R.string.action_resume_sending else R.string.action_send_to_server)) },
                     leadingIcon = { Tick(false) },
                     onClick = {
                         open = false
                         onSend(book)
+                    },
+                )
+            }
+            send.onCancel?.let { onCancel ->
+                DropdownMenuItem(
+                    text = { Text(stringResource(R.string.action_cancel_sending)) },
+                    leadingIcon = { Tick(false) },
+                    onClick = {
+                        open = false
+                        onCancel(book)
                     },
                 )
             }
@@ -876,9 +958,8 @@ private fun BookCell(
     covers: Covers,
     signedIn: Boolean,
     sending: Sending?,
-    /** Null when the book cannot be sent to the server. */
-    onSend: ((Book) -> Unit)?,
-    onOpen: (Book) -> Unit,
+    picking: Picking,
+    send: SendActions,
     onFavorite: (Book) -> Unit,
     onStatus: (Book, ReadingStatus) -> Unit,
     onRating: (Book, Int) -> Unit,
@@ -887,9 +968,10 @@ private fun BookCell(
     onAbout: (Book) -> Unit,
     onRemove: (Book) -> Unit,
 ) {
-    Column(Modifier.clip(RoundedCornerShape(8.dp)).clickable { onOpen(book) }.padding(4.dp)) {
+    Column(Modifier.clip(RoundedCornerShape(8.dp)).picked(picking).padding(4.dp)) {
         Box {
             Cover(book, covers, Modifier.fillMaxWidth().aspectRatio(COVER_RATIO), titled = true)
+            if (picking.picked) PickedMark(Modifier.align(Alignment.Center))
             if (book.favorite) {
                 Icon(
                     Icons.Filled.Favorite, null, tint = MaterialTheme.colorScheme.primary,
@@ -899,7 +981,7 @@ private fun BookCell(
             // On the cover, so that the title under it has the whole width; darkened behind to be seen on any cover.
             CompositionLocalProvider(LocalContentColor provides Color.White) {
                 BookActions(
-                    book, onSend, onStatus, onRating, onReview, onCollections, onAbout, onRemove, onFavorite,
+                    book, send, onStatus, onRating, onReview, onCollections, onAbout, onRemove, onFavorite,
                     Modifier.align(Alignment.TopEnd).padding(4.dp).size(32.dp).background(Color.Black.copy(alpha = 0.4f), CircleShape),
                 )
             }
@@ -928,6 +1010,22 @@ private fun BookCell(
             }
         }
     }
+}
+
+/** A tap opens the book, or picks it while books are being picked; a long press picks it. A picked one is tinted. */
+@Composable
+private fun Modifier.picked(picking: Picking): Modifier {
+    val tint = if (picking.picked) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent
+    return background(tint).combinedClickable(onLongClick = picking.onLongPress, onClick = picking.onTap)
+}
+
+/** The mark on the cover of a picked book. */
+@Composable
+private fun PickedMark(modifier: Modifier) {
+    Icon(
+        Icons.Filled.CheckCircle, null, tint = MaterialTheme.colorScheme.primary,
+        modifier = modifier.size(32.dp).background(MaterialTheme.colorScheme.surface, CircleShape).testTag("picked"),
+    )
 }
 
 // A cover is drawn as a book stands: two wide to three high.

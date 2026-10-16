@@ -30,6 +30,7 @@ import org.evsyukov.perigee.reader.TestBook
 import org.evsyukov.perigee.sync.Answer
 import org.evsyukov.perigee.sync.BookOrbit
 import org.evsyukov.perigee.sync.FakeOrbit
+import org.evsyukov.perigee.sync.UploadPlace
 import org.json.JSONArray
 import org.junit.After
 import org.junit.Assert.assertArrayEquals
@@ -232,14 +233,14 @@ class LibraryViewModelTest {
         assertTrue("the book is known to be like one on the server", book.serverLikeId != null)
 
         model.send(book)
-        assertEquals(SendQuestion.Alike(book), until("the reader is asked") { it.question != null }.question)
+        assertEquals(SendQuestion.Alike(listOf(book)), until("the reader is asked") { it.question != null }.question)
         model.dontSend()
         until("the question is put away") { it.question == null }
         assertTrue("the reader thought better of it", server.value.uploads.isEmpty())
 
         model.send(book)
         until("the reader is asked") { it.question is SendQuestion.Alike }
-        model.sendAnyway(book)
+        model.sendAnyway(listOf(book))
         untilTrue("the book is sent") { server.value.uploads.size == 1 }
     }
 
@@ -263,7 +264,7 @@ class LibraryViewModelTest {
             listOf("Fiction" to "", "Shared" to "new", "Shared" to "old"),
             where.places.map { it.library to it.folder },
         )
-        model.sendTo(where.book, where.places.single { it.folder == "old" }.place)
+        model.sendTo(where.books, where.places.single { it.folder == "old" }.place)
 
         untilTrue("the book is sent") { server.value.uploads.size == 1 }
         assertEquals(2L, server.value.uploads[0].libraryId)
@@ -306,6 +307,149 @@ class LibraryViewModelTest {
         model.send(shown("Unlucky Book"))
         val state = until("the failure is told") { it.sending[id] is Sending.Failed }
         assertEquals(Sending.Failed(SendFailure.Unreachable), state.sending[id])
+    }
+
+    @Test
+    fun severalBooksAreSentOneAfterAnotherInTheOrderAsked() {
+        val ids = listOf(keep("First Of Three"), keep("Second Of Three"), keep("Third Of Three"))
+        signIn()
+        serverAsked()
+        // The first book is held on the server until the others are seen waiting.
+        val hold = CountDownLatch(1)
+        server.value.afterUpload = { if (server.value.uploads.size == 1) hold.await() }
+
+        model.send(listOf("Second Of Three", "First Of Three", "Third Of Three").map(::shown))
+
+        val waiting = until("the rest wait their turn") { state -> ids.count { state.sending[it] == Sending.Waiting } == 2 }
+        assertFalse("waiting books are not offered to be sent again", waiting.canSend(shown("Third Of Three")))
+        assertTrue("they can be called off", waiting.canCancel(shown("Third Of Three")))
+        hold.countDown()
+        untilTrue("all are on the server") { ids.all { stored(it)?.serverFileId != null } }
+        assertEquals(listOf("Second Of Three.fb2", "First Of Three.fb2", "Third Of Three.fb2"), server.value.uploads.map { it.name })
+        until("nothing is said to be on the way") { state -> ids.none { it in state.sending } }
+    }
+
+    @Test
+    fun bookWaitingItsTurnIsCalledOff() {
+        val first = keep("Goes First")
+        val second = keep("Called Off")
+        signIn()
+        serverAsked()
+        val hold = CountDownLatch(1)
+        server.value.afterUpload = { hold.await() }
+        model.send(listOf(shown("Goes First"), shown("Called Off")))
+        until("the second waits") { it.sending[second] == Sending.Waiting }
+
+        model.cancelSending(shown("Called Off"))
+
+        until("it is no longer on the way") { second !in it.sending }
+        hold.countDown()
+        untilTrue("the first gets there") { stored(first)?.serverFileId != null }
+        until("the first is done") { first !in it.sending }
+        assertEquals(listOf("Goes First.fb2"), server.value.uploads.map { it.name })
+        assertNull(stored(second)?.serverFileId)
+    }
+
+    @Test
+    fun bookCutOffOnItsWayGoesOnOrIsCalledOff() {
+        val resumed = keep("Resumed Book")
+        val dropped = keep("Dropped Book")
+        signIn()
+        serverAsked()
+        server.value.chunkBytes = 100
+        server.value.droppedChunks = 2
+
+        model.send(listOf(shown("Resumed Book"), shown("Dropped Book")))
+
+        val cut = until("both are cut off") { state -> listOf(resumed, dropped).all { state.sending[it] == Sending.Failed(SendFailure.Unreachable) } }
+        val book = shown("Resumed Book")
+        assertTrue("sent in part, the book keeps where it got to", book.uploadSession != null)
+        assertTrue("it can be sent on", cut.canSend(book))
+        assertTrue("or called off", cut.canCancel(book))
+
+        model.send(book)
+        untilTrue("the book is on the server") { stored(resumed)?.serverFileId != null }
+        val session = server.value.sessions.values.first { it.name == "Resumed Book.fb2" }
+        assertEquals("the same session went on", "processing", session.status)
+
+        model.cancelSending(shown("Dropped Book"))
+        untilTrue("the server let go of the other") { server.value.sessions.values.single { it.name == "Dropped Book.fb2" }.status == "cancelled" }
+        untilTrue("nothing is left to go on with") { stored(dropped)?.uploadSession == null }
+        assertFalse(model.state.value.canCancel(checkNotNull(stored(dropped))))
+        assertEquals(1, server.value.uploads.size)
+    }
+
+    @Test
+    fun booksLikeOnesOnTheServerAreAskedAboutTogetherAndCanBeLeftOut() {
+        keep("Alike One")
+        keep("Alike Two")
+        keep("Unlike")
+        server.value.books = JSONArray(
+            """[{"id":7,"title":"Alike One","authors":["Test Author"],"files":[{"id":70,"format":"epub","role":"primary","sizeBytes":100}]},
+                {"id":8,"title":"Alike Two","authors":["Test Author"],"files":[{"id":80,"format":"epub","role":"primary","sizeBytes":100}]}]""",
+        )
+        signIn()
+        serverAsked()
+        val books = listOf("Alike One", "Unlike", "Alike Two").map(::shown)
+
+        model.send(books)
+
+        val question = until("the reader is asked once") { it.question != null }.question as SendQuestion.Alike
+        assertEquals(listOf("Alike One", "Alike Two"), question.books.map { it.title })
+        assertEquals(listOf("Unlike"), question.others.map { it.title })
+        model.sendAnyway(question.others)
+        untilTrue("the one unlike any is sent") { server.value.uploads.size == 1 }
+        assertEquals("Unlike.fb2", server.value.uploads.single().name)
+        assertNull(model.state.value.question)
+    }
+
+    @Test
+    fun whereSeveralBooksGoIsAskedOnce() {
+        keep("One Book")
+        keep("Two Book")
+        server.value.libraries = JSONArray(
+            """[{"id":1,"name":"Fiction","allowedFormats":[],"organizationMode":"book_per_file","folders":[{"id":10,"name":"books"}]},
+                {"id":2,"name":"Shared","allowedFormats":[],"organizationMode":"book_per_file","folders":[{"id":20,"name":"new"}]}]""",
+        )
+        signIn()
+        serverAsked()
+
+        model.send(listOf(shown("One Book"), shown("Two Book")))
+        val where = until("the reader is asked where to") { it.question is SendQuestion.Where }.question as SendQuestion.Where
+        model.sendTo(where.books, where.places.single { it.library == "Shared" }.place)
+
+        untilTrue("both are sent") { server.value.uploads.size == 2 }
+        assertEquals(listOf(2L, 2L), server.value.uploads.map { it.libraryId })
+    }
+
+    @Test
+    fun bookInAFolderGoesUnderTheNameOfItsFile() {
+        TestBook.write(File(source.dir, "first.part.fb2"), "first")
+        runBlocking { library.addFolder(source.uriOf(source.dir), "Books") }
+        val book = shown("first")
+        signIn()
+        serverAsked()
+
+        model.send(book)
+
+        untilTrue("the book is on the server") { stored(book.id)?.serverFileId != null }
+        assertEquals("the file's own name, not the title", "first.part.fb2", server.value.uploads.single().name)
+    }
+
+    @Test
+    fun bookTheServerFiledAwayWhileTheAppWasClosedIsOnTheServerOnceItOpens() {
+        val id = keep("Closed Meanwhile")
+        signIn()
+        server.value.droppedCompletes = true
+        val cut = runCatching { runBlocking { orbit.upload(checkNotNull(stored(id)), File(checkNotNull(stored(id)).path), UploadPlace(1, 10)) } }
+        assertTrue("the answer never came: $cut", cut.exceptionOrNull() is java.io.IOException)
+        server.value.droppedCompletes = false
+        assertNull(stored(id)?.serverFileId)
+
+        model.state.value
+
+        untilTrue("the book is marked as on the server") { stored(id)?.serverFileId != null }
+        assertNull(stored(id)?.uploadSession)
     }
 
     @Test

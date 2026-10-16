@@ -1,8 +1,10 @@
 package org.evsyukov.perigee.library
 
+import android.content.ContentResolver
 import android.content.Context
 import android.net.Uri
 import android.os.ParcelFileDescriptor
+import android.provider.OpenableColumns
 import java.io.File
 import java.io.FileInputStream
 import java.io.IOException
@@ -199,4 +201,21 @@ internal suspend fun localCopy(context: Context, library: Library, book: Book): 
     }
     library.setLocalCopy(book.id, target)
     target
+}
+
+/**
+ * The name the book's file has in its folder, as it is sent to a server: an
+ * FB2 kept in an archive goes as the book inside, without the archive's ending.
+ * Null for a book that lies in no folder, as one kept in the app's storage.
+ */
+internal fun originalName(resolver: ContentResolver, book: Book): String? {
+    val uri = book.uri?.let(Uri::parse) ?: return null
+    val named = try {
+        resolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { if (it.moveToFirst()) it.getString(0) else null }
+    } catch (e: RuntimeException) {
+        // A provider that cannot be asked, or a document that is gone: named by its address instead.
+        null
+    }
+    val name = named ?: uri.lastPathSegment?.substringAfterLast('/') ?: return null
+    return if (book.format == "fb2" && name.endsWith(".zip", ignoreCase = true)) name.dropLast(".zip".length) else name
 }

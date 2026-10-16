@@ -250,6 +250,19 @@
     <string name="send_where_title">Where on the server?</string>
     <string name="send_where_text">Books you send will go there from now on.</string>
     <string name="send_place_folder">%1$s, folder %2$s</string>
+    <string name="send_waiting">waiting to be sent</string>
+    <string name="book_partly_sent">sent in part</string>
+    <string name="action_resume_sending">Resume sending</string>
+    <string name="action_cancel_sending">Stop sending</string>
+    <string name="send_alike_many_title">Similar books are on the server</string>
+    <string name="send_alike_many_text">The server has books with the same titles and authors as these: %1$s. Their files are different ones: they may be other editions, or the same books saved differently. If you send these, the server may end up with both.</string>
+    <string name="send_skip_alike">Skip these</string>
+    <string name="send_alike_name">“%1$s”</string>
+    <plurals name="books_selected">
+        <item quantity="one">%1$d book selected</item>
+        <item quantity="other">%1$d books selected</item>
+    </plurals>
+    <string name="action_clear_selection">Clear selection</string>
     <string name="action_licenses">Licenses</string>
     <string name="licenses_title">Licenses</string>
     <string name="licenses_gpl">GNU General Public License, version 3</string>
