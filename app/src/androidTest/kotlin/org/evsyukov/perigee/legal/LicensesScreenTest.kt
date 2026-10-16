@@ -82,8 +82,9 @@ class LicensesScreenTest {
         val licenses = componentLicenses(activity)
         assertEquals(
             listOf(
-                "antiword", "Apache-2.0", "chmlib", "FreeType", "FriBidi", "HarfBuzz", "libjpeg-turbo", "libpng",
-                "libunibreak", "libwebp", "utf8proc", "xxHash", "Zstandard",
+                "antiword", "Apache-2.0", "chmlib", "Comfortaa", "FreeType", "FriBidi", "HarfBuzz", "libjpeg-turbo", "libpng",
+                "libunibreak", "libwebp", "Literata", "Merriweather", "Noto Serif", "PT Sans", "PT Serif", "Roboto", "utf8proc",
+                "xxHash", "Zstandard",
             ),
             licenses.map { it.name },
         )
