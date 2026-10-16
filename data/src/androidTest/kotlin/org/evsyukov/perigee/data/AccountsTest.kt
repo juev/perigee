@@ -141,6 +141,31 @@ class AccountsTest {
     }
 
     @Test
+    fun uploadUnderWayIsKeptUntilTheFileIsOnTheServerOrTheServerIsForgotten() = runBlocking {
+        accounts.signIn("https://books.example", "reader", "Reader", tokens, "v3.3.0")
+        val sent = book("sent.epub")
+        val called = book("called-off.epub")
+        val left = book("left.epub")
+        library.uploadStarted(sent, "session-1")
+        library.uploadStarted(called, "session-2")
+        library.uploadStarted(left, "session-3")
+        assertEquals("session-1", library.book(sent)?.uploadSession)
+        assertEquals(setOf(sent, called, left), library.booksSending().map { it.id }.toSet())
+
+        library.onServer(sent, 7, 70)
+        library.uploadEnded(called)
+
+        assertNull("the file got there", library.book(sent)?.uploadSession)
+        assertNull(library.book(called)?.uploadSession)
+        assertEquals(listOf(left), library.booksSending().map { it.id })
+
+        accounts.signIn("https://other.example", "other", "Other", tokens, "v3.4.0")
+
+        assertNull("the session is the other server's", library.book(left)?.uploadSession)
+        assertTrue(library.booksSending().isEmpty())
+    }
+
+    @Test
     fun signingOutForgetsTheServerButKeepsTheBooks() = runBlocking {
         accounts.signIn("https://books.example", "reader", "Reader", tokens, "v3.3.0")
         val id = book("kept.epub")

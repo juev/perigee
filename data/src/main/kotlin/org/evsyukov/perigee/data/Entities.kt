@@ -78,6 +78,11 @@ data class Book(
     /** When the reader last changed [review], and which of those changes the server last took. */
     @ColumnInfo(defaultValue = "0") val reviewChangedAt: Long = 0,
     @ColumnInfo(defaultValue = "0") val reviewPushedAt: Long = 0,
+    /**
+     * The server's upload session the book's file is being sent through; null when none is under way.
+     * A file cut off on its way goes on from where the server got to, see [Library.uploadStarted].
+     */
+    @ColumnInfo(defaultValue = "NULL") val uploadSession: String? = null,
 ) {
     /** The places the reader last jumped from, oldest first: Back returns to the last of them. */
     val jumpedFrom: List<String> get() = jumps.lines().filter { it.isNotEmpty() }
