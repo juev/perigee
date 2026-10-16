@@ -134,6 +134,9 @@
     <string name="action_catalogs">Catalogs (OPDS)</string>
     <string name="catalogs_empty">A catalog is a library on the network that books can be downloaded from: your own server, or a public one. Add it by its OPDS address.</string>
     <string name="catalogs_empty_title">No catalogs yet</string>
+    <string name="catalogs_suggested">Suggested catalogs</string>
+    <string name="catalog_add_named">Add the catalog %1$s</string>
+    <string name="suggested_gutenberg">Free books whose copyright has run out, mostly in English.</string>
     <string name="catalog_add">Add a catalog</string>
     <string name="catalog_remove">Remove the catalog %1$s</string>
     <string name="catalog_change">Change the catalog</string>
