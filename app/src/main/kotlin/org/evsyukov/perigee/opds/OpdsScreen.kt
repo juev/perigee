@@ -1,6 +1,7 @@
 package org.evsyukov.perigee.opds
 
 import android.content.Intent
+import android.text.format.Formatter
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -32,7 +33,6 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -196,16 +196,18 @@ fun OpdsScreen(onOpen: (File) -> Unit, onClose: () -> Unit, model: OpdsViewModel
 }
 
 @Composable
-private fun failureText(failure: Failure): String = stringResource(
-    when (failure) {
-        Failure.BadAddress -> R.string.catalog_bad_address
-        Failure.Unauthorized -> R.string.catalog_unauthorized
-        Failure.NotACatalog -> R.string.catalog_not_a_catalog
-        Failure.Unreachable -> R.string.catalog_unreachable
-        Failure.PasswordLost -> R.string.catalog_password_lost
-        Failure.NotABook -> R.string.catalog_not_a_book
-    },
-)
+private fun failureText(failure: Failure): String = when (failure) {
+    Failure.BadAddress -> stringResource(R.string.catalog_bad_address)
+    Failure.Unauthorized -> stringResource(R.string.catalog_unauthorized)
+    Failure.NotACatalog -> stringResource(R.string.catalog_not_a_catalog)
+    Failure.Unreachable -> stringResource(R.string.catalog_unreachable)
+    Failure.PasswordLost -> stringResource(R.string.catalog_password_lost)
+    Failure.NotABook -> stringResource(R.string.catalog_not_a_book)
+    Failure.TooLarge -> stringResource(R.string.catalog_too_large, fileSize(OpdsClient.BOOK_LIMIT))
+}
+
+@Composable
+private fun fileSize(bytes: Long): String = Formatter.formatShortFileSize(LocalContext.current, bytes)
 
 @Composable
 private fun CatalogList(
@@ -328,9 +330,30 @@ private fun DownloadLine(entry: OpdsEntry, link: OpdsLink, download: Download?, 
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         when (download) {
             null -> TextButton(onClick = { model.download(entry, link) }) { Text(stringResource(R.string.catalog_download, format)) }
-            Download.Running -> {
-                CircularProgressIndicator(Modifier.padding(vertical = 12.dp).size(20.dp), strokeWidth = 2.dp)
-                Text(stringResource(R.string.catalog_downloading, format), style = MaterialTheme.typography.bodySmall)
+            is Download.Running -> {
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(stringResource(R.string.catalog_downloading, format), style = MaterialTheme.typography.bodySmall)
+                    val total = download.total
+                    if (total != null && total > 0) {
+                        LinearProgressIndicator(
+                            progress = { (download.received.toFloat() / total).coerceIn(0f, 1f) },
+                            Modifier.fillMaxWidth().testTag("download-progress"),
+                        )
+                        Text(
+                            stringResource(R.string.catalog_download_progress, fileSize(download.received), fileSize(total)),
+                            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    } else {
+                        LinearProgressIndicator(Modifier.fillMaxWidth().testTag("download-progress"))
+                        if (download.received > 0) {
+                            Text(
+                                fileSize(download.received), style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                }
+                TextButton(onClick = { model.cancelDownload(link) }) { Text(stringResource(R.string.action_cancel)) }
             }
             is Download.Done -> {
                 Text(stringResource(R.string.catalog_downloaded), style = MaterialTheme.typography.bodySmall)

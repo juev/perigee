@@ -1,9 +1,11 @@
 package org.evsyukov.perigee.opds
 
+import android.text.format.Formatter
 import androidx.activity.ComponentActivity
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onFirst
 import androidx.compose.ui.test.onNodeWithTag
@@ -135,6 +137,33 @@ class OpdsScreenTest {
         rule.onAllNodesWithText(string(R.string.catalog_read)).onFirst().performClick()
         rule.waitUntil(TIMEOUT) { opened != null }
         assertEquals(book.path, opened?.path)
+    }
+
+    @Test
+    fun downloadShowsHowFarItIsAndIsCancelled() {
+        runBlocking { catalogs.add("${catalog.url}/opds", "Home Books", "reader", "secret-1") }
+        show()
+        waitForText("Home Books")
+        rule.onNodeWithText("Home Books").performClick()
+        waitForText("All Books")
+        rule.onNodeWithText("All Books").performClick()
+        waitForText("Slow Title")
+        val download = string(R.string.catalog_download, "FB2")
+        // The next part of the page comes when its end is in view: wait for it, so the count stays.
+        waitForText("Second Page Title")
+        val offered = rule.onAllNodesWithText(download).fetchSemanticsNodes().size
+        // Listed, slow and huge, in the catalog's order.
+        rule.onAllNodesWithText(download)[1].performClick()
+        rule.waitUntil(TIMEOUT) { rule.onAllNodesWithTag("download-progress").fetchSemanticsNodes().isNotEmpty() }
+        rule.onNodeWithText(string(R.string.catalog_downloading, "FB2")).assertIsDisplayed()
+
+        rule.onNodeWithText(string(R.string.action_cancel)).performClick()
+        rule.waitUntil(TIMEOUT) { rule.onAllNodesWithTag("download-progress").fetchSemanticsNodes().isEmpty() }
+        assertEquals("the book can be downloaded again", offered, rule.onAllNodesWithText(download).fetchSemanticsNodes().size)
+        assertTrue(runBlocking { library.books().first().isEmpty() })
+
+        rule.onAllNodesWithText(download)[2].performClick()
+        waitForText(string(R.string.catalog_too_large, Formatter.formatShortFileSize(activity, OpdsClient.BOOK_LIMIT)))
     }
 
     private companion object {

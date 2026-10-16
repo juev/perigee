@@ -10,8 +10,10 @@ import androidx.lifecycle.viewModelScope
 import java.io.File
 import java.io.IOException
 import java.util.UUID
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -43,6 +45,9 @@ enum class Failure {
 
     /** A downloaded file is not a book the app reads. */
     NotABook,
+
+    /** A file is larger than a book is let be. */
+    TooLarge,
 }
 
 /** A page of a catalog as shown: every part of it fetched so far. */
@@ -58,7 +63,8 @@ data class Page(
 
 /** How far a book is on its way into the library. */
 sealed interface Download {
-    data object Running : Download
+    /** [received] bytes so far, of [total] when the server tells the size. */
+    data class Running(val received: Long = 0, val total: Long? = null) : Download
     data class Done(val bookId: String) : Download
     data class Failed(val why: Failure) : Download
 }
@@ -100,6 +106,8 @@ class OpdsViewModel(
 
     private var client: OpdsClient? = null
     private var fetching: Job? = null
+    /** Downloads under way, by the address of the file. */
+    private val downloading = HashMap<String, Job>()
     private val pictures = LruCache<String, ImageBitmap>(64)
 
     init {
@@ -223,21 +231,46 @@ class OpdsViewModel(
                 _state.update { it.copy(asking = entry to link) }
                 return@launch
             }
-            mark(link, Download.Running)
-            val app = getApplication<Application>()
-            // Its own folder: two books may come under one name.
-            val landing = File(app.cacheDir, "opds/${UUID.randomUUID()}")
-            val result = try {
-                val file = from.download(link, entry.title, landing)
-                arrivals.keep(file, link.format.ifEmpty { Library.formatOf(file.name) })?.let(Download::Done)
-                    ?: Download.Failed(Failure.NotABook)
-            } catch (e: IOException) {
-                Download.Failed(failureOf(e))
-            } finally {
-                withContext(Dispatchers.IO) { landing.deleteRecursively() }
-            }
-            mark(link, result)
+            // Marked and remembered at once, so a second tap and a cancel both see it.
+            mark(link, Download.Running())
+            val job = launch(start = CoroutineStart.LAZY) { fetchBook(from, entry, link) }
+            downloading[link.url] = job
+            job.invokeOnCompletion { if (downloading[link.url] === job) downloading.remove(link.url) }
+            job.start()
         }
+    }
+
+    /** Stops a download; the book can be downloaded again from the start. */
+    fun cancelDownload(link: OpdsLink) {
+        downloading.remove(link.url)?.cancel() ?: return
+        _state.update { it.copy(downloads = it.downloads - link.url) }
+    }
+
+    private suspend fun fetchBook(from: OpdsClient, entry: OpdsEntry, link: OpdsLink) {
+        val app = getApplication<Application>()
+        // Its own folder: two books may come under one name.
+        val landing = File(app.cacheDir, "opds/${UUID.randomUUID()}")
+        var shown = Download.Running()
+        val result = try {
+            val file = from.download(link, entry.title, landing) { received, total ->
+                // Told often, shown seldom: a step of a hundredth, or of a megabyte when the size is not known.
+                val step = total?.let { maxOf(it / 100, 1) } ?: PROGRESS_STEP
+                if (received - shown.received >= step || received == total) {
+                    shown = Download.Running(received, total)
+                    // Only over a download still shown as running: a cancel has the last word.
+                    _state.update { state ->
+                        if (state.downloads[link.url] is Download.Running) state.copy(downloads = state.downloads + (link.url to shown)) else state
+                    }
+                }
+            }
+            arrivals.keep(file, link.format.ifEmpty { Library.formatOf(file.name) })?.let(Download::Done)
+                ?: Download.Failed(Failure.NotABook)
+        } catch (e: IOException) {
+            Download.Failed(failureOf(e))
+        } finally {
+            withContext(NonCancellable + Dispatchers.IO) { landing.deleteRecursively() }
+        }
+        mark(link, result)
     }
 
     /** The reader chose a folder for downloaded books; the download that waited for it goes on. */
@@ -309,10 +342,12 @@ class OpdsViewModel(
     private fun failureOf(e: IOException): Failure = when (e) {
         is UnauthorizedException -> Failure.Unauthorized
         is NotACatalogException -> Failure.NotACatalog
+        is TooLargeException -> Failure.TooLarge
         else -> Failure.Unreachable
     }
 
     private companion object {
         const val COVER_HEIGHT = 320
+        const val PROGRESS_STEP = 1024L * 1024
     }
 }

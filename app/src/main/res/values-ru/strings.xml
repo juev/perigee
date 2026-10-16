@@ -152,6 +152,8 @@
     <string name="catalog_no_readable_file">Нет файла в формате, который читает приложение.</string>
     <string name="catalog_download">Скачать %1$s</string>
     <string name="catalog_downloading">Скачиваем %1$s…</string>
+    <string name="catalog_download_progress">%1$s из %2$s</string>
+    <string name="catalog_too_large">Файл больше %1$s — книга такой не бывает. Он не скачан.</string>
     <string name="catalog_downloaded">В библиотеке.</string>
     <string name="catalog_read">Читать</string>
     <string name="catalog_search_hint">Найти в каталоге</string>

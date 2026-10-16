@@ -246,6 +246,40 @@ class OpdsViewModelTest {
     }
 
     @Test
+    fun downloadShowsHowFarItIsAndIsCancelled() {
+        toTheBooks()
+        val slow = entry("Slow Title")
+        val link = readableDownloads(slow).first()
+        model.download(slow, link)
+        val running = until("part of the book has come") { state ->
+            (state.downloads[link.url] as? Download.Running)?.received?.let { it > 0 } == true
+        }.downloads.getValue(link.url) as Download.Running
+        assertEquals(1_000_000L, running.total)
+
+        model.cancelDownload(link)
+        assertNull("the book can be downloaded again at once", model.state.value.downloads[link.url])
+        // That the connection is broken off at once is checked on a device, by OpdsClientTest: the JVM's
+        // HttpURLConnection makes disconnect wait for the read it should end, so here it ends by the timeout.
+        repeat(20) {
+            shadowOf(Looper.getMainLooper()).idle()
+            Thread.sleep(10)
+        }
+        assertNull("nothing comes back after the cancel", model.state.value.downloads[link.url])
+        assertTrue(runBlocking { library.books().first().isEmpty() })
+    }
+
+    @Test
+    fun bookLargerThanABookCanBeIsRefused() {
+        toTheBooks()
+        val huge = entry("Huge Title")
+        val link = readableDownloads(huge).first()
+        model.download(huge, link)
+        val failed = until("the download is over") { it.downloads[link.url] is Download.Failed }
+        assertEquals(Download.Failed(Failure.TooLarge), failed.downloads[link.url])
+        assertTrue(runBlocking { library.books().first().isEmpty() })
+    }
+
+    @Test
     fun endOfAPageBringsWhatFollowsOnce() {
         toTheBooks()
         assertEquals("/opds/all?page=2", until("the page says what follows") { it.page?.next != null }.page?.next?.substringAfter(catalog.url))

@@ -27,8 +27,8 @@ internal class TestCatalog(private val user: String, private val password: Strin
         <link rel="search" type="application/atom+xml" href="/opds/find?q={searchTerms}"/>$body</feed>"""
         ).toByteArray() to "application/atom+xml"
 
-    private fun bookEntry(title: String) = """<entry><title>$title</title><id>$title</id><author><name>Catalog Author</name></author>
-        <link rel="http://opds-spec.org/acquisition" type="application/x-fictionbook+xml" href="/files/book.fb2"/>
+    private fun bookEntry(title: String, file: String = "/files/book.fb2") = """<entry><title>$title</title><id>$title</id><author><name>Catalog Author</name></author>
+        <link rel="http://opds-spec.org/acquisition" type="application/x-fictionbook+xml" href="$file"/>
         <link rel="http://opds-spec.org/acquisition" type="application/pdf" href="/files/book.pdf"/></entry>"""
 
     private fun answer(path: String): Pair<ByteArray, String>? = when {
@@ -41,7 +41,8 @@ internal class TestCatalog(private val user: String, private val password: Strin
         )
         path == "/opds/all" -> feed(
             "All Books",
-            bookEntry("Listed Title") + """<link rel="next" type="application/atom+xml" href="/opds/all?page=2"/>""",
+            bookEntry("Listed Title") + bookEntry("Slow Title", "/files/slow.fb2") + bookEntry("Huge Title", "/files/huge.fb2") +
+                """<link rel="next" type="application/atom+xml" href="/opds/all?page=2"/>""",
         )
         path == "/opds/all?page=2" -> feed("All Books", bookEntry("Second Page Title"))
         path.startsWith("/opds/find?q=") -> feed("Found", bookEntry("Found for ${path.substringAfter("q=")}"))
@@ -61,13 +62,28 @@ internal class TestCatalog(private val user: String, private val password: Strin
         }
         asked += path
         val expected = "Basic " + Base64.encodeToString("$user:$password".toByteArray(), Base64.NO_WRAP)
+        val out = client.getOutputStream()
+        if (authorization == expected && path == "/files/slow.fb2") {
+            // Part of a book and then nothing: a download that only a cancel ends.
+            out.write("HTTP/1.1 200 X\r\nContent-Type: application/x-fictionbook+xml\r\nContent-Length: ${SLOW_SIZE}\r\nConnection: close\r\n\r\n".toByteArray())
+            out.write(book.copyOf(minOf(book.size, SLOW_SIZE / 2)))
+            out.flush()
+            Thread.sleep(120_000)
+            return
+        }
+        if (authorization == expected && path == "/files/huge.fb2") {
+            // Says it is larger than any book; refused before anything is read.
+            out.write("HTTP/1.1 200 X\r\nContent-Type: application/x-fictionbook+xml\r\nContent-Length: ${OpdsClient.BOOK_LIMIT + 1}\r\nConnection: close\r\n\r\n".toByteArray())
+            out.flush()
+            return
+        }
         val found = answer(path)
         val (code, body, type) = when {
             authorization != expected -> Triple(401, ByteArray(0), "text/plain")
             found == null -> Triple(404, ByteArray(0), "text/plain")
             else -> Triple(200, found.first, found.second)
         }
-        client.getOutputStream().apply {
+        out.apply {
             write("HTTP/1.1 $code X\r\nContent-Type: $type\r\nContent-Length: ${body.size}\r\nConnection: close\r\n\r\n".toByteArray())
             write(body)
             flush()
@@ -75,4 +91,8 @@ internal class TestCatalog(private val user: String, private val password: Strin
     }
 
     override fun close() = socket.close()
+
+    private companion object {
+        const val SLOW_SIZE = 1_000_000
+    }
 }

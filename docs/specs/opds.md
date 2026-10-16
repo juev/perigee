@@ -31,7 +31,11 @@ A page may give a search address template outright (`rel="search"`, an Atom type
 
 ### Downloads
 
-A file is downloaded into a folder of its own in the cache and read by the engine (`readBook`: title, authors, series, cover, fingerprint). A file the engine cannot read is deleted and reported as not a book. A name the server suggests cannot lead out of the download folder. The book joins the library unopened, titled by what the file says, not by what the catalog listed.
+A file is downloaded into a folder of its own in the cache and read by the engine (`readBook`: title, authors, series, cover, fingerprint). A file the engine cannot read is deleted and reported as not a book. A name the server suggests cannot lead out of the download folder.
+
+- **Progress.** The line of the book shows how much has come: a bar and "3.1 MB of 12 MB" when the server gives the size, a running bar and the bytes so far when it does not. The screen is told at most a hundred times a download, or once a megabyte when the size is not known.
+- **Cancel.** A download under way can be cancelled: the connection is closed at once, what came is deleted, and the book can be downloaded again. Nothing it was doing comes back after the cancel.
+- **Size.** A file larger than 200 MB (`OpdsClient.BOOK_LIMIT`) is refused: before anything is read when the server gives the size, as soon as it grows past it when it does not. The number has room above the largest EPUB with pictures among some 120 popular and illustrated books of Project Gutenberg, looked at on 2026-10-16: 85 MB, most under 3 MB. The book joins the library unopened, titled by what the file says, not by what the catalog listed.
 
 Where the file is kept is the reader's choice, asked for at the first download and changed under "Folders with books":
 
@@ -49,16 +53,16 @@ Where the file is kept is the reader's choice, asked for at the first download a
 ## Tests
 
 - `:opds` `OpdsParserTest` — pages recorded on 2026-10-13 from bookOrbit 3.3.0 and from Project Gutenberg (`opds/src/androidTest/assets/feeds`); OPDS 2.0 pages recorded on 2026-10-16 from Feedbooks (cut down to a few books) and from the OPDS test catalog `test.opds.io`; plus hand-written pages for paid links, broken links and things that are not catalogs.
-- `:opds` `OpdsClientTest` — against servers the test runs itself: credentials, refusals, redirects within and across servers, search by template and by description, download names, oversized pictures.
+- `:opds` `OpdsClientTest` — against servers the test runs itself: credentials, refusals, redirects within and across servers, search by template and by description, download names, oversized pictures and books, the progress of a download, and a cancel that stops a download waiting on a quiet server at once.
 - `:data` `CatalogsTest` — sealed passwords, adding twice, removal, a downloaded file joining the library.
-- `:app` `OpdsScreenTest` — the screen against a small catalog served by the test: adding with each kind of failure, the question before a password goes over plain HTTP, browsing, the next part of a page, search, a broken section, and downloads: the question at the first one, into the app, into a folder, a book that is in a folder already, a folder that cannot be written to. The folder is a plain directory there.
+- `:app` `OpdsViewModelTest` (JVM) — the screen's model against a small catalog served by the test: adding with each kind of failure, browsing, the next part of a page, search, a broken section, and downloads: the question at the first one, into the app, into a folder, a book that is in a folder already, a folder that cannot be written to, progress and a cancel, a file too large. The folder is a plain directory there.
+- `:app` `OpdsScreenTest` (device) — the screen itself: the question before a password goes over plain HTTP, a book downloaded and opened, the progress bar and its cancel, the message about a file too large.
 - `:contract` `OpdsContractTest` — the client against the catalog of a real bookOrbit 3.3.0 in docker: browsing, pages, search, download checked by the engine, refused passwords. The server has OPDS off by default and separate OPDS users; the test switches it on (`PATCH app-settings/opds_enabled`) and makes a user (`POST opds-users`).
 
 Checked by hand on the emulator against the same server: adding the catalog, browsing, downloading an EPUB, reading it, finding it in the library; and downloading an FB2 into a folder picked through the system's dialog, where it appeared as a file and in the library.
 
 ## Not done
 
-- Download progress, cancelling, and a limit on file size.
 - A message when the downloads folder could not be written to and the book went into the app instead.
 - Facets, and files a catalog offers only after a purchase or a loan.
 - Editing a catalog; it is removed and added again.
