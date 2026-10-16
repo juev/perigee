@@ -20,8 +20,8 @@ import org.evsyukov.perigee.server.Server
 
 /**
  * One look through the whole library: the books the app keeps, then every
- * folder, then what is to be done once that is over, as asking the server
- * about the books found.
+ * folder, then the copies no book is read from any more, then what is to be
+ * done once that is over, as asking the server about the books found.
  */
 class LibraryScan(
     private val context: Context,
@@ -42,6 +42,7 @@ class LibraryScan(
             val result = scanner.scan(folder, sourceOf(folder)) { onFound(before + it) }
             before += result?.found ?: 0
         }
+        removeStrayCopies(context, library)
         afterScan()
     }
 }

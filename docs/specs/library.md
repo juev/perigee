@@ -34,7 +34,7 @@ The engine is native code reading arbitrary files. The scanner notes which file 
 
 ## Opening a book
 
-The engine opens files by path. A book that lies in a folder is copied into the app's storage (`files/books/<fingerprint>.<format>`) the first time it is opened, and read from the copy afterwards. Opening a book marks it as being read, unless the reader marked it as read already. A book whose file cannot be read says so and stays in the list.
+The engine opens files by path. A book that lies in a folder is copied into the app's storage (`files/books/<fingerprint>.<format>`) the first time it is opened, and read from the copy afterwards. A file in `files/books/` that no book is read from is removed at the end of every look through the folders, unless it was written within the last hour: it may be a copy or a download on its way to the library. Opening a book marks it as being read, unless the reader marked it as read already. A book whose file cannot be read says so and stays in the list.
 
 ## A book in an archive
 
@@ -70,7 +70,8 @@ Room database `reading.db`, version 2 (`data/schemas`): `books` gained the docum
 
 - `:engine` `DescribeTest` — what `Engine.describe` reads from FB2 and EPUB, covers, no traces in the engine's cache, files that are not books.
 - `:data` `LibraryTest`, `MigrationTest` — folders, found and lost books, statuses, collections, covers, migration from version 1.
-- `:app` `LibraryScanTest` (JVM) — a look through several folders counts the books it finds, asks the server once, and puts nothing back into a removed folder.
+- `:app` `LibraryScanTest` (JVM) — a look through several folders counts the books it finds, asks the server once, puts nothing back into a removed folder, and removes the copies no book is read from.
+- `:app` `ScanWorkTest` — a look is run through the system's WorkManager.
 - `:app` `LibraryScannerTest` — scanning a directory of generated books: nested folders, unchanged, changed and removed files, an unreachable folder, a file the app died on.
 - `:app` `ListingTest` (JVM) — shelves, groups, search and sorting.
 - `:app` `LibraryScreenTest` — the screen: empty library, shelves, favourites, statuses, search, authors, collections, opening a book from a folder.
@@ -87,5 +88,4 @@ What a book says it is about is read with the rest of what it says of itself (`E
 
 ## Not done
 
-- Copies of opened books are never removed from the app's storage.
 - Removing a book from the library by hand.

@@ -56,6 +56,9 @@ internal interface ReadingDao {
     @Query("SELECT * FROM books WHERE uri IS NULL AND path != '' AND description IS NULL")
     suspend fun keptUndescribed(): List<Book>
 
+    @Query("SELECT path FROM books WHERE path != ''")
+    suspend fun copies(): List<String>
+
     @Query("UPDATE OR IGNORE bookmarks SET bookId = :to WHERE bookId = :from")
     suspend fun moveBookmarks(from: String, to: String)
 
