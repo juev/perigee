@@ -1,20 +1,16 @@
 package org.evsyukov.perigee.library
 
 import android.app.Application
-import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import java.io.File
 import java.io.IOException
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
@@ -33,7 +29,6 @@ import org.evsyukov.perigee.data.Library
 import org.evsyukov.perigee.data.LibraryPreferences
 import org.evsyukov.perigee.data.ReadingStatus
 import org.evsyukov.perigee.data.Shelf
-import org.evsyukov.perigee.engine.Engine
 import org.evsyukov.perigee.server.Server
 import org.evsyukov.perigee.server.SyncWork
 import org.evsyukov.perigee.sync.BookOrbit
@@ -111,6 +106,8 @@ data class LibraryState(
     val collections: List<BookCollection> = emptyList(),
     val members: List<CollectionBook> = emptyList(),
     val scanning: Boolean = false,
+    /** How many books the look under way has found so far. */
+    val found: Int = 0,
     /** Tree URI of the folder downloaded books are put into; null when they stay in the app's storage. */
     val downloadsFolder: String? = null,
     /** Whether the reader is signed in to a server; only then is a book said to be on it or not. */
@@ -132,30 +129,25 @@ class LibraryViewModel(
     private val library: Library,
     private val preferences: LibraryPreferences,
     val covers: Covers,
-    /** What is done once the folders were looked through, as asking the server about the books found. */
-    private val afterScan: suspend () -> Unit = {},
     /** What is done once the reader changed a status or a rating, as telling the server. */
     private val afterChange: suspend () -> Unit = {},
     /** The server books are sent to, and who is signed in to it; without them nothing is offered to be sent. */
     private val orbit: BookOrbit? = null,
     private val accounts: Accounts? = null,
-    /** What a book file says about itself. */
-    private val describe: Describe = Engine::describe,
-    private val sourceOf: (Folder) -> BookSource,
+    /** Who looks through the folders; the look goes on when the screen is gone. */
+    private val scans: Scans,
 ) : AndroidViewModel(application) {
 
     @Suppress("unused") // The constructor the system makes the model with.
     constructor(application: Application) : this(
         application, Library.get(application), LibraryPreferences.get(application), Covers.get(application),
-        { Server.matchNewBooks(application) },
         { SyncWork.soon(application) },
         Server.get(application), Accounts.get(application),
-        sourceOf = { folder -> TreeSource(application.contentResolver, Uri.parse(folder.uri)) },
+        ScanWork(application),
     )
 
-    private val scanner = LibraryScanner(application, library, covers, describe = describe)
-
-    private data class Looking(val query: String = "", val group: Group? = null, val scanning: Boolean = false)
+    /** [found] is null while no look through the folders is under way. */
+    private data class Looking(val query: String = "", val group: Group? = null, val found: Int? = null)
     private data class Stored(
         val books: List<Book>, val folders: List<Folder>,
         val collections: List<BookCollection>, val members: List<CollectionBook>,
@@ -169,7 +161,6 @@ class LibraryViewModel(
 
     private val looking = MutableStateFlow(Looking())
     private val serving = MutableStateFlow(Serving())
-    private var scan: Job? = null
     private val requests = Mutex()
 
     val state: StateFlow<LibraryState> = combine(
@@ -192,14 +183,22 @@ class LibraryViewModel(
                 listing(stored.books, prefs.shelf, prefs.sort, looking.query, group?.key, stored.collections, stored.members)
             },
             empty = stored.books.isEmpty(), folders = stored.folders, collections = stored.collections,
-            members = stored.members, scanning = looking.scanning, downloadsFolder = prefs.downloadsFolder,
+            members = stored.members, scanning = looking.found != null, found = looking.found ?: 0, downloadsFolder = prefs.downloadsFolder,
             signedIn = serving.signedIn, upload = serving.upload, sending = serving.sending, question = serving.question,
         )
     }.stateIn(viewModelScope, SharingStarted.Eagerly, LibraryState())
 
     init {
-        // Folders change behind the app's back; every start looks through them again.
-        rescan()
+        // Folders change behind the app's back; every start looks through them again, unless a look is under way.
+        scans.start(again = false)
+        viewModelScope.launch {
+            scans.found.collect { found ->
+                val over = looking.value.found != null && found == null
+                looking.update { it.copy(found = found) }
+                // A server that could not be asked when the app started may answer now.
+                if (over && serving.value.signedIn && serving.value.upload == null) askWhatServerTakes()
+            }
+        }
         if (accounts != null) {
             viewModelScope.launch {
                 // A renewed session is the same reader on the same server; another one is asked anew.
@@ -379,46 +378,33 @@ class LibraryViewModel(
     }
 
     /** Adds a folder the reader picked and looks through it. */
-    fun addFolder(uri: String, name: String) = rescan { library.addFolder(uri, name) }
+    fun addFolder(uri: String, name: String) = changeFolders { library.addFolder(uri, name) }
 
-    fun removeFolder(folder: Folder) = rescan {
+    fun removeFolder(folder: Folder) = changeFolders {
         library.removeFolder(folder.id)
         // Downloads go back to the app's own storage rather than to a folder that is no longer looked at.
         preferences.update { if (it.downloadsFolder == folder.uri) it.copy(downloadsFolder = null) else it }
     }
 
     /** Makes a folder the one downloaded books are put into; it is a folder of the library like the rest. */
-    fun setDownloadsFolder(uri: String, name: String) = rescan {
+    fun setDownloadsFolder(uri: String, name: String) = changeFolders {
         library.addFolder(uri, name)
         preferences.update { it.copy(downloadsFolder = uri, downloadsAsked = true) }
     }
 
-    /** Looks through every folder for new, changed and removed books. */
-    fun rescan() = rescan {}
+    /** Looks through every folder for new, changed and removed books, from the start. */
+    fun rescan() = scans.start(again = true)
 
     /**
-     * One look at a time, and requests one after another: the look under way
-     * is stopped first, so that it cannot put back the books of a folder that
-     * [before] takes away, and [before] is done whatever is asked for next.
+     * Folders change one after another, and a look begins anew after each:
+     * the look under way may not know of the change. One that goes on finding
+     * books in a folder that was taken away does not put them back, see [Library.found].
      */
-    private fun rescan(before: suspend () -> Unit) {
+    private fun changeFolders(change: suspend () -> Unit) {
         viewModelScope.launch {
             requests.withLock {
-                scan?.cancelAndJoin()
-                before()
-                scan = viewModelScope.launch {
-                    looking.update { it.copy(scanning = true) }
-                    try {
-                        describeKept(getApplication(), library, covers, describe)
-                        unpackKept(getApplication(), library, covers)
-                        for (folder in library.folders().first()) scanner.scan(folder, sourceOf(folder))
-                    } finally {
-                        looking.update { it.copy(scanning = false) }
-                    }
-                    afterScan()
-                    // A server that could not be asked when the app started may answer now.
-                    if (serving.value.signedIn && serving.value.upload == null) askWhatServerTakes()
-                }
+                change()
+                scans.start(again = true)
             }
         }
     }

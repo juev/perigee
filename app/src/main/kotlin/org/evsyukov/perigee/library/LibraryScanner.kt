@@ -36,8 +36,10 @@ class LibraryScanner(
     /**
      * Returns null, changing nothing, when the folder cannot be listed: its
      * books may be back the next time, as with a card taken out.
+     *
+     * @param onFound told how many books were found so far, after each one
      */
-    suspend fun scan(folder: Folder, source: BookSource): ScanResult? = withContext(Dispatchers.IO) {
+    suspend fun scan(folder: Folder, source: BookSource, onFound: suspend (Int) -> Unit = {}): ScanResult? = withContext(Dispatchers.IO) {
         val files = try {
             source.files()
         } catch (e: IOException) {
@@ -74,6 +76,7 @@ class LibraryScanner(
             library.found(folder.id, book)
             present += file.uri
             found++
+            onFound(found)
         }
         val gone = known.keys - present
         library.lost(folder.id, gone)

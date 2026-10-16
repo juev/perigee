@@ -93,6 +93,12 @@
     <string name="library_empty">Добавьте папку, в которой лежат книги, и они появятся здесь.</string>
     <string name="library_empty_title">Книг пока нет</string>
     <string name="scanning">Ищем книги…</string>
+    <plurals name="scanning_found">
+        <item quantity="one">Ищем книги… найдена %1$d</item>
+        <item quantity="few">Ищем книги… найдено %1$d</item>
+        <item quantity="many">Ищем книги… найдено %1$d</item>
+        <item quantity="other">Ищем книги… найдено %1$d</item>
+    </plurals>
     <string name="search_library_hint">Название, автор или серия</string>
     <string name="unknown_author">Автор не указан</string>
     <string name="series_line">%1$s, книга %2$s</string>

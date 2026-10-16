@@ -164,8 +164,13 @@ class Library internal constructor(internal val database: ReadingDatabase, priva
     /** The documents of a folder as they were when last looked at. */
     suspend fun filesIn(folderId: Long): List<KnownFile> = dao.filesIn(folderId)
 
-    /** A book file was found in a folder, new or changed. */
-    suspend fun found(folderId: Long, book: FoundBook) = database.withTransaction {
+    /**
+     * A book file was found in a folder, new or changed. A folder taken out of
+     * the library meanwhile takes nothing in: a look that was under way when
+     * it was removed must not put its books back.
+     */
+    suspend fun found(folderId: Long, book: FoundBook): Unit = database.withTransaction {
+        if (dao.folderById(folderId) == null) return@withTransaction
         dao.displace(book.uri, book.id)
         dao.insert(
             Book(book.id, path = "", book.title, author = "", xpointer = null, progress = 0f, openedAt = 0, addedAt = now()),
