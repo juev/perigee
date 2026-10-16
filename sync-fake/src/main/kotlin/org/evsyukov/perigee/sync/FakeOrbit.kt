@@ -148,7 +148,9 @@ class FakeOrbit : AutoCloseable {
     }
 
     private fun complete(session: Session): Answer {
-        if (session.status == "processing" || session.status == "completed") return Answer(202, json(session).toString())
+        if (session.status == "processing" || session.status == "completed") {
+            return if (droppedCompletes) Answer.Dropped else Answer(202, json(session).toString())
+        }
         if (session.status != "receiving") return error(409, "Upload session is ${session.status}", "UPLOAD_SESSION_STATE_INVALID")
         if (session.bytes.size().toLong() != session.size) {
             return error(409, "Upload is incomplete: ${session.bytes.size()} of ${session.size} bytes received", "UPLOAD_SESSION_STATE_INVALID")

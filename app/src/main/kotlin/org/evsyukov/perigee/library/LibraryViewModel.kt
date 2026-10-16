@@ -5,7 +5,9 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import java.io.File
 import java.io.IOException
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -15,6 +17,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -71,6 +74,9 @@ enum class SendFailure {
 
 /** How far a book is on its way to the server. */
 sealed interface Sending {
+    /** The book goes once those before it have gone: one file is sent at a time. */
+    data object Waiting : Sending
+
     /** [percent] of the file has gone. */
     data class Running(val percent: Int) : Sending
     data class Failed(val why: SendFailure) : Sending
@@ -79,15 +85,16 @@ sealed interface Sending {
 /** A place on the server a book can be sent to, as the reader is offered it. */
 data class SendPlace(val place: UploadPlace, val library: String, /** Empty when the library has one folder. */ val folder: String)
 
-/** What the reader is asked before a book is sent. */
+/** What the reader is asked before books are sent. */
 sealed interface SendQuestion {
-    val book: Book
-
-    /** The server has a book that goes by the same title and authors: send this one all the same? */
-    data class Alike(override val book: Book) : SendQuestion
+    /**
+     * The server has books that go by the same titles and authors as [books]:
+     * send them all the same? [others], sent with them, are not like any.
+     */
+    data class Alike(val books: List<Book>, val others: List<Book> = emptyList()) : SendQuestion
 
     /** Which of the server's libraries and folders to send books to; asked once. */
-    data class Where(override val book: Book, val places: List<SendPlace>) : SendQuestion
+    data class Where(val books: List<Book>, val places: List<SendPlace>) : SendQuestion
 }
 
 /** Where the reader is on the way to removing a book from the device. */
@@ -145,7 +152,12 @@ data class LibraryState(
 ) {
     /** Whether the reader can send this book to the server: its file is not there, and the server takes such files from them. */
     fun canSend(book: Book): Boolean =
-        book.serverFileId == null && sending[book.id] !is Sending.Running && upload?.librariesFor(book.format)?.isNotEmpty() == true
+        book.serverFileId == null && !onTheWay(book) && upload?.librariesFor(book.format)?.isNotEmpty() == true
+
+    /** Whether the book is being sent, waits to be, or was sent in part: the reader can call it off. */
+    fun canCancel(book: Book): Boolean = book.serverFileId == null && (onTheWay(book) || book.uploadSession != null)
+
+    private fun onTheWay(book: Book): Boolean = sending[book.id].let { it is Sending.Running || it == Sending.Waiting }
 }
 
 /** The library screen: shelves of books, the folders they come from, collections. */
@@ -163,6 +175,8 @@ class LibraryViewModel(
     private val scans: Scans,
     /** Removes a book's document from a folder of the library. */
     private val deleteDocument: DeleteDocument = deleteDocument(application.contentResolver),
+    /** The name a book's file had where it came from; null when it is not known. */
+    private val nameOf: (Book) -> String? = { originalName(application.contentResolver, it) },
 ) : AndroidViewModel(application) {
 
     @Suppress("unused") // The constructor the system makes the model with.
@@ -189,6 +203,12 @@ class LibraryViewModel(
     private val looking = MutableStateFlow(Looking())
     private val serving = MutableStateFlow(Serving())
     private val requests = Mutex()
+
+    /** One book is sent at a time, in the order they were asked for. */
+    private val sendingOne = Mutex()
+
+    /** The books being sent or waiting to be, by their ids; touched on the main thread only. */
+    private val sends = HashMap<String, Job>()
 
     val state: StateFlow<LibraryState> = combine(
         combine(library.books(), library.folders(), library.collections(), library.collectionBooks(), ::Stored),
@@ -232,7 +252,10 @@ class LibraryViewModel(
                 // A renewed session is the same reader on the same server; another one is asked anew.
                 accounts.account().map { it?.let { account -> account.url to account.user } }.distinctUntilChanged().collect { who ->
                     serving.update { Serving(signedIn = who != null) }
-                    if (who != null) askWhatServerTakes()
+                    if (who != null) {
+                        askWhatServerTakes()
+                        settleUploads()
+                    }
                 }
             }
         }
@@ -249,47 +272,84 @@ class LibraryViewModel(
         return options
     }
 
-    /**
-     * The reader asked for a book to be sent to the server. One that looks like
-     * a book the server has is asked about first.
-     */
-    fun send(book: Book) {
-        if (book.serverLikeId != null) serving.update { it.copy(question = SendQuestion.Alike(book)) } else sendSomewhere(book)
-    }
-
-    /** The reader would send the book though the server has one like it. */
-    fun sendAnyway(book: Book) = sendSomewhere(book)
-
-    /** The reader chose where books are sent; it is remembered, and not asked again. */
-    fun sendTo(book: Book, place: UploadPlace) {
-        viewModelScope.launch {
-            accounts?.saveUploadPlace(place.libraryId, place.folderId)
-            deliver(book, place)
+    /** Files left on their way to the server when the app was last closed: those that got there are marked so. */
+    private suspend fun settleUploads() {
+        try {
+            orbit?.settleUploads()
+        } catch (e: IOException) {
+            // Asked again in the next round of syncing.
         }
     }
 
-    /** The reader thought better of sending the book. */
+    /** The reader asked for a book to be sent to the server, see [send]. */
+    fun send(book: Book) = send(listOf(book))
+
+    /**
+     * The reader asked for books to be sent to the server, one after another.
+     * Those that look like books the server has are asked about first, all at
+     * once; one sent in part goes on from where it was cut off.
+     */
+    fun send(books: List<Book>) {
+        val asked = books.filter { it.serverFileId == null && it.id !in sends }
+        if (asked.isEmpty()) return
+        val alike = asked.filter { it.serverLikeId != null && it.uploadSession == null }
+        if (alike.isNotEmpty()) serving.update { it.copy(question = SendQuestion.Alike(alike, asked - alike.toSet())) } else sendSomewhere(asked)
+    }
+
+    /** The reader would send these books, though the server has ones like some of them; none means none. */
+    fun sendAnyway(books: List<Book>) = if (books.isEmpty()) dontSend() else sendSomewhere(books)
+
+    /** The reader chose where books are sent; it is remembered, and not asked again. */
+    fun sendTo(books: List<Book>, place: UploadPlace) {
+        serving.update { it.copy(question = null) }
+        viewModelScope.launch {
+            accounts?.saveUploadPlace(place.libraryId, place.folderId)
+            for (book in books) deliverInTurn(book, place)
+        }
+    }
+
+    /** The reader thought better of sending the books. */
     fun dontSend() = serving.update { it.copy(question = null) }
 
-    /** Finds where the book goes: the place chosen before, the only one there is, or the one the reader is asked for. */
-    private fun sendSomewhere(book: Book) {
+    /**
+     * The reader called off a book on its way to the server, or one sent in
+     * part: it stops, and the server lets go of what it got.
+     */
+    fun cancelSending(book: Book) {
+        val send = sends.remove(book.id)
+        send?.cancel()
+        serving.update { it.copy(sending = it.sending - book.id) }
+        viewModelScope.launch {
+            send?.join()
+            try {
+                orbit?.cancelUpload(book.id)
+            } catch (e: IOException) {
+                // Not signed in any more: the session is the server's to let run out.
+            }
+        }
+    }
+
+    /** Finds where the books go: the place chosen before, the only one there is, or the one the reader is asked for. */
+    private fun sendSomewhere(books: List<Book>) {
         serving.update { it.copy(question = null) }
         viewModelScope.launch {
             // Asked anew: libraries come and go on the server.
             val options = try {
                 orbit?.uploadOptions()
             } catch (e: SignedOutException) {
-                failed(book, SendFailure.SignedOut)
+                for (book in books) failed(book, SendFailure.SignedOut)
                 return@launch
             } catch (e: IOException) {
                 null
             }
             if (options == null) {
-                failed(book, SendFailure.Unreachable)
+                for (book in books) failed(book, SendFailure.Unreachable)
                 return@launch
             }
             serving.update { it.copy(upload = options) }
-            val places = options.librariesFor(book.format).flatMap { library ->
+            // A library that takes some of the books; the rest are refused by the server, and say so.
+            val taking = options.libraries.filter { library -> books.any { library in options.librariesFor(it.format) } }
+            val places = taking.flatMap { library ->
                 when (library.folders.size) {
                     0 -> listOf(SendPlace(UploadPlace(library.id), library.name, ""))
                     1 -> listOf(SendPlace(UploadPlace(library.id, library.folders[0].id), library.name, ""))
@@ -301,17 +361,33 @@ class LibraryViewModel(
                 account != null && it.place.libraryId == account.uploadLibraryId && it.place.folderId == account.uploadFolderId
             }
             when {
-                places.isEmpty() -> failed(book, if (options.allowed) SendFailure.Format else SendFailure.NotAllowed)
-                chosen != null -> deliver(book, chosen.place)
-                places.size == 1 -> deliver(book, places[0].place)
-                else -> serving.update { it.copy(question = SendQuestion.Where(book, places)) }
+                places.isEmpty() -> for (book in books) failed(book, if (options.allowed) SendFailure.Format else SendFailure.NotAllowed)
+                chosen != null -> for (book in books) deliverInTurn(book, chosen.place)
+                places.size == 1 -> for (book in books) deliverInTurn(book, places[0].place)
+                else -> serving.update { it.copy(question = SendQuestion.Where(books, places)) }
             }
         }
     }
 
+    /** Sends the book once those asked for before it are sent. */
+    private fun deliverInTurn(book: Book, place: UploadPlace) {
+        if (book.id in sends) return
+        serving.update { it.copy(sending = it.sending + (book.id to Sending.Waiting)) }
+        // Known before it runs: it may be called off while it waits.
+        val send = viewModelScope.launch(start = CoroutineStart.LAZY) {
+            try {
+                sendingOne.withLock { deliver(book, place) }
+            } finally {
+                if (sends[book.id] == coroutineContext.job) sends.remove(book.id)
+            }
+        }
+        sends[book.id] = send
+        send.start()
+    }
+
     private suspend fun deliver(book: Book, place: UploadPlace) {
         val orbit = orbit ?: return
-        serving.update { it.copy(question = null, sending = it.sending + (book.id to Sending.Running(0))) }
+        serving.update { it.copy(sending = it.sending + (book.id to Sending.Running(0))) }
         val file = fileOf(book)
         if (file == null) {
             failed(book, SendFailure.FileGone)
@@ -319,7 +395,7 @@ class LibraryViewModel(
         }
         val size = file.length().coerceAtLeast(1)
         try {
-            orbit.upload(book, file, place) { sent ->
+            orbit.upload(book, file, place, withContext(Dispatchers.IO) { nameOf(book) }) { sent ->
                 val percent = (sent * 100 / size).toInt().coerceIn(0, 100)
                 // Told from the thread the file goes from, and far more often than the number changes.
                 serving.update { now ->

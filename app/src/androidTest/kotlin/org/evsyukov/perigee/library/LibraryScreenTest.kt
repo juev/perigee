@@ -4,6 +4,7 @@ import android.graphics.Color
 import androidx.activity.ComponentActivity
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasContentDescription
@@ -19,6 +20,8 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextReplacement
+import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.longClick
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import java.io.File
 import kotlinx.coroutines.flow.first
@@ -185,6 +188,53 @@ class LibraryScreenTest {
         rule.onNodeWithContentDescription(string(R.string.book_actions, "Sent Book")).performClick()
         inMenu(R.string.action_collections).assertIsDisplayed()
         inMenu(R.string.action_send_to_server).assertDoesNotExist()
+    }
+
+    @Test
+    fun booksPickedByALongPressAreSentTogether() {
+        val first = keep("Picked First")
+        val second = keep("Picked Second")
+        keep("Left Alone")
+        signIn()
+        show()
+        rule.waitUntil(TIMEOUT) { rule.onAllNodesWithText("FB2 · ${string(R.string.book_not_on_server)}").fetchSemanticsNodes().size == 3 }
+
+        rule.onNodeWithText("Picked First").performTouchInput { longClick() }
+        rule.onNodeWithText(activity.resources.getQuantityString(R.plurals.books_selected, 1, 1)).assertIsDisplayed()
+        // While books are being picked, a tap picks rather than opens.
+        rule.onNodeWithText("Picked Second").performClick()
+        rule.onNodeWithText(activity.resources.getQuantityString(R.plurals.books_selected, 2, 2)).assertIsDisplayed()
+        assertEquals(null, opened)
+        assertEquals(2, rule.onAllNodesWithTag("picked", useUnmergedTree = true).fetchSemanticsNodes().size)
+
+        rule.onNodeWithContentDescription(string(R.string.action_send_to_server)).performClick()
+
+        rule.waitUntil(TIMEOUT) { runBlocking { listOf(first, second).all { library.book(it)?.serverFileId != null } } }
+        assertEquals(setOf("Picked First.fb2", "Picked Second.fb2"), server.value.uploads.map { it.name }.toSet())
+        rule.onNodeWithContentDescription(string(R.string.action_clear_selection)).assertDoesNotExist()
+        rule.onAllNodesWithTag("picked", useUnmergedTree = true).assertCountEquals(0)
+    }
+
+    @Test
+    fun bookSentInPartIsResumedOrStoppedFromItsMenu() {
+        val id = keep("Half Sent")
+        signIn()
+        server.value.chunkBytes = 100
+        server.value.droppedChunks = 1
+        show()
+        waitForText("FB2 · ${string(R.string.book_not_on_server)}")
+        rule.onNodeWithContentDescription(string(R.string.book_actions, "Half Sent")).performClick()
+        inMenu(R.string.action_send_to_server).performClick()
+
+        waitForText("FB2 · ${string(R.string.book_partly_sent)}")
+        rule.onNodeWithText(string(R.string.send_failed_unreachable)).assertIsDisplayed()
+        rule.onNodeWithContentDescription(string(R.string.book_actions, "Half Sent")).performClick()
+        inMenu(R.string.action_cancel_sending).assertIsDisplayed()
+        inMenu(R.string.action_resume_sending).performClick()
+
+        waitForText("FB2 · ${string(R.string.book_on_server)}")
+        assertEquals("one session, gone on with", 1, server.value.sessions.size)
+        assertEquals(server.value.uploads.single().bookId, runBlocking { library.book(id) }?.serverBookId)
     }
 
     private fun onPage(matcher: SemanticsMatcher) = rule.onNode(matcher and hasAnyAncestor(hasTestTag("book-page")))

@@ -256,6 +256,21 @@
     <string name="send_where_title">Куда на сервере?</string>
     <string name="send_where_text">Дальше отправленные книги будут попадать туда же.</string>
     <string name="send_place_folder">%1$s, папка %2$s</string>
+    <string name="send_waiting">ждёт отправки</string>
+    <string name="book_partly_sent">отправлена не до конца</string>
+    <string name="action_resume_sending">Продолжить отправку</string>
+    <string name="action_cancel_sending">Отменить отправку</string>
+    <string name="send_alike_many_title">Похожие книги есть на сервере</string>
+    <string name="send_alike_many_text">На сервере есть книги с теми же названиями и авторами, что и у этих: %1$s. Файлы у них другие: это могут быть другие издания или те же книги, сохранённые иначе. Если отправить эти, на сервере могут оказаться обе.</string>
+    <string name="send_skip_alike">Пропустить их</string>
+    <string name="send_alike_name">«%1$s»</string>
+    <plurals name="books_selected">
+        <item quantity="one">Выбрана %1$d книга</item>
+        <item quantity="few">Выбрано %1$d книги</item>
+        <item quantity="many">Выбрано %1$d книг</item>
+        <item quantity="other">Выбрано %1$d книги</item>
+    </plurals>
+    <string name="action_clear_selection">Снять выбор</string>
     <string name="action_licenses">Лицензии</string>
     <string name="licenses_title">Лицензии</string>
     <string name="licenses_gpl">GNU General Public License, версия 3</string>
