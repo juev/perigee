@@ -199,6 +199,12 @@ internal interface ReadingDao {
     @Query("DELETE FROM catalogs WHERE id = :id")
     suspend fun deleteCatalog(id: Long)
 
+    @Query("UPDATE catalogs SET url = :url, title = :title, user = :user, secret = :secret WHERE id = :id")
+    suspend fun changeCatalog(id: Long, url: String, title: String, user: String, secret: String)
+
+    @Query("SELECT * FROM catalogs WHERE id = :id")
+    suspend fun catalog(id: Long): Catalog?
+
     @Query("SELECT * FROM accounts WHERE id = ${Account.SINGLE}")
     fun accountFlow(): Flow<Account?>
 

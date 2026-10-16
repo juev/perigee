@@ -138,6 +138,10 @@
     <string name="catalogs_empty_title">Каталогов пока нет</string>
     <string name="catalog_add">Добавить каталог</string>
     <string name="catalog_remove">Убрать каталог «%1$s»</string>
+    <string name="catalog_change">Изменить каталог</string>
+    <string name="catalog_change_named">Изменить каталог «%1$s»</string>
+    <string name="catalog_password_kept">Пустой — остаётся сохранённый</string>
+    <string name="catalog_check_and_save">Проверить и сохранить</string>
     <string name="catalog_address">Адрес</string>
     <string name="catalog_user">Имя пользователя, если каталог его спрашивает</string>
     <string name="catalog_password">Пароль</string>
@@ -146,7 +150,7 @@
     <string name="catalog_unauthorized">Каталог не принимает это имя пользователя и пароль.</string>
     <string name="catalog_not_a_catalog">По этому адресу нет каталога OPDS.</string>
     <string name="catalog_unreachable">Каталог не отвечает. Проверьте адрес и сеть.</string>
-    <string name="catalog_password_lost">Пароль этого каталога больше не удаётся прочитать. Уберите каталог и добавьте его заново.</string>
+    <string name="catalog_password_lost">Пароль этого каталога больше не удаётся прочитать. Введите его заново: измените каталог в списке.</string>
     <string name="catalog_not_a_book">Этот файл — не книга, которую читает приложение.</string>
     <string name="catalog_page_empty">Здесь ничего нет</string>
     <string name="catalog_no_readable_file">Нет файла в формате, который читает приложение.</string>

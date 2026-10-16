@@ -57,6 +57,27 @@ class CatalogsTest {
     }
 
     @Test
+    fun catalogIsChangedInPlace() = runBlocking {
+        val home = catalogs.add("http://books.example/opds", "Home", "reader", "old")
+        val changed = catalogs.change(home.id, "https://books.example/opds", "Home library", "other", "new")
+        assertEquals(home.id, changed.id)
+        assertEquals(home.addedAt, changed.addedAt)
+        val stored = catalogs.all().first().single()
+        assertEquals("https://books.example/opds", stored.url)
+        assertEquals("Home library", stored.title)
+        assertEquals("other", stored.user)
+        assertEquals("new", catalogs.password(stored))
+    }
+
+    @Test
+    fun catalogMovedToTheAddressOfAnotherTakesItsPlace() = runBlocking {
+        val home = catalogs.add("https://home.example/opds", "Home", "", "")
+        catalogs.add("https://books.example/opds", "Books", "", "")
+        catalogs.change(home.id, "https://books.example/opds", "Home", "", "")
+        assertEquals(listOf(home.id to "https://books.example/opds"), catalogs.all().first().map { it.id to it.url })
+    }
+
+    @Test
     fun catalogsAreListedByTitleAndCanBeRemoved() = runBlocking {
         val b = catalogs.add("https://b.example/opds", "beta", "", "")
         catalogs.add("https://a.example/opds", "Alpha", "", "")

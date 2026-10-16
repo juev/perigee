@@ -118,15 +118,45 @@ class OpdsViewModel(
      * Checks that there is a catalog at the address and adds it, titled as it
      * titles itself. An address without "http" in front is taken as https.
      */
-    fun add(address: String, user: String, password: String) {
+    fun add(address: String, user: String, password: String) =
+        check(address, user, { password }) { url, title, name, secret -> catalogs.add(url, title, name, secret) }
+
+    /**
+     * Changes a catalog's address, user name or password, checked as when it
+     * was added. An empty [password] keeps the one saved for the same user
+     * name; without a user name the catalog is open to everyone.
+     */
+    fun change(catalog: Catalog, address: String, user: String, password: String) = check(
+        address, user,
+        { name ->
+            when {
+                name.isEmpty() -> ""
+                password.isNotEmpty() -> password
+                name == catalog.user -> catalogs.password(catalog).orEmpty()
+                else -> ""
+            }
+        },
+    ) { url, title, name, secret -> catalogs.change(catalog.id, url, title, name, secret) }
+
+    /**
+     * Fetches the first page at [address] with the credentials given and,
+     * when it is a catalog, has [keep] save it, titled as it titles itself.
+     */
+    private fun check(
+        address: String,
+        user: String,
+        password: suspend (user: String) -> String,
+        keep: suspend (url: String, title: String, user: String, password: String) -> Unit,
+    ) {
         if (_state.value.adding) return
         val url = address.trim().let { if ("://" in it) it else "https://$it" }
+        val name = user.trim()
         _state.update { it.copy(adding = true, addFailure = null) }
         viewModelScope.launch {
             val failure = try {
-                val checked = OpdsClient(url, user.trim(), password)
-                val feed = checked.feed()
-                catalogs.add(url, feed.title.ifBlank { url.substringAfter("://").substringBefore('/') }, user.trim(), password)
+                val secret = password(name)
+                val feed = OpdsClient(url, name, secret).feed()
+                keep(url, feed.title.ifBlank { url.substringAfter("://").substringBefore('/') }, name, secret)
                 null
             } catch (e: IllegalArgumentException) {
                 Failure.BadAddress
