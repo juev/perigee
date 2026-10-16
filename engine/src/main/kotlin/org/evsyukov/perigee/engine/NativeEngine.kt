@@ -17,6 +17,11 @@ internal object NativeEngine {
 
     external fun fontFaces(): Array<String>
 
+    /** Families to take a glyph from when the font of the text has none, separated by '|', in order. */
+    external fun setFallbackFontFaces(faces: String): Boolean
+
+    external fun fallbackFontFaces(): String
+
     /** Creates an empty view; load a book into it after applySettings. */
     /** [cacheable] false keeps the view off the engine's cache, for a second copy of a book that is open already. */
     external fun create(width: Int, height: Int, cacheable: Boolean): Long

@@ -63,6 +63,50 @@ This software is based in part on the work of the Independent JPEG Group.
 libwebp 1.6.0
 The BSD 3-Clause license.
 
+FONTS THAT COME WITH THE APP
+
+Each is shipped as its authors publish it, unchanged; only the files are renamed.
+
+Comfortaa 3.105
+https://github.com/google/fonts, ofl/comfortaa, commit 1d0e46c
+Copyright 2011 The Comfortaa Project Authors, with Reserved Font Name "Comfortaa".
+SIL Open Font License 1.1.
+
+Droid Serif 1.03
+https://android.googlesource.com/platform/frameworks/base, tag android-4.4.4_r1, data/fonts
+Copyright (C) 2005-2008 The Android Open Source Project
+The Apache License, version 2.0.
+
+Literata 3.103
+https://github.com/google/fonts, ofl/literata, commit 1d0e46c
+Copyright 2017 The Literata Project Authors
+SIL Open Font License 1.1.
+
+Merriweather 2.200
+https://github.com/SorkinType/Merriweather, fonts/variable, commit 4481226
+Copyright 2016 The Merriweather Project Authors, with Reserved Font Name "Merriweather". Merriweather is a trademark of Sorkin Type Co.
+SIL Open Font License 1.1.
+
+Noto Serif 2.015, italic 2.013
+https://github.com/google/fonts, ofl/notoserif, commit 1d0e46c
+Copyright 2022 The Noto Project Authors
+SIL Open Font License 1.1.
+
+PT Sans 2.003W
+https://github.com/google/fonts, ofl/ptsans, commit 1d0e46c
+Copyright (c) 2010 ParaType Ltd., with Reserved Font Names "PT Sans" and "ParaType".
+SIL Open Font License 1.1.
+
+PT Serif 1.000W
+https://github.com/google/fonts, ofl/ptserif, commit 1d0e46c
+Copyright (c) 2010 ParaType Ltd., with Reserved Font Names "PT Sans", "PT Serif" and "ParaType".
+SIL Open Font License 1.1.
+
+Roboto 3.015
+https://github.com/google/fonts, ofl/roboto, commit 1d0e46c
+Copyright 2011 The Roboto Project Authors
+SIL Open Font License 1.1.
+
 zlib and the C++ runtime
 Come with the Android NDK 28.2.13676358. zlib is under the zlib license; libc++ is under the Apache License 2.0 with LLVM exceptions.
 
