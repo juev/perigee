@@ -106,6 +106,19 @@ class OpdsScreenTest {
     }
 
     @Test
+    fun suggestedCatalogIsOfferedUntilItIsAdded() {
+        show()
+        waitForText("Project Gutenberg")
+        rule.onNodeWithText("Project Gutenberg").performClick()
+        rule.onNodeWithTag("catalog-address").assertTextContains("https://www.gutenberg.org/ebooks.opds/")
+        rule.onNodeWithText(string(R.string.action_cancel)).performClick()
+
+        runBlocking { catalogs.add("https://www.gutenberg.org/ebooks.opds/", "Project Gutenberg", "", "") }
+        rule.waitUntil(TIMEOUT) { rule.onAllNodesWithText(string(R.string.catalogs_suggested)).fetchSemanticsNodes().isEmpty() }
+        assertEquals("listed once, as the reader's own", 1, rule.onAllNodesWithText("Project Gutenberg").fetchSemanticsNodes().size)
+    }
+
+    @Test
     fun catalogWithoutAPasswordIsAddedOverPlainHttpUnasked() {
         show()
         rule.onNodeWithText(string(R.string.catalog_add)).performClick()

@@ -95,6 +95,8 @@ import org.evsyukov.perigee.ui.ShelfIcon
 fun OpdsScreen(onOpen: (File) -> Unit, onClose: () -> Unit, model: OpdsViewModel = viewModel()) {
     val state by model.state.collectAsStateWithLifecycle()
     var adding by rememberSaveable { mutableStateOf(false) }
+    /** The address the form to add a catalog starts with: a suggested catalog's, or none. */
+    var addingAddress by rememberSaveable { mutableStateOf("") }
     /** The id of the catalog being changed, or null. */
     var changing by rememberSaveable { mutableStateOf<Long?>(null) }
     var searching by rememberSaveable { mutableStateOf(false) }
@@ -142,7 +144,12 @@ fun OpdsScreen(onOpen: (File) -> Unit, onClose: () -> Unit, model: OpdsViewModel
                         },
                         actions = {
                             if (state.catalog == null) {
-                                IconButton(onClick = { adding = true }) { Icon(Icons.Filled.Add, stringResource(R.string.catalog_add)) }
+                                IconButton(
+                                    onClick = {
+                                        addingAddress = ""
+                                        adding = true
+                                    },
+                                ) { Icon(Icons.Filled.Add, stringResource(R.string.catalog_add)) }
                             } else if (page?.feed?.searchable == true) {
                                 IconButton(onClick = { searching = true }) { Icon(Icons.Filled.Search, stringResource(R.string.action_search)) }
                             }
@@ -156,7 +163,11 @@ fun OpdsScreen(onOpen: (File) -> Unit, onClose: () -> Unit, model: OpdsViewModel
         val failure = state.failure
         when {
             state.catalog == null -> CatalogList(
-                padding, state.catalogs, model::open, onChange = { changing = it.id }, onRemove = model::remove, onAdd = { adding = true },
+                padding, state.catalogs, model::open, onChange = { changing = it.id }, onRemove = model::remove,
+                onAdd = { address ->
+                    addingAddress = address
+                    adding = true
+                },
             )
             failure != null && page == null -> Failed(padding, failure, model::retry)
             page != null -> Entries(padding, page, state, model, onOpen)
@@ -191,6 +202,7 @@ fun OpdsScreen(onOpen: (File) -> Unit, onClose: () -> Unit, model: OpdsViewModel
     if (adding) {
         CatalogDialog(
             catalog = null,
+            initialAddress = addingAddress,
             busy = state.adding,
             failure = state.addFailure,
             onSave = model::add,
@@ -204,6 +216,7 @@ fun OpdsScreen(onOpen: (File) -> Unit, onClose: () -> Unit, model: OpdsViewModel
     if (changed != null) {
         CatalogDialog(
             catalog = changed,
+            initialAddress = changed.url,
             busy = state.adding,
             failure = state.addFailure,
             onSave = { address, user, password -> model.change(changed, address, user, password) },
@@ -236,12 +249,17 @@ private fun CatalogList(
     onOpen: (Catalog) -> Unit,
     onChange: (Catalog) -> Unit,
     onRemove: (Catalog) -> Unit,
-    onAdd: () -> Unit,
+    /** Opens the form to add a catalog, with the address given filled in. */
+    onAdd: (String) -> Unit,
 ) {
+    val suggestions = suggestionsBesides(catalogs)
     if (catalogs.isEmpty()) {
         Box(Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()), contentAlignment = Alignment.Center) {
-            EmptyState(ShelfIcon, stringResource(R.string.catalogs_empty_title), text = stringResource(R.string.catalogs_empty)) {
-                Button(onClick = onAdd) { Text(stringResource(R.string.catalog_add)) }
+            Column {
+                EmptyState(ShelfIcon, stringResource(R.string.catalogs_empty_title), text = stringResource(R.string.catalogs_empty)) {
+                    Button(onClick = { onAdd("") }) { Text(stringResource(R.string.catalog_add)) }
+                }
+                Suggestions(suggestions, onAdd)
             }
         }
         return
@@ -268,6 +286,36 @@ private fun CatalogList(
                     }
                 }
                 HorizontalDivider()
+            }
+            item("suggested") { Suggestions(suggestions, onAdd) }
+        }
+    }
+}
+
+/** Public catalogs the reader has not added, each a tap away from the form to add it. */
+@Composable
+private fun Suggestions(suggestions: List<Suggestion>, onAdd: (String) -> Unit) {
+    if (suggestions.isEmpty()) return
+    Column(Modifier.fillMaxWidth().padding(top = 16.dp)) {
+        Text(
+            stringResource(R.string.catalogs_suggested), Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+            style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary,
+        )
+        for (suggestion in suggestions) {
+            Row(
+                Modifier.fillMaxWidth().clickable { onAdd(suggestion.url) }.padding(start = 16.dp, end = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(Modifier.weight(1f).padding(vertical = 12.dp)) {
+                    Text(suggestion.title, style = MaterialTheme.typography.bodyLarge)
+                    Text(
+                        stringResource(suggestion.about), style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                IconButton(onClick = { onAdd(suggestion.url) }) {
+                    Icon(Icons.Filled.Add, stringResource(R.string.catalog_add_named, suggestion.title))
+                }
             }
         }
     }
@@ -436,8 +484,15 @@ private fun SearchBar(onSearch: (String) -> Unit, onClose: () -> Unit) {
 
 /** The form a catalog is added with, or changed when [catalog] is given. */
 @Composable
-private fun CatalogDialog(catalog: Catalog?, busy: Boolean, failure: Failure?, onSave: (String, String, String) -> Unit, onClose: () -> Unit) {
-    var address by rememberSaveable { mutableStateOf(catalog?.url.orEmpty()) }
+private fun CatalogDialog(
+    catalog: Catalog?,
+    initialAddress: String,
+    busy: Boolean,
+    failure: Failure?,
+    onSave: (String, String, String) -> Unit,
+    onClose: () -> Unit,
+) {
+    var address by rememberSaveable { mutableStateOf(initialAddress) }
     var user by rememberSaveable { mutableStateOf(catalog?.user.orEmpty()) }
     // Not saved with the screen: a password is not written out for a rotation's sake.
     var password by remember { mutableStateOf("") }

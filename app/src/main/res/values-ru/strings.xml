@@ -136,6 +136,9 @@
     <string name="action_catalogs">Каталоги (OPDS)</string>
     <string name="catalogs_empty">Каталог — это библиотека в сети, из которой можно скачивать книги: ваш собственный сервер или общедоступный. Добавьте его по адресу OPDS.</string>
     <string name="catalogs_empty_title">Каталогов пока нет</string>
+    <string name="catalogs_suggested">Предлагаемые каталоги</string>
+    <string name="catalog_add_named">Добавить каталог «%1$s»</string>
+    <string name="suggested_gutenberg">Бесплатные книги, срок авторских прав на которые истёк, в основном на английском.</string>
     <string name="catalog_add">Добавить каталог</string>
     <string name="catalog_remove">Убрать каталог «%1$s»</string>
     <string name="catalog_change">Изменить каталог</string>
