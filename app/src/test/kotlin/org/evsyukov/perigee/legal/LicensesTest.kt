@@ -37,6 +37,24 @@ class LicensesTest {
         }
     }
 
+    /** A font that comes with the app comes with its license, and the notice names it. */
+    @Test
+    fun everyFontThatComesWithTheAppHasItsLicenseAndIsNamedInTheNotice() {
+        val files = File(root, "engine/src/main/assets/crengine/fonts").list().orEmpty().filter { it.endsWith(".ttf") }
+        assertTrue("the fonts were found", files.size >= 8)
+        val families = mapOf(
+            "Comfortaa" to "Comfortaa", "DroidSerif" to "Droid Serif", "Literata" to "Literata", "Merriweather" to "Merriweather",
+            "NotoSerif" to "Noto Serif", "PTSans" to "PT Sans", "PTSerif" to "PT Serif", "Roboto" to "Roboto",
+        )
+        val notice = File(root, "NOTICE").readText()
+        for (file in files) {
+            val family = families[file.substringBefore('-')] ?: error("$file comes with the app and has no license in it")
+            val license = if (family == "Droid Serif") "Apache-2.0" else family
+            assertTrue("$family has a license text", File(root, "licenses/$license.txt").length() > 0)
+            assertTrue("$family is named in the notice", notice.contains("\n$family ".toRegex()))
+        }
+    }
+
     /** The notice names the version of a library; the build is where the version is set. */
     @Test
     fun noticeNamesTheVersionsTheBuildFetches() {

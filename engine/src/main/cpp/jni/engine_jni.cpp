@@ -233,6 +233,17 @@ Java_org_evsyukov_perigee_engine_NativeEngine_registerFonts(JNIEnv* env, jobject
     }
 }
 
+JNIEXPORT jboolean JNICALL
+Java_org_evsyukov_perigee_engine_NativeEngine_setFallbackFontFaces(JNIEnv* env, jobject, jstring faces) {
+    // Faces that are not registered are passed by; false when none of them is.
+    return fontMan->SetFallbackFontFaces(lString8(toStd(env, faces).c_str())) ? JNI_TRUE : JNI_FALSE;
+}
+
+JNIEXPORT jstring JNICALL
+Java_org_evsyukov_perigee_engine_NativeEngine_fallbackFontFaces(JNIEnv* env, jobject) {
+    return env->NewStringUTF(fontMan->GetFallbackFontFaces().c_str());
+}
+
 JNIEXPORT jobjectArray JNICALL
 Java_org_evsyukov_perigee_engine_NativeEngine_fontFaces(JNIEnv* env, jobject) {
     lString32Collection faces;

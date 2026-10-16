@@ -16,6 +16,12 @@ object Engine {
     private const val ASSET_ROOT = "crengine"
     private const val CACHE_BYTES = 64L * 1024 * 1024
 
+    /** Where the fonts that come with the app lie, under the unpacked assets. */
+    private const val FONT_DIR = "fonts"
+
+    /** The font that comes with the app and covers the most scripts. */
+    internal const val FALLBACK_FACE = "Noto Serif"
+
     // The engine walks a book's markup by recursion. A badly made book nests
     // elements hundreds deep, which overflows the megabyte a thread gets by
     // default; this is what a main thread has, where the engine usually runs.
@@ -35,7 +41,7 @@ object Engine {
     /** DOM version given to newly opened books. */
     val domVersion: Int get() = NativeEngine.domVersion()
 
-    /** Font families offered for reading: the device's named families and the registered files. */
+    /** Font families offered for reading: those that come with the app, the device's named families, the registered files. */
     suspend fun fontFaces(context: Context): List<String> = withContext(thread) { facesOnEngineThread(context) }
 
     /**
@@ -71,6 +77,12 @@ object Engine {
 
     private val SPACES = Regex("\\s+")
 
+    /** The families a missing glyph is looked for in, in order. */
+    internal suspend fun fallbackFaces(context: Context): List<String> = withContext(thread) {
+        init(context)
+        NativeEngine.fallbackFontFaces().split('|').filter { it.isNotEmpty() }
+    }
+
     internal fun facesOnEngineThread(context: Context): List<String> {
         init(context)
         return readingFaces.toList()
@@ -83,10 +95,16 @@ object Engine {
         val dir = unpackAssets(app)
         val cache = File(app.cacheDir, "crengine").apply { mkdirs() }
         NativeEngine.init(File(dir, "hyph").path + "/", cache.path, CACHE_BYTES)
+        // First, so that a family the device has as well is the app's: the same for every reader.
+        addReadingFonts(File(dir, FONT_DIR).listFiles { f -> f.extension == "ttf" }.orEmpty().sortedBy { it.name })
         val system = SystemFonts.find()
         addReadingFonts(system.reading)
         // Registered but not offered: fonts of single scripts.
+        val before = NativeEngine.fontFaces().toSet()
         NativeEngine.registerFonts(system.scripts.map { it.path }.toTypedArray())
+        val scripts = NativeEngine.fontFaces().filterNot { it in before }
+        // A glyph the font of the text lacks is taken from the app's widest font, then from the fonts of single scripts.
+        NativeEngine.setFallbackFontFaces((listOf(FALLBACK_FACE) + scripts).joinToString("|"))
         dataDir = dir
         return dir
     }
