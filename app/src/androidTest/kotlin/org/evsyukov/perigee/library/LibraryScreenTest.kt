@@ -219,7 +219,8 @@ class LibraryScreenTest {
     fun bookSentInPartIsResumedOrStoppedFromItsMenu() {
         val id = keep("Half Sent")
         signIn()
-        server.value.chunkBytes = 100
+        // A few parts to a book of some 50 KB: each part is a request, and hundreds of them outlast the wait on a busy machine.
+        server.value.chunkBytes = 16 * 1024L
         server.value.droppedChunks = 1
         show()
         waitForText("FB2 · ${string(R.string.book_not_on_server)}")
