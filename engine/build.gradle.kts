@@ -14,6 +14,8 @@ android {
     defaultConfig {
         minSdk = 30
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        // The native library finds its functions by the names of the class and its methods.
+        consumerProguardFiles("consumer-rules.pro")
         ndk { abiFilters += abis }
         externalNativeBuild {
             cmake {
