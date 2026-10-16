@@ -9,7 +9,12 @@ import java.net.ServerSocket
 import java.net.Socket
 import java.util.concurrent.CopyOnWriteArrayList
 import kotlin.concurrent.thread
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import org.junit.After
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
@@ -29,6 +34,10 @@ class OpdsClientTest {
     private class Answer(
         val code: Int = 200, val body: ByteArray = ByteArray(0), val type: String = "application/atom+xml",
         val headers: Map<String, String> = emptyMap(),
+        /** Whether the size of the body is told; without it the body ends when the connection does. */
+        val sized: Boolean = true,
+        /** How long the server keeps quiet after the body before it closes the connection. */
+        val stallMs: Long = 0,
     )
 
     /** A server that answers by path and remembers what it was asked. */
@@ -59,7 +68,8 @@ class OpdsClientTest {
             seen += Seen(path, authorization)
             val answer = answers(path)
             val head = buildString {
-                append("HTTP/1.1 ${answer.code} X\r\nContent-Type: ${answer.type}\r\nContent-Length: ${answer.body.size}\r\n")
+                append("HTTP/1.1 ${answer.code} X\r\nContent-Type: ${answer.type}\r\n")
+                if (answer.sized) append("Content-Length: ${answer.body.size}\r\n")
                 append("Connection: close\r\n")
                 answer.headers.forEach { (name, value) -> append("$name: $value\r\n") }
                 append("\r\n")
@@ -69,6 +79,7 @@ class OpdsClientTest {
                 write(answer.body)
                 flush()
             }
+            if (answer.stallMs > 0) Thread.sleep(answer.stallMs)
         }
 
         override fun close() = socket.close()
@@ -215,6 +226,58 @@ class OpdsClientTest {
             runBlocking { client.download(OpdsLink("${server.url}/gone", "application/epub+zip"), "Gone", dir) }
         }
         assertTrue(dir.list().orEmpty().isEmpty())
+    }
+
+    @Test
+    fun bookLargerThanTheLimitIsRefusedAndLeavesNoFile() {
+        val server = Server { path -> Answer(body = ByteArray(5000), type = "application/epub+zip", sized = path == "/told") }
+        val client = OpdsClient(server.url)
+        for (path in listOf("/told", "/untold")) {
+            val failure = assertThrows("$path", TooLargeException::class.java) {
+                runBlocking { client.download(OpdsLink("${server.url}$path", "application/epub+zip"), "Big", dir, limit = 1000) }
+            }
+            assertEquals(1000L, failure.limit)
+        }
+        assertTrue(dir.list().orEmpty().isEmpty())
+        assertEquals(
+            "a book up to the limit is kept", 5000L,
+            runBlocking { client.download(OpdsLink("${server.url}/untold", "application/epub+zip"), "Big", dir, limit = 5000).length() },
+        )
+    }
+
+    @Test
+    fun downloadTellsHowFarItIs() = runBlocking {
+        val bytes = ByteArray(300_000)
+        val server = Server { path -> Answer(body = bytes, type = "application/epub+zip", sized = path == "/told") }
+        val client = OpdsClient(server.url)
+        for ((path, total) in listOf("/told" to 300_000L, "/untold" to null)) {
+            val seen = ArrayList<Pair<Long, Long?>>()
+            client.download(OpdsLink("${server.url}$path", "application/epub+zip"), "Book", dir) { received, size -> seen += received to size }
+            assertEquals(path, 0L to total, seen.first())
+            assertEquals(path, 300_000L to total, seen.last())
+            assertEquals("$path grows: $seen", seen.map { it.first }.sorted(), seen.map { it.first })
+            assertTrue("$path is told in parts: ${seen.size}", seen.size > 2)
+        }
+    }
+
+    @Test
+    fun cancelledDownloadStopsAtOnceAndLeavesNoFile() = runBlocking {
+        // Half a book, then nothing for a minute: a read waits on the network, not on the app.
+        val server = Server { Answer(body = ByteArray(100_000), type = "application/epub+zip", sized = false, stallMs = 60_000) }
+        val client = OpdsClient(server.url)
+        val started = CompletableDeferred<Unit>()
+        val download = launch(Dispatchers.Default) {
+            client.download(OpdsLink("${server.url}/slow", "application/epub+zip"), "Slow", dir) { received, _ ->
+                if (received > 0) started.complete(Unit)
+            }
+        }
+        withTimeout(10_000) { started.await() }
+        val cancelledAt = System.nanoTime()
+        download.cancelAndJoin()
+        val tookMs = (System.nanoTime() - cancelledAt) / 1_000_000
+        assertTrue("took $tookMs ms", tookMs < 3_000)
+        assertTrue(download.isCancelled)
+        assertTrue("nothing is left: ${dir.list()?.toList()}", dir.list().orEmpty().isEmpty())
     }
 
     @Test
