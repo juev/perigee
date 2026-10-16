@@ -30,6 +30,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -94,6 +95,8 @@ import org.evsyukov.perigee.ui.ShelfIcon
 fun OpdsScreen(onOpen: (File) -> Unit, onClose: () -> Unit, model: OpdsViewModel = viewModel()) {
     val state by model.state.collectAsStateWithLifecycle()
     var adding by rememberSaveable { mutableStateOf(false) }
+    /** The id of the catalog being changed, or null. */
+    var changing by rememberSaveable { mutableStateOf<Long?>(null) }
     var searching by rememberSaveable { mutableStateOf(false) }
     val page = state.page
 
@@ -111,6 +114,7 @@ fun OpdsScreen(onOpen: (File) -> Unit, onClose: () -> Unit, model: OpdsViewModel
         if (state.added != addedSeen) {
             addedSeen = state.added
             adding = false
+            changing = null
         }
     }
 
@@ -151,7 +155,9 @@ fun OpdsScreen(onOpen: (File) -> Unit, onClose: () -> Unit, model: OpdsViewModel
     ) { padding ->
         val failure = state.failure
         when {
-            state.catalog == null -> CatalogList(padding, state.catalogs, model::open, model::remove, onAdd = { adding = true })
+            state.catalog == null -> CatalogList(
+                padding, state.catalogs, model::open, onChange = { changing = it.id }, onRemove = model::remove, onAdd = { adding = true },
+            )
             failure != null && page == null -> Failed(padding, failure, model::retry)
             page != null -> Entries(padding, page, state, model, onOpen)
         }
@@ -183,12 +189,26 @@ fun OpdsScreen(onOpen: (File) -> Unit, onClose: () -> Unit, model: OpdsViewModel
     }
 
     if (adding) {
-        AddCatalogDialog(
+        CatalogDialog(
+            catalog = null,
             busy = state.adding,
             failure = state.addFailure,
-            onAdd = model::add,
+            onSave = model::add,
             onClose = {
                 adding = false
+                model.forgetAddFailure()
+            },
+        )
+    }
+    val changed = state.catalogs.firstOrNull { it.id == changing }
+    if (changed != null) {
+        CatalogDialog(
+            catalog = changed,
+            busy = state.adding,
+            failure = state.addFailure,
+            onSave = { address, user, password -> model.change(changed, address, user, password) },
+            onClose = {
+                changing = null
                 model.forgetAddFailure()
             },
         )
@@ -214,6 +234,7 @@ private fun CatalogList(
     padding: PaddingValues,
     catalogs: List<Catalog>,
     onOpen: (Catalog) -> Unit,
+    onChange: (Catalog) -> Unit,
     onRemove: (Catalog) -> Unit,
     onAdd: () -> Unit,
 ) {
@@ -238,6 +259,9 @@ private fun CatalogList(
                             catalog.url, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
+                    }
+                    IconButton(onClick = { onChange(catalog) }) {
+                        Icon(Icons.Filled.Edit, stringResource(R.string.catalog_change_named, catalog.title))
                     }
                     IconButton(onClick = { onRemove(catalog) }) {
                         Icon(Icons.Filled.Delete, stringResource(R.string.catalog_remove, catalog.title))
@@ -410,10 +434,11 @@ private fun SearchBar(onSearch: (String) -> Unit, onClose: () -> Unit) {
     )
 }
 
+/** The form a catalog is added with, or changed when [catalog] is given. */
 @Composable
-private fun AddCatalogDialog(busy: Boolean, failure: Failure?, onAdd: (String, String, String) -> Unit, onClose: () -> Unit) {
-    var address by rememberSaveable { mutableStateOf("") }
-    var user by rememberSaveable { mutableStateOf("") }
+private fun CatalogDialog(catalog: Catalog?, busy: Boolean, failure: Failure?, onSave: (String, String, String) -> Unit, onClose: () -> Unit) {
+    var address by rememberSaveable { mutableStateOf(catalog?.url.orEmpty()) }
+    var user by rememberSaveable { mutableStateOf(catalog?.user.orEmpty()) }
     // Not saved with the screen: a password is not written out for a rotation's sake.
     var password by remember { mutableStateOf("") }
     var warning by remember { mutableStateOf(false) }
@@ -421,14 +446,14 @@ private fun AddCatalogDialog(busy: Boolean, failure: Failure?, onAdd: (String, S
         PlainHttpWarning(
             onSend = {
                 warning = false
-                onAdd(address, user, password)
+                onSave(address, user, password)
             },
             onDismiss = { warning = false },
         )
     }
     AlertDialog(
         onDismissRequest = onClose,
-        title = { Text(stringResource(R.string.catalog_add)) },
+        title = { Text(stringResource(if (catalog == null) R.string.catalog_add else R.string.catalog_change)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedTextField(
@@ -446,6 +471,12 @@ private fun AddCatalogDialog(busy: Boolean, failure: Failure?, onAdd: (String, S
                 OutlinedTextField(
                     value = password, onValueChange = { password = it }, singleLine = true, enabled = !busy,
                     label = { Text(stringResource(R.string.catalog_password)) },
+                    // The saved password is never shown; left empty, it stays.
+                    supportingText = if (catalog != null && catalog.user.isNotEmpty()) {
+                        { Text(stringResource(R.string.catalog_password_kept)) }
+                    } else {
+                        null
+                    },
                     visualTransformation = PasswordVisualTransformation(),
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
                     modifier = Modifier.fillMaxWidth().testTag("catalog-password"),
@@ -459,10 +490,10 @@ private fun AddCatalogDialog(busy: Boolean, failure: Failure?, onAdd: (String, S
                 enabled = !busy && address.isNotBlank(),
                 onClick = {
                     // A catalog open to everyone has nothing to give away.
-                    if (isPlainHttp(address) && (user.isNotBlank() || password.isNotEmpty())) warning = true else onAdd(address, user, password)
+                    if (isPlainHttp(address) && (user.isNotBlank() || password.isNotEmpty())) warning = true else onSave(address, user, password)
                 },
             ) {
-                Text(stringResource(R.string.catalog_check_and_add))
+                Text(stringResource(if (catalog == null) R.string.catalog_check_and_add else R.string.catalog_check_and_save))
             }
         },
         dismissButton = { TextButton(onClick = onClose) { Text(stringResource(R.string.action_cancel)) } },

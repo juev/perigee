@@ -136,6 +136,10 @@
     <string name="catalogs_empty_title">No catalogs yet</string>
     <string name="catalog_add">Add a catalog</string>
     <string name="catalog_remove">Remove the catalog %1$s</string>
+    <string name="catalog_change">Change the catalog</string>
+    <string name="catalog_change_named">Change the catalog %1$s</string>
+    <string name="catalog_password_kept">Empty keeps the saved one</string>
+    <string name="catalog_check_and_save">Check and save</string>
     <string name="catalog_address">Address</string>
     <string name="catalog_user">User name, if the catalog asks for one</string>
     <string name="catalog_password">Password</string>
@@ -144,7 +148,7 @@
     <string name="catalog_unauthorized">The catalog does not accept this user name and password.</string>
     <string name="catalog_not_a_catalog">There is no OPDS catalog at this address.</string>
     <string name="catalog_unreachable">The catalog does not answer. Check the address and the network.</string>
-    <string name="catalog_password_lost">The password of this catalog can no longer be read. Remove the catalog and add it again.</string>
+    <string name="catalog_password_lost">The password of this catalog can no longer be read. Enter it again: change the catalog in the list.</string>
     <string name="catalog_not_a_book">The file is not a book this app reads.</string>
     <string name="catalog_page_empty">Nothing here</string>
     <string name="catalog_no_readable_file">No file in a format this app reads.</string>

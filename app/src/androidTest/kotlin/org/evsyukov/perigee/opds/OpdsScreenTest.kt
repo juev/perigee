@@ -4,10 +4,12 @@ import android.text.format.Formatter
 import androidx.activity.ComponentActivity
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onFirst
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -110,6 +112,26 @@ class OpdsScreenTest {
         fillIn("http://127.0.0.1:1/opds")
         waitForText(string(R.string.catalog_unreachable))
         assertTrue(rule.onAllNodesWithText(string(R.string.plain_http_title)).fetchSemanticsNodes().isEmpty())
+    }
+
+    @Test
+    fun catalogIsChangedFromTheList() {
+        runBlocking { catalogs.add("http://127.0.0.1:1/opds", "Moved Away", "reader", "secret-1") }
+        show()
+        waitForText("Moved Away")
+        rule.onNodeWithContentDescription(string(R.string.catalog_change_named, "Moved Away")).performClick()
+        rule.onNodeWithText(string(R.string.catalog_change)).assertIsDisplayed()
+        rule.onNodeWithTag("catalog-address").assertTextContains("http://127.0.0.1:1/opds")
+        rule.onNodeWithTag("catalog-user").assertTextContains("reader")
+        rule.onNodeWithText(string(R.string.catalog_password_kept)).assertIsDisplayed()
+
+        // The user name is kept, and with it the saved password; it goes over plain HTTP once agreed to.
+        rule.onNodeWithTag("catalog-address").performTextReplacement("${catalog.url}/opds")
+        rule.onNodeWithText(string(R.string.catalog_check_and_save)).performClick()
+        rule.onNodeWithTag("plain-http-send").performClick()
+        waitForText("Home Books")
+        rule.onNodeWithText("${catalog.url}/opds").assertIsDisplayed()
+        assertEquals("${catalog.url}/opds", runBlocking { catalogs.all().first().single().url })
     }
 
     @Test

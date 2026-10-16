@@ -153,6 +153,37 @@ class OpdsViewModelTest {
     }
 
     @Test
+    fun catalogIsChangedOnlyToWhatIsChecked() {
+        runBlocking { catalogs.add("${catalog.url}/old", "Old Title", "reader", "secret-1") }
+        val stored = until("the catalog is listed") { it.catalogs.isNotEmpty() }.catalogs.single()
+
+        model.change(stored, "${catalog.url}/opds", "reader", "wrong")
+        assertEquals(Failure.Unauthorized, until("the change is checked") { !it.adding }.addFailure)
+        assertEquals("nothing changed on the way", stored, runBlocking { catalogs.all().first().single() })
+
+        model.change(stored, "${catalog.url}/opds", "reader", "")
+        val changed = until("the change is checked") { !it.adding && it.added == 1 }
+        assertNull(changed.addFailure)
+        val now = until("the change is listed") { it.catalogs.singleOrNull()?.url == "${catalog.url}/opds" }.catalogs.single()
+        assertEquals(stored.id, now.id)
+        assertEquals("titled as it titles itself", "Home Books", now.title)
+        assertEquals("an empty password keeps the saved one", "secret-1", runBlocking { catalogs.password(now) })
+    }
+
+    @Test
+    fun catalogChangedToAnotherUserNeedsItsPassword() {
+        runBlocking { catalogs.add("${catalog.url}/opds", "Home Books", "someone", "secret-1") }
+        val stored = until("the catalog is listed") { it.catalogs.isNotEmpty() }.catalogs.single()
+        model.change(stored, "${catalog.url}/opds", "reader", "")
+        assertEquals(
+            "the saved password is not sent for another user",
+            Failure.Unauthorized, until("the change is checked") { !it.adding }.addFailure,
+        )
+        model.change(stored, "${catalog.url}/opds", "reader", "secret-1")
+        until("the change is listed") { it.catalogs.singleOrNull()?.user == "reader" }
+    }
+
+    @Test
     fun catalogIsRemovedFromTheList() {
         runBlocking { catalogs.add("${catalog.url}/opds", "Home Books", "reader", "secret-1") }
         val stored = until("the catalog is listed") { it.catalogs.isNotEmpty() }.catalogs.single()

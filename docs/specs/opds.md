@@ -22,7 +22,7 @@ A page is read as JSON when it starts with a brace, whatever type the server giv
 
 - The user name and password go to the catalog's own server only — same scheme, host and port as the catalog's address. Covers and files on other servers are fetched without them.
 - Redirects are followed by the client itself, at most six, under the same rule: a redirect to another server does not carry the password along.
-- In the app a password is stored sealed with a key kept by the Android Keystore (`Secrets`, AES-GCM). When it cannot be opened any more, as after the app's files were moved to another device, the catalog says so and has to be added again.
+- In the app a password is stored sealed with a key kept by the Android Keystore (`Secrets`, AES-GCM). When it cannot be opened any more, as after the app's files were moved to another device, the catalog says so and the password has to be entered again by changing the catalog.
 - Plain HTTP is allowed for the whole app, because a catalog is often a server at home reached by a local address. Over plain HTTP the password travels unprotected: before a catalog whose address starts with `http://` is added with a user name or password, the app says so and asks to confirm. A catalog open to everyone is added without the question.
 
 ### Search
@@ -46,7 +46,8 @@ Where the file is kept is the reader's choice, asked for at the first download a
 
 "Catalogs (OPDS)" in the library's menu.
 
-- The list of catalogs, with adding and removing. Adding asks for the address, and a user name and password if the catalog wants them; an address without a scheme is taken as https. The catalog is fetched before it is added, and titled as it titles itself. What went wrong is told apart: not an address, refused credentials, no catalog there, no answer.
+- The list of catalogs, with adding, changing and removing. Adding asks for the address, and a user name and password if the catalog wants them; an address without a scheme is taken as https. The catalog is fetched before it is added, and titled as it titles itself. What went wrong is told apart: not an address, refused credentials, no catalog there, no answer.
+- Changing a catalog opens the same form filled in with its address and user name. The saved password is never shown: left empty, it stays, as long as the user name stays the same; another user name needs its own password, and no user name means a catalog open to everyone. The change is checked as an addition is, nothing is saved until the catalog answers, and the catalog is titled anew as it titles itself. Moved to the address of another catalog in the list, it takes that one's place.
 - Inside a catalog: sections lead to pages, Back returns page by page and then to the list. Reaching the end of a page fetches the part that follows. Search is offered when the page shown offers it.
 - A book shows its cover, title, authors and description, and one "Download" per format the app reads — the catalog's first file of each. After a download: "In the library" and "Read", which opens the book; closing it returns to the catalog.
 
@@ -54,9 +55,9 @@ Where the file is kept is the reader's choice, asked for at the first download a
 
 - `:opds` `OpdsParserTest` — pages recorded on 2026-10-13 from bookOrbit 3.3.0 and from Project Gutenberg (`opds/src/androidTest/assets/feeds`); OPDS 2.0 pages recorded on 2026-10-16 from Feedbooks (cut down to a few books) and from the OPDS test catalog `test.opds.io`; plus hand-written pages for paid links, broken links and things that are not catalogs.
 - `:opds` `OpdsClientTest` — against servers the test runs itself: credentials, refusals, redirects within and across servers, search by template and by description, download names, oversized pictures and books, the progress of a download, and a cancel that stops a download waiting on a quiet server at once.
-- `:data` `CatalogsTest` — sealed passwords, adding twice, removal, a downloaded file joining the library.
-- `:app` `OpdsViewModelTest` (JVM) — the screen's model against a small catalog served by the test: adding with each kind of failure, browsing, the next part of a page, search, a broken section, and downloads: the question at the first one, into the app, into a folder, a book that is in a folder already, a folder that cannot be written to, progress and a cancel, a file too large. The folder is a plain directory there.
-- `:app` `OpdsScreenTest` (device) — the screen itself: the question before a password goes over plain HTTP, a book downloaded and opened, the progress bar and its cancel, the message about a file too large.
+- `:data` `CatalogsTest` — sealed passwords, adding twice, changing in place and onto another catalog's address, removal, a downloaded file joining the library.
+- `:app` `OpdsViewModelTest` (JVM) — the screen's model against a small catalog served by the test: adding with each kind of failure, changing a catalog and its password, browsing, the next part of a page, search, a broken section, and downloads: the question at the first one, into the app, into a folder, a book that is in a folder already, a folder that cannot be written to, progress and a cancel, a file too large. The folder is a plain directory there.
+- `:app` `OpdsScreenTest` (device) — the screen itself: the question before a password goes over plain HTTP, a catalog changed from the list, a book downloaded and opened, the progress bar and its cancel, the message about a file too large.
 - `:contract` `OpdsContractTest` — the client against the catalog of a real bookOrbit 3.3.0 in docker: browsing, pages, search, download checked by the engine, refused passwords. The server has OPDS off by default and separate OPDS users; the test switches it on (`PATCH app-settings/opds_enabled`) and makes a user (`POST opds-users`).
 
 Checked by hand on the emulator against the same server: adding the catalog, browsing, downloading an EPUB, reading it, finding it in the library; and downloading an FB2 into a folder picked through the system's dialog, where it appeared as a file and in the library.
@@ -65,5 +66,4 @@ Checked by hand on the emulator against the same server: adding the catalog, bro
 
 - A message when the downloads folder could not be written to and the book went into the app instead.
 - Facets, and files a catalog offers only after a purchase or a loan.
-- Editing a catalog; it is removed and added again.
 - Catalogs suggested out of the box.

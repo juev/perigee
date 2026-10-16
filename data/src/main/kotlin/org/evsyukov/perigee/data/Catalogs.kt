@@ -1,12 +1,13 @@
 package org.evsyukov.perigee.data
 
 import android.content.Context
+import androidx.room.withTransaction
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.withContext
 
 /** The OPDS catalogs the reader added, with the passwords to them. */
-class Catalogs internal constructor(database: ReadingDatabase, private val now: () -> Long) {
+class Catalogs internal constructor(private val database: ReadingDatabase, private val now: () -> Long) {
     private val dao = database.dao()
 
     fun all(): Flow<List<Catalog>> = dao.catalogs()
@@ -17,6 +18,19 @@ class Catalogs internal constructor(database: ReadingDatabase, private val now: 
         dao.insert(Catalog(url = url, title = title, user = user, secret = secret, addedAt = now()))
         dao.updateCatalog(url, title, user, secret)
         return checkNotNull(dao.catalog(url))
+    }
+
+    /**
+     * Changes the address, title, user and password of a catalog. A catalog
+     * that was at the new address already gives way: the one changed takes its place.
+     */
+    suspend fun change(id: Long, url: String, title: String, user: String, password: String): Catalog {
+        val secret = withContext(Dispatchers.Default) { Secrets.seal(password) }
+        return database.withTransaction {
+            dao.catalog(url)?.takeIf { it.id != id }?.let { dao.deleteCatalog(it.id) }
+            dao.changeCatalog(id, url, title, user, secret)
+            checkNotNull(dao.catalog(id))
+        }
     }
 
     suspend fun remove(id: Long) = dao.deleteCatalog(id)
