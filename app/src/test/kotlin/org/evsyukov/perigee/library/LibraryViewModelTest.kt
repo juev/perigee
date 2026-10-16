@@ -4,6 +4,7 @@ import android.app.Application
 import android.os.Looper
 import androidx.test.core.app.ApplicationProvider
 import java.io.File
+import java.util.concurrent.CountDownLatch
 import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -60,17 +61,24 @@ class LibraryViewModelTest {
     private val preferences = LibraryPreferences.inFile(File(context.filesDir, "library.preferences_pb"), storeScope)
     private val orbit = BookOrbit(accounts, library, "0.0.1")
 
+    /** Set to hold the reading of every file after the first, as of a large folder. */
+    private var hold: CountDownLatch? = null
+    private val described = AtomicInteger()
+
     /** A file as the engine would describe it, titled by its name; the engine itself does not run on the JVM. */
     private val describe: Describe = { _, _, name ->
+        if (described.incrementAndGet() > 1) hold?.await()
         BookDescription(name.substringBefore('.'), listOf("Test Author"), "en", "", "", "", null)
     }
 
+    private val covers = Covers(File(context.cacheDir, "screen-covers"))
+
     private val model by lazy {
         LibraryViewModel(
-            context, library, preferences, Covers(File(context.cacheDir, "screen-covers")),
-            afterScan = { scansDone.incrementAndGet() }, afterChange = { changes.incrementAndGet() },
-            orbit = orbit, accounts = accounts, describe = describe,
-        ) { source }
+            context, library, preferences, covers,
+            afterChange = { changes.incrementAndGet() }, orbit = orbit, accounts = accounts,
+            scans = InProcessScans(LibraryScan(context, library, covers, describe, afterScan = { scansDone.incrementAndGet() }) { source }),
+        )
     }
 
     @Before
@@ -312,6 +320,21 @@ class LibraryViewModelTest {
         untilTrue("the server is asked about the books found") { scansDone.get() >= 1 }
         model.rescan()
         untilTrue("the server is asked again") { scansDone.get() >= 2 }
+    }
+
+    @Test
+    fun lookUnderWayTellsHowManyBooksItFound() {
+        hold = CountDownLatch(1)
+        TestBook.write(File(source.dir, "a.fb2"), "First Found")
+        TestBook.write(File(source.dir, "b.fb2"), "Second Found")
+        runBlocking { library.addFolder(source.uriOf(source.dir), "Books") }
+
+        // A book found is shown before the look is over.
+        until("one book is found and shown while the next one is being read") { it.scanning && it.found == 1 && it.titles.size == 1 }
+
+        hold?.countDown()
+        val over = until("the look is over") { !it.scanning && it.titles.size == 2 }
+        assertEquals(0, over.found)
     }
 
     @Test

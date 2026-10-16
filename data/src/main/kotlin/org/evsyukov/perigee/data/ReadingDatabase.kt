@@ -136,6 +136,9 @@ internal interface ReadingDao {
     @Query("SELECT * FROM folders WHERE uri = :uri")
     suspend fun folder(uri: String): Folder?
 
+    @Query("SELECT * FROM folders WHERE id = :id")
+    suspend fun folderById(id: Long): Folder?
+
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insert(folder: Folder): Long
 

@@ -12,7 +12,14 @@ A file is a book when its name ends in one of `Library.FORMATS`: `epub`, `fb2`, 
 
 ## Looking through a folder
 
-`LibraryScanner.scan` brings the library in line with one folder. It runs for every folder when the library screen is first shown, when a folder is added, and on "Look for new books".
+`LibraryScanner.scan` brings the library in line with one folder. A look goes through every folder, after the books the app keeps (`LibraryScan`).
+
+Looks run in the background, through the system's WorkManager (`ScanWork`, unique work `library-scan`), so that a large folder does not keep the screen waiting and leaving the screen does not stop the look. One look runs at a time:
+
+- When the library screen is first shown, a look begins unless one is under way already.
+- When a folder is added or removed, the folder for downloads is chosen, or the reader asks to "Look for new books", the look under way is stopped and a new one begins.
+
+While a look is under way, the screen shows a bar and how many books it has found so far; books appear in the list as they are found. A look stopped half way, by the system or by a new one, loses little: files read already are passed by the next time. A look that was under way when a folder was removed does not put that folder's books back. Once a look is over, the server is asked about the books found.
 
 - A file whose address, size and modification time are as they were is not read again.
 - A new or changed file is read where it lies, through its descriptor: `Engine.describe` returns title, authors, language, series with its number, and the cover picture, without laying the book out and without touching the engine's cache. Nothing is copied.
@@ -63,6 +70,7 @@ Room database `reading.db`, version 2 (`data/schemas`): `books` gained the docum
 
 - `:engine` `DescribeTest` — what `Engine.describe` reads from FB2 and EPUB, covers, no traces in the engine's cache, files that are not books.
 - `:data` `LibraryTest`, `MigrationTest` — folders, found and lost books, statuses, collections, covers, migration from version 1.
+- `:app` `LibraryScanTest` (JVM) — a look through several folders counts the books it finds, asks the server once, and puts nothing back into a removed folder.
 - `:app` `LibraryScannerTest` — scanning a directory of generated books: nested folders, unchanged, changed and removed files, an unreachable folder, a file the app died on.
 - `:app` `ListingTest` (JVM) — shelves, groups, search and sorting.
 - `:app` `LibraryScreenTest` — the screen: empty library, shelves, favourites, statuses, search, authors, collections, opening a book from a folder.
@@ -79,6 +87,5 @@ What a book says it is about is read with the rest of what it says of itself (`E
 
 ## Not done
 
-- Scanning runs while the library screen is alive; there is no background job and no progress count.
 - Copies of opened books are never removed from the app's storage.
 - Removing a book from the library by hand.

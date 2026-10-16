@@ -95,6 +95,10 @@
     <string name="library_empty">Add a folder you keep books in, and they will be listed here.</string>
     <string name="library_empty_title">No books yet</string>
     <string name="scanning">Looking for books…</string>
+    <plurals name="scanning_found">
+        <item quantity="one">Looking for books… %1$d found</item>
+        <item quantity="other">Looking for books… %1$d found</item>
+    </plurals>
     <string name="search_library_hint">Title, author or series</string>
     <string name="unknown_author">Author not named</string>
     <string name="series_line">%1$s, book %2$s</string>

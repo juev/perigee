@@ -111,10 +111,11 @@ class LibraryScreenTest {
     }
 
     private fun show() {
+        val covers = Covers(File(activity.cacheDir, "screen-covers"))
         val model = LibraryViewModel(
-            activity.application, library, LibraryPreferences.get(activity),
-            Covers(File(activity.cacheDir, "screen-covers")), orbit = orbit, accounts = accounts,
-        ) { source }
+            activity.application, library, LibraryPreferences.get(activity), covers, orbit = orbit, accounts = accounts,
+            scans = InProcessScans(LibraryScan(activity, library, covers) { source }),
+        )
         rule.setContent {
             MaterialTheme {
                 LibraryScreen(

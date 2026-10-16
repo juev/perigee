@@ -214,6 +214,13 @@ fun LibraryScreen(
                 }
                 if (state.scanning) {
                     LinearProgressIndicator(Modifier.fillMaxWidth().testTag("scanning"))
+                    if (state.found > 0) {
+                        Text(
+                            pluralStringResource(R.plurals.scanning_found, state.found, state.found),
+                            Modifier.padding(horizontal = 16.dp, vertical = 4.dp).testTag("scanning_found"),
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    }
                 }
                 if (state.group == null) Shelves(state.shelf, model::setShelf)
             }
