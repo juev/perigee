@@ -16,7 +16,7 @@ Works today:
 - Table of contents, bookmarks, highlights with notes, search in the book, return from a jump.
 
 - A library of the books in the folders you pick: shelves, authors, series, collections, search.
-- OPDS catalogues: browsing, search, downloading into the library.
+- OPDS catalogues, 1.x and 2.0: browsing, search, downloading into the library with progress and a cancel; Project Gutenberg is suggested out of the box.
 - A bookOrbit server: signing in, its books with covers and search, downloading them, and finding which of your books the server already has.
 
 - Syncing with bookOrbit: the place you got to, both ways, with a later place read elsewhere offered rather than jumped to; highlights with notes and bookmarks, both ways; status and rating; time spent reading for the server's statistics.
@@ -86,7 +86,7 @@ In CI the app's screen tests are run up to three times by `.github/scripts/devic
 |---|---|
 | `engine` | crengine built for Android, a JNI layer and a Kotlin API: pages, positions, selection, search, contents |
 | `data` | Room and DataStore: the library, positions, bookmarks, highlights, catalogues, the server account, settings |
-| `opds` | OPDS 1.x catalogues: parsing, browsing, downloads |
+| `opds` | OPDS 1.x and 2.0 catalogues: parsing, browsing, downloads |
 | `sync` | The bookOrbit server: account, session, its books, matching files; `sync-fake` is a stand-in server for tests |
 | `app` | The app in Jetpack Compose: reading screen, library, catalogues, server |
 | `contract` | Tests against a real bookOrbit server: positions, OPDS, account |
