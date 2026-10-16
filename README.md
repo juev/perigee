@@ -109,4 +109,5 @@ Third-party code:
 - What is built into the app, and under which license, is listed in [NOTICE](NOTICE); the license texts are in [licenses](licenses). The app shows both under "Licenses" in the menu of the library.
 - crengine is licensed under the GNU GPL. Its upstream, CoolReader, states "version 2 of the License, or (at your option) any later version"; the KOReader fork carries no statement of its own beyond "GNU GPL license, version 2" in its README.
 - FreeType, HarfBuzz, FriBidi, libunibreak, utf8proc, xxHash, Zstandard, libpng, libjpeg-turbo and libwebp are downloaded at build time and linked into the engine. zlib comes from the Android NDK.
+- The fonts that come with the app (Comfortaa, Droid Serif, Literata, Merriweather, Noto Serif, PT Sans, PT Serif, Roboto) lie in the engine's assets, unchanged; Droid Serif is under the Apache License 2.0, the rest under the SIL Open Font License 1.1. NOTICE says where each comes from.
 - The PT Serif fonts in the engine's test assets are under the SIL Open Font License, included next to them.
