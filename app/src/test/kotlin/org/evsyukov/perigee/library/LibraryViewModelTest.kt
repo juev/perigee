@@ -356,7 +356,8 @@ class LibraryViewModelTest {
         val dropped = keep("Dropped Book")
         signIn()
         serverAsked()
-        server.value.chunkBytes = 100
+        // A few parts to a book of some 50 KB: each part is a request, and hundreds of them outlast the wait on a busy machine.
+        server.value.chunkBytes = 16 * 1024L
         server.value.droppedChunks = 2
 
         model.send(listOf(shown("Resumed Book"), shown("Dropped Book")))
