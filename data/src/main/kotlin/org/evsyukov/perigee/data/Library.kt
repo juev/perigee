@@ -106,6 +106,9 @@ class Library internal constructor(internal val database: ReadingDatabase, priva
      */
     suspend fun keptUndescribed(): List<Book> = dao.keptUndescribed()
 
+    /** The files in the app's storage that books are read from. */
+    suspend fun copies(): Set<String> = dao.copies().toSet()
+
     /**
      * A book turns out to be known by another fingerprint, as one in an archive
      * that is now known by the file inside: what the reader left in it — the

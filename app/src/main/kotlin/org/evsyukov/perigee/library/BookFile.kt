@@ -101,6 +101,23 @@ internal suspend fun describeKept(
     }
 }
 
+/**
+ * Removes the files in the app's storage that no book is read from: a copy
+ * left behind by a book that went away, or by an earlier version of the app.
+ * A file written in the last [GRACE_MILLIS] stays: it may be one being copied
+ * or downloaded, which the library has not been told of yet.
+ */
+internal suspend fun removeStrayCopies(context: Context, library: Library, now: Long = System.currentTimeMillis()) =
+    withContext(Dispatchers.IO) {
+        val files = File(context.filesDir, "books").listFiles() ?: return@withContext
+        val copies = library.copies()
+        for (file in files) {
+            if (file.isFile && file.path !in copies && now - file.lastModified() > GRACE_MILLIS) file.delete()
+        }
+    }
+
+private const val GRACE_MILLIS = 60 * 60 * 1000L
+
 /** What a book file says about itself, as the engine reads it; null when it cannot. */
 typealias Describe = suspend (Context, ParcelFileDescriptor, String) -> BookDescription?
 

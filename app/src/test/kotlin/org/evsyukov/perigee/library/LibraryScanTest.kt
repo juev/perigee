@@ -11,6 +11,7 @@ import org.evsyukov.perigee.data.Library
 import org.evsyukov.perigee.engine.BookDescription
 import org.evsyukov.perigee.reader.TestBook
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -53,6 +54,24 @@ class LibraryScanTest {
         counts.clear()
         scan.run { counts += it }
         assertTrue("files read already are not counted again: $counts", counts.isEmpty())
+    }
+
+    @Test
+    fun copiesNoBookIsReadFromAreRemoved() = runBlocking {
+        val books = File(context.filesDir, "books").apply { mkdirs() }
+        val read = TestBook.write(File(books, "read.fb2"), "Read")
+        library.open(read, "Read", "")
+        val stray = File(books, "stray.fb2").apply { writeText("left behind") }
+        val fresh = File(books, "fresh.fb2.copy").apply { writeText("being copied") }
+        val hourAgo = System.currentTimeMillis() - 2 * 60 * 60 * 1000L
+        read.setLastModified(hourAgo)
+        stray.setLastModified(hourAgo)
+
+        LibraryScan(context, library, covers, describe) { first }.run()
+
+        assertTrue("a book is read from it", read.isFile)
+        assertFalse("no book is read from it", stray.exists())
+        assertTrue("written just now, it may be on its way to the library", fresh.isFile)
     }
 
     @Test
