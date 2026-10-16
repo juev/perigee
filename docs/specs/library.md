@@ -4,7 +4,7 @@ Requirement R4 of `plan.md`. The library works with no network and no account. W
 
 ## Where books come from
 
-- **Folders.** The reader picks folders through the system's folder dialog (Storage Access Framework); the app keeps read access to them across restarts. Every folder is looked through together with the folders inside it.
+- **Folders.** The reader picks folders through the system's folder dialog (Storage Access Framework); the app keeps access to them across restarts, to read and to write: writing is what lets the reader delete a book there. Folders added before the app asked to write are read only until the reader picks them again. Every folder is looked through together with the folders inside it.
 - **Downloads.** Books downloaded from catalogs go into the folder the reader chose for them, which is one of the folders above, or into the app's storage; see `opds.md`.
 - **Single files.** "Open a book" picks one file from anywhere. It is copied into the app's storage and listed like the rest.
 
@@ -35,6 +35,17 @@ The engine is native code reading arbitrary files. The scanner notes which file 
 ## Opening a book
 
 The engine opens files by path. A book that lies in a folder is copied into the app's storage (`files/books/<fingerprint>.<format>`) the first time it is opened, and read from the copy afterwards. A file in `files/books/` that no book is read from is removed at the end of every look through the folders, unless it was written within the last hour: it may be a copy or a download on its way to the library. Opening a book marks it as being read, unless the reader marked it as read already. A book whose file cannot be read says so and stays in the list.
+
+## Deleting a book
+
+"Delete from the device" in a book's menu deletes the book from the device; the server is not touched, and a book it has can be downloaded again. The file goes: from its folder, or from the app's storage, with the app's copy of it and its cover. A book whose file stayed in its folder would be found again by the next look, so the file itself is deleted. The book's rows go with it: the place, bookmarks, quotes, status, rating, review, collections and pages read. Nothing of a deleted book is kept on the device.
+
+The reader is asked first, and told what is lost:
+
+- **The server does not have the book.** Everything the reader left in it goes with it. To keep it, the reader cancels, sends the book to the server the usual way, and deletes it then.
+- **The server has the book.** A round of syncing runs first; deleting waits for it. When the server took everything, the reader is told that it stays there. When the server could not be reached and something made here is not there yet — a place, a mark, a status, a review, pages read — the reader is told that it will be lost.
+
+A folder the app may only read is to be picked again: the reader is asked to, and the book is deleted once the folder is picked with the right to write. A file the system would not delete keeps its book, and the reader is told so.
 
 ## A book in an archive
 
@@ -73,6 +84,7 @@ Room database `reading.db`, version 2 (`data/schemas`): `books` gained the docum
 - `:app` `LibraryScanTest` (JVM) — a look through several folders counts the books it finds, asks the server once, puts nothing back into a removed folder, and removes the copies no book is read from.
 - `:app` `ScanWorkTest` — a look is run through the system's WorkManager.
 - `:app` `LibraryScannerTest` — scanning a directory of generated books: nested folders, unchanged, changed and removed files, an unreachable folder, a file the app died on.
+- `:app` `LibraryViewModelTest` (JVM) — deleting a book: in the app's storage, in a folder, a folder only read, a book synced first, one with changes the server could not be told of.
 - `:app` `ListingTest` (JVM) — shelves, groups, search and sorting.
 - `:app` `LibraryScreenTest` — the screen: empty library, shelves, favourites, statuses, search, authors, collections, opening a book from a folder.
 
@@ -85,7 +97,3 @@ The books of a shelf are shown as a list or as a grid of covers; a button in the
 "About the book" in a book's menu opens the book's own page: the cover, title, authors, series, format, language, how far it is read, a button to read it, and what the book says it is about.
 
 What a book says it is about is read with the rest of what it says of itself (`Engine.describe`) and kept as plain text, a line a paragraph: the annotation of an FB2, `dc:description` of an EPUB with its markup taken out. A book recorded before this was read has no description yet (`Book.description` is null); its file is read once more the next time the library is looked through, in a folder or in the app's own storage alike. A book opened through "Open a book" is read the same way as one of a folder.
-
-## Not done
-
-- Removing a book from the library by hand.

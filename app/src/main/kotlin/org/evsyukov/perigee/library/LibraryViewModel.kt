@@ -11,6 +11,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
@@ -89,6 +90,29 @@ sealed interface SendQuestion {
     data class Where(override val book: Book, val places: List<SendPlace>) : SendQuestion
 }
 
+/** Where the reader is on the way to removing a book from the device. */
+sealed interface Removal {
+    val book: Book
+
+    /** The server does not have the book: the place, quotes, bookmarks and the rest go with it. */
+    data class Lost(override val book: Book) : Removal
+
+    /** The server has the book, and is being told what changed in it here before it goes. */
+    data class Syncing(override val book: Book) : Removal
+
+    /** The server has the book and all the reader left in it; it can be downloaded again. */
+    data class Kept(override val book: Book) : Removal
+
+    /** The server has the book, but not all that changed in it here, and could not be told now. */
+    data class Unsent(override val book: Book) : Removal
+
+    /** The app may only read the folder the book lies in; the reader is to pick the folder again to let it remove files. */
+    data class NoWriteAccess(override val book: Book, val folder: Folder) : Removal
+
+    /** The file of the book could not be removed; the book stays. */
+    data class Failed(override val book: Book) : Removal
+}
+
 data class LibraryState(
     /** False until the stored books have been read; nothing is shown before that. */
     val loaded: Boolean = false,
@@ -117,6 +141,7 @@ data class LibraryState(
     /** Books on their way to the server, and those that did not get there, by their ids. */
     val sending: Map<String, Sending> = emptyMap(),
     val question: SendQuestion? = null,
+    val removal: Removal? = null,
 ) {
     /** Whether the reader can send this book to the server: its file is not there, and the server takes such files from them. */
     fun canSend(book: Book): Boolean =
@@ -136,6 +161,8 @@ class LibraryViewModel(
     private val accounts: Accounts? = null,
     /** Who looks through the folders; the look goes on when the screen is gone. */
     private val scans: Scans,
+    /** Removes a book's document from a folder of the library. */
+    private val deleteDocument: DeleteDocument = deleteDocument(application.contentResolver),
 ) : AndroidViewModel(application) {
 
     @Suppress("unused") // The constructor the system makes the model with.
@@ -147,7 +174,7 @@ class LibraryViewModel(
     )
 
     /** [found] is null while no look through the folders is under way. */
-    private data class Looking(val query: String = "", val group: Group? = null, val found: Int? = null)
+    private data class Looking(val query: String = "", val group: Group? = null, val found: Int? = null, val removal: Removal? = null)
     private data class Stored(
         val books: List<Book>, val folders: List<Folder>,
         val collections: List<BookCollection>, val members: List<CollectionBook>,
@@ -185,6 +212,7 @@ class LibraryViewModel(
             empty = stored.books.isEmpty(), folders = stored.folders, collections = stored.collections,
             members = stored.members, scanning = looking.found != null, found = looking.found ?: 0, downloadsFolder = prefs.downloadsFolder,
             signedIn = serving.signedIn, upload = serving.upload, sending = serving.sending, question = serving.question,
+            removal = looking.removal,
         )
     }.stateIn(viewModelScope, SharingStarted.Eagerly, LibraryState())
 
@@ -406,6 +434,62 @@ class LibraryViewModel(
                 change()
                 scans.start(again = true)
             }
+        }
+    }
+
+    /**
+     * The reader asked to remove a book from the device. A book the server has
+     * is synced first, so that what the reader left in it is kept there.
+     */
+    fun askRemove(book: Book) {
+        if (book.serverFileId == null) {
+            looking.update { it.copy(removal = Removal.Lost(book)) }
+            return
+        }
+        looking.update { it.copy(removal = Removal.Syncing(book)) }
+        viewModelScope.launch {
+            try {
+                orbit?.sync()
+            } catch (e: IOException) {
+                // What is left unsent is told to the reader.
+            }
+            val answer = if (library.unsent(book.id)) Removal.Unsent(book) else Removal.Kept(book)
+            looking.update { if (it.removal == Removal.Syncing(book)) it.copy(removal = answer) else it }
+        }
+    }
+
+    fun dontRemove() = looking.update { it.copy(removal = null) }
+
+    /**
+     * Removes the book's file, the app's copy of it and its cover, then the
+     * book itself with all the reader left in it: a file in a folder is
+     * removed too, or the next look would bring the book back.
+     */
+    fun remove(shown: Book) {
+        viewModelScope.launch {
+            // Where its files are now: the book may have been opened, or moved, since it was shown.
+            val book = library.book(shown.id) ?: shown
+            val uri = book.uri
+            if (uri != null) {
+                val removed = try {
+                    deleteDocument(uri)
+                } catch (e: SecurityException) {
+                    val folder = library.folders().first().firstOrNull { it.id == book.folderId }
+                    looking.update { it.copy(removal = if (folder != null) Removal.NoWriteAccess(book, folder) else Removal.Failed(book)) }
+                    return@launch
+                }
+                if (!removed) {
+                    looking.update { it.copy(removal = Removal.Failed(book)) }
+                    return@launch
+                }
+            }
+            withContext(Dispatchers.IO) {
+                if (book.path.isNotEmpty()) File(book.path).delete()
+                covers.file(book.id).delete()
+            }
+            library.remove(book.id)
+            serving.update { it.copy(sending = it.sending - book.id) }
+            looking.update { it.copy(removal = null) }
         }
     }
 

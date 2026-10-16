@@ -1,6 +1,7 @@
 package org.evsyukov.perigee.library
 
 import android.app.Application
+import android.net.Uri
 import android.os.Looper
 import androidx.test.core.app.ApplicationProvider
 import java.io.File
@@ -61,6 +62,10 @@ class LibraryViewModelTest {
     private val preferences = LibraryPreferences.inFile(File(context.filesDir, "library.preferences_pb"), storeScope)
     private val orbit = BookOrbit(accounts, library, "0.0.1")
 
+    /** Set while the app may only read the folders, as one added before it asked to write. */
+    @Volatile
+    private var readOnly = false
+
     /** Set to hold the reading of every file after the first, as of a large folder. */
     private var hold: CountDownLatch? = null
     private val described = AtomicInteger()
@@ -78,6 +83,10 @@ class LibraryViewModelTest {
             context, library, preferences, covers,
             afterChange = { changes.incrementAndGet() }, orbit = orbit, accounts = accounts,
             scans = InProcessScans(LibraryScan(context, library, covers, describe, afterScan = { scansDone.incrementAndGet() }) { source }),
+            deleteDocument = { uri ->
+                if (readOnly) throw SecurityException("the folder may only be read")
+                File(checkNotNull(Uri.parse(uri).path)).let { it.delete() || !it.exists() }
+            },
         )
     }
 
@@ -457,6 +466,108 @@ class LibraryViewModelTest {
 
         untilTrue("the folders are gone") { runBlocking { library.folders().first().isEmpty() } }
         until("the library is empty") { it.loaded && !it.scanning && it.empty }
+    }
+
+    @Test
+    fun bookTheServerHasNotGoesWithAllTheReaderLeftInIt() {
+        val id = keep("Lonely Book")
+        val file = File(checkNotNull(stored(id)).path)
+        runBlocking { library.addBookmark(id, "/body/p[2]", "marked", null) }
+        covers.save(id, TestFolder.cover(0xFF0000FF.toInt()))
+
+        model.askRemove(shown("Lonely Book"))
+        val asked = until("the reader is warned") { it.removal != null }.removal
+        assertEquals("what the reader left in it is lost", Removal.Lost::class, asked!!::class)
+        model.remove(asked.book)
+
+        until("the book is gone") { it.removal == null && "Lonely Book" !in it.titles }
+        assertNull(stored(id))
+        assertTrue("its bookmarks go too", runBlocking { library.bookmarks(id).first() }.isEmpty())
+        assertFalse(file.exists())
+        assertFalse("its cover goes too", covers.file(id).exists())
+    }
+
+    @Test
+    fun bookThatIsNotRemovedStays() {
+        val id = keep("Kept Book")
+        model.askRemove(shown("Kept Book"))
+        until("the reader is warned") { it.removal != null }
+        model.dontRemove()
+        until("the question is gone") { it.removal == null }
+        assertTrue(File(checkNotNull(stored(id)).path).isFile)
+    }
+
+    @Test
+    fun bookInAFolderIsRemovedWithItsFileAndIsNotFoundThereAgain() {
+        val file = TestBook.write(File(source.dir, "folder-book.fb2"), "Folder Book")
+        runBlocking { library.addFolder(source.uriOf(source.dir), "Books") }
+        val book = shown("folder-book")
+
+        model.remove(book)
+
+        until("the book is gone") { "folder-book" !in it.titles }
+        assertFalse("the file is removed from the folder", file.exists())
+        model.rescan()
+        until("the look is over") { !it.scanning }
+        assertNull("the next look does not bring it back", stored(book.id))
+    }
+
+    @Test
+    fun folderTheAppMayOnlyReadIsToBePickedAgain() {
+        readOnly = true
+        val file = TestBook.write(File(source.dir, "read-only.fb2"), "Read Only")
+        runBlocking { library.addFolder(source.uriOf(source.dir), "Read Only Folder") }
+        val book = shown("read-only")
+
+        model.remove(book)
+
+        val asked = until("the reader is asked to pick the folder again") { it.removal is Removal.NoWriteAccess }.removal as Removal.NoWriteAccess
+        assertEquals("Read Only Folder", asked.folder.name)
+        assertTrue("the book stays", file.isFile && stored(book.id) != null)
+
+        // The folder picked again lets the app write there.
+        readOnly = false
+        model.remove(asked.book)
+        until("the book is gone") { it.removal == null && "read-only" !in it.titles }
+        assertFalse(file.exists())
+    }
+
+    @Test
+    fun bookTheServerHasIsSyncedBeforeItGoes() {
+        val id = keep("Synced Book")
+        server.value.files[id] = 7L to 70L
+        signIn()
+        runBlocking {
+            library.savePosition(id, "/a", 0f)
+            Thread.sleep(10)
+            library.savePosition(id, "/b", 0.5f)
+        }
+
+        model.askRemove(shown("Synced Book"))
+
+        val asked = until("the server has all of it") { it.removal is Removal.Kept }.removal!!
+        assertEquals("/b", server.value.places.getValue(id).getString("progress"))
+        model.remove(asked.book)
+        until("the book is gone") { "Synced Book" !in it.titles }
+        assertNull(stored(id))
+    }
+
+    @Test
+    fun bookTheServerCouldNotBeToldOfSaysWhatIsLost() {
+        val id = keep("Unsent Book")
+        server.value.files[id] = 7L to 70L
+        signIn()
+        runBlocking {
+            library.savePosition(id, "/a", 0f)
+            Thread.sleep(10)
+            library.savePosition(id, "/b", 0.5f)
+        }
+        server.value.down = true
+
+        model.askRemove(shown("Unsent Book"))
+
+        until("the reader is told that changes would be lost") { it.removal is Removal.Unsent }
+        assertTrue("nothing is removed before the reader says so", stored(id) != null)
     }
 
     @Test
