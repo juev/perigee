@@ -69,7 +69,17 @@ class Library internal constructor(internal val database: ReadingDatabase, priva
     suspend fun onServer(bookId: String, serverBookId: Long, serverFileId: Long) = database.withTransaction {
         dao.setServerFile(bookId, serverBookId, serverFileId, now())
         dao.clearServerLike(bookId)
+        dao.setUploadSession(bookId, null)
     }
+
+    /** The book's file is on its way to the server through upload [session]; one cut off goes on through it. */
+    suspend fun uploadStarted(bookId: String, session: String) = dao.setUploadSession(bookId, session)
+
+    /** The book's file is no longer on its way to the server: it got there, was refused, or the reader called it off. */
+    suspend fun uploadEnded(bookId: String) = dao.setUploadSession(bookId, null)
+
+    /** Books whose files were on their way to the server and did not get there yet. */
+    suspend fun booksSending(): List<Book> = dao.booksSending()
 
     /** Books of the library the server is not known to have, as they are. */
     suspend fun booksNotOnServer(): List<Book> = dao.booksNotOnServer()
@@ -126,7 +136,7 @@ class Library internal constructor(internal val database: ReadingDatabase, priva
         val carried = old.copy(
             id = newId, format = format, path = there?.path.orEmpty(), uri = there?.uri ?: old.uri, folderId = there?.folderId ?: old.folderId,
             serverBookId = null, serverFileId = null, serverCheckedAt = 0, pushedAt = 0, statePushedAt = 0, remoteSeenAt = 0,
-            marksSyncedAt = 0, marksChangedAt = now(), serverLikeId = null, serverLikeName = "",
+            marksSyncedAt = 0, marksChangedAt = now(), serverLikeId = null, serverLikeName = "", uploadSession = null,
         )
         when {
             there == null -> {
