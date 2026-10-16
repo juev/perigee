@@ -1,12 +1,21 @@
 # Catalogs: downloading books over OPDS
 
-Requirement R5 of `plan.md`. A catalog is a library on the network that lists books as OPDS 1.x pages (Atom). The reader adds catalogs by address, looks through them, searches, and downloads books into the library described in `library.md`.
+Requirement R5 of `plan.md`. A catalog is a library on the network that lists books as OPDS pages: 1.x (Atom) or 2.0 (JSON). The reader adds catalogs by address, looks through them, searches, and downloads books into the library described in `library.md`.
 
 ## Module `:opds`
 
 - `OpdsParser` reads a catalog page into `OpdsFeed`: title, entries, the address of the page that follows (`rel="next"`), and the search the page offers. It also reads an OpenSearch description for its search template. Relative links are resolved against the address the page came from. Only http and https addresses are kept: pictures written into the page (`data:`) and other schemes are dropped.
 - An `OpdsEntry` may lead somewhere (`feed`: the first Atom link that is not `self`, `related`, `search`, `start`, `up` or `replies`), offer files (`downloads`: links with rel `http://opds-spec.org/acquisition` or `…/open-access`; buying, borrowing and samples are left out), or both. `OpdsLink.format` tells which of the app's formats a media type is, or that it is none.
-- A page that is not an Atom feed, or that ends in the middle, is refused (`NotACatalogException`) rather than shown in part.
+- A page that is neither an Atom feed nor an OPDS 2.0 page, or that ends in the middle, is refused (`NotACatalogException`) rather than shown in part.
+
+### OPDS 2.0
+
+A page is read as JSON when it starts with a brace, whatever type the server gives it. `OpdsJson` turns it into the same `OpdsFeed`:
+
+- `navigation` links become sections; `publications` become books; a group with a page of its own (a `self` link and a title) becomes one section that leads to it, and a group without one is shown in place.
+- A publication offers the files linked with the same acquisition relations as in Atom; buying, borrowing, subscribing and samples are left out. Its authors may be a name, an object with a name, or a list of either. A title or description given in several languages is read in the first one. The cover is the smallest of its pictures.
+- A page that is a single publication is read as a page with that one book.
+- Search is the `search` link with `"templated": true`: a URI template such as `…/search.json{?query}`. `query` is filled in, other variables are left out.
 - `OpdsClient` fetches pages, searches, downloads files and fetches cover pictures with `HttpURLConnection`. It sends HTTP Basic credentials when a user name is given.
 
 ### Passwords
@@ -39,7 +48,7 @@ Where the file is kept is the reader's choice, asked for at the first download a
 
 ## Tests
 
-- `:opds` `OpdsParserTest` — pages recorded on 2026-10-13 from bookOrbit 3.3.0 and from Project Gutenberg (`opds/src/androidTest/assets/feeds`), plus hand-written pages for paid links, broken links and things that are not catalogs.
+- `:opds` `OpdsParserTest` — pages recorded on 2026-10-13 from bookOrbit 3.3.0 and from Project Gutenberg (`opds/src/androidTest/assets/feeds`); OPDS 2.0 pages recorded on 2026-10-16 from Feedbooks (cut down to a few books) and from the OPDS test catalog `test.opds.io`; plus hand-written pages for paid links, broken links and things that are not catalogs.
 - `:opds` `OpdsClientTest` — against servers the test runs itself: credentials, refusals, redirects within and across servers, search by template and by description, download names, oversized pictures.
 - `:data` `CatalogsTest` — sealed passwords, adding twice, removal, a downloaded file joining the library.
 - `:app` `OpdsScreenTest` — the screen against a small catalog served by the test: adding with each kind of failure, the question before a password goes over plain HTTP, browsing, the next part of a page, search, a broken section, and downloads: the question at the first one, into the app, into a folder, a book that is in a folder already, a folder that cannot be written to. The folder is a plain directory there.
@@ -49,7 +58,6 @@ Checked by hand on the emulator against the same server: adding the catalog, bro
 
 ## Not done
 
-- OPDS 2.0 (JSON) catalogs.
 - Download progress, cancelling, and a limit on file size.
 - A message when the downloads folder could not be written to and the book went into the app instead.
 - Facets, and files a catalog offers only after a purchase or a loan.

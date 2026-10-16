@@ -1,0 +1,791 @@
+{
+ "metadata": {
+  "title": "dumas",
+  "itemsPerPage": 50,
+  "currentPage": 1,
+  "numberOfItems": 1031
+ },
+ "links": [
+  {
+   "type": "application/opds+json",
+   "rel": "self",
+   "href": "https://catalog.feedbooks.com/search.json?query=dumas"
+  },
+  {
+   "type": "application/opds+json",
+   "rel": "search",
+   "href": "https://catalog.feedbooks.com/search.json{?query}",
+   "templated": true
+  },
+  {
+   "type": "application/opds+json",
+   "rel": "next",
+   "href": "https://catalog.feedbooks.com/search.json?page=2&query=dumas"
+  },
+  {
+   "type": "application/opds+json",
+   "rel": "last",
+   "href": "https://catalog.feedbooks.com/search.json?query=dumas"
+  }
+ ],
+ "facets": [
+  {
+   "metadata": {
+    "title": "Sort"
+   },
+   "links": [
+    {
+     "type": "application/opds+json",
+     "href": "https://catalog.feedbooks.com/top/top.json?query=dumas",
+     "title": "Best sellers"
+    },
+    {
+     "type": "application/opds+json",
+     "href": "https://catalog.feedbooks.com/recent.json?query=dumas",
+     "title": "New releases"
+    },
+    {
+     "type": "application/opds+json",
+     "href": "https://catalog.feedbooks.com/picks.json?query=dumas",
+     "title": "Featured picks"
+    },
+    {
+     "type": "application/opds+json",
+     "href": "https://catalog.feedbooks.com/top/awards.json?query=dumas",
+     "title": "Awards"
+    },
+    {
+     "type": "application/opds+json",
+     "href": "https://catalog.feedbooks.com/featured.json?query=dumas",
+     "title": "New & noteworthy"
+    }
+   ]
+  },
+  {
+   "metadata": {
+    "title": "Language"
+   },
+   "links": [
+    {
+     "type": "application/opds+json",
+     "href": "https://catalog.feedbooks.com/search.json?languages=de&query=dumas",
+     "title": "German"
+    },
+    {
+     "type": "application/opds+json",
+     "href": "https://catalog.feedbooks.com/search.json?languages=en&query=dumas",
+     "title": "English",
+     "rel": "self"
+    },
+    {
+     "type": "application/opds+json",
+     "href": "https://catalog.feedbooks.com/search.json?languages=es&query=dumas",
+     "title": "Spanish"
+    },
+    {
+     "type": "application/opds+json",
+     "href": "https://catalog.feedbooks.com/search.json?languages=fr&query=dumas",
+     "title": "French"
+    },
+    {
+     "type": "application/opds+json",
+     "href": "https://catalog.feedbooks.com/search.json?languages=it&query=dumas",
+     "title": "Italian"
+    },
+    {
+     "type": "application/opds+json",
+     "href": "https://catalog.feedbooks.com/search.json?languages=pt&query=dumas",
+     "title": "Portuguese"
+    }
+   ]
+  }
+ ],
+ "publications": [
+  {
+   "metadata": {
+    "@type": "http://schema.org/Book",
+    "title": "Alexandre Dumas",
+    "subtitle": "The King of Romance",
+    "abridged": "false",
+    "accessibility": {
+     "feature": [
+      "tableOfContents"
+     ]
+    },
+    "language": "en",
+    "modified": "2026-10-09T00:33:08+02:00",
+    "published": "2011-09-28T00:00:00+02:00",
+    "numberOfPages": 352,
+    "identifier": "urn:ISBN:9781448204830",
+    "schema:encodingFormat": "application/epub+zip",
+    "presentation": {
+     "layout": "reflowable"
+    },
+    "schema:workExample": [
+     {
+      "@type": "http://schema.org/Book",
+      "schema:bookFormat": "http://schema.org/Hardcover",
+      "schema:isbn": "urn:ISBN:9781448205271"
+     }
+    ],
+    "author": [
+     {
+      "name": "F. W. J. Hemmings",
+      "links": [
+       {
+        "type": "application/opds+json",
+        "href": "https://catalog.feedbooks.com/browse/recent.json?author_ids=269891&languages=en"
+       }
+      ]
+     }
+    ],
+    "publisher": {
+     "name": "Bloomsbury Reader",
+     "links": [
+      {
+       "type": "application/opds+json",
+       "href": "https://catalog.feedbooks.com/browse/recent.json?imprint_ids=7297&languages=en"
+      }
+     ]
+    },
+    "description": "The last of Alexandre Dumas's many mistresses, the American actress Adah Menken, called him \"the king of romance.\" She was not thinking only of his immensely popular novels <i>The Three Musketeers</i> and <i>The Count of Monte Cristo</i> - everything about Dumas was touched with the spirit of romance, and it is that spirit which this exhilarating biography captures.<br/><br/>There was romance in Dumas's ori­gins. He grew up in the country, the son of a general who fought under Napoleon in Egypt and Italy and whose own parents were a French marquis and a slave from Haiti. As a boy, Dumas's closest friends were local poachers and a gardener whom he once watched cut open a grass snake to lib­erate a frog. The world was full of magical possibilities, and, in his twen­ties, after moving to Paris and working as a clerk under the Duc d'Orleans, Dumas established himself, with Victor Hugo, as one of the leading Romantic playwrights.<br/><br/>In its scope and richness, Dumas's life bears comparison to those of his fictional heroes. Drawing on Dumas's memoirs and surviving correspon­dence, Professor Hemmings constructs a fascinating story, first published in 1979, of a writer whose novels continue to excite our imagi­nation.",
+    "belongsTo": {
+     "collection": "Bloomsbury Reader"
+    },
+    "subject": [
+     {
+      "code": "FBNFC000000",
+      "name": "Nonfiction",
+      "scheme": "http://www.feedbooks.com/categories",
+      "links": [
+       {
+        "type": "application/opds+json",
+        "href": "https://catalog.feedbooks.com/category/FBNFC000000.json?languages=en"
+       }
+      ]
+     },
+     {
+      "code": "FBBIO000000",
+      "name": "Biography & autobiography",
+      "scheme": "http://www.feedbooks.com/categories",
+      "links": [
+       {
+        "type": "application/opds+json",
+        "href": "https://catalog.feedbooks.com/category/FBBIO000000.json?languages=en"
+       }
+      ]
+     },
+     {
+      "code": "FBBIO007000",
+      "name": "Literary",
+      "scheme": "http://www.feedbooks.com/categories",
+      "links": [
+       {
+        "type": "application/opds+json",
+        "href": "https://catalog.feedbooks.com/category/FBBIO007000.json?languages=en"
+       }
+      ]
+     },
+     {
+      "code": "FBLIT000000",
+      "name": "Literary essays",
+      "scheme": "http://www.feedbooks.com/categories",
+      "links": [
+       {
+        "type": "application/opds+json",
+        "href": "https://catalog.feedbooks.com/category/FBLIT000000.json?languages=en"
+       }
+      ]
+     }
+    ]
+   },
+   "images": [
+    {
+     "href": "https://covers.feedbooks.net/item/940502.jpg?size=large&t=1744322151",
+     "type": "image/jpeg",
+     "width": 260,
+     "height": 420
+    },
+    {
+     "href": "https://covers.feedbooks.net/item/940502.jpg?t=1744322151",
+     "type": "image/jpeg",
+     "width": 100,
+     "height": 180
+    }
+   ],
+   "links": [
+    {
+     "rel": "http://opds-spec.org/acquisition/sample",
+     "href": "https://catalog.feedbooks.com/item/940502/preview",
+     "type": "application/epub+zip"
+    },
+    {
+     "rel": "http://opds-spec.org/acquisition/sample",
+     "href": "https://catalog.feedbooks.com/item/940502/preview.html",
+     "type": "text/html"
+    },
+    {
+     "rel": "self",
+     "href": "https://catalog.feedbooks.com/item/940502.json",
+     "type": "application/opds-publication+json",
+     "properties": {
+      "authenticate": {
+       "href": "https://catalog.feedbooks.com/user/authentication",
+       "type": "application/opds-authentication+json"
+      }
+     }
+    }
+   ],
+   "licenses": [
+    {
+     "metadata": {
+      "identifier": "urn:X-UNKNOWN:cant-12604347-4060-5139310-1737967407657-libraries",
+      "format": "application/epub+zip",
+      "price": {
+       "value": "58.0",
+       "currency": "USD"
+      },
+      "created": "2025-04-10T23:55:50.000+02:00",
+      "terms": {
+       "checkouts": 0,
+       "concurrency": 1,
+       "length": 5097600,
+       "lifetime": 0
+      },
+      "protection": {
+       "devices": 6,
+       "copy": true,
+       "print": false
+      }
+     }
+    }
+   ]
+  },
+  {
+   "metadata": {
+    "@type": "http://schema.org/Book",
+    "title": "The Count of Monte Cristo",
+    "abridged": "false",
+    "accessibility": {
+     "summary": "The structure and markup of this publication follow WCAG guidelines. This summary has been automatically generated based on the content of this publication.",
+     "feature": [
+      "structuralNavigation",
+      "tableOfContents",
+      "readingOrder"
+     ],
+     "accessModeSufficient": [
+      "textual"
+     ]
+    },
+    "language": "en",
+    "modified": "2026-10-09T09:57:52+02:00",
+    "published": "2026-07-25T00:00:00+02:00",
+    "identifier": "urn:ISBN:9791044615107",
+    "schema:encodingFormat": "application/epub+zip",
+    "presentation": {
+     "layout": "reflowable"
+    },
+    "schema:workExample": [
+     {
+      "@type": "http://schema.org/Book",
+      "schema:bookFormat": "http://schema.org/Hardcover",
+      "schema:isbn": "urn:ISBN:9780141392462"
+     }
+    ],
+    "author": [
+     {
+      "name": "Alexandre Dumas",
+      "links": [
+       {
+        "type": "application/opds+json",
+        "href": "https://catalog.feedbooks.com/browse/recent.json?author_ids=3954&languages=en"
+       }
+      ]
+     }
+    ],
+    "publisher": {
+     "name": "Dumas",
+     "links": [
+      {
+       "type": "application/opds+json",
+       "href": "https://catalog.feedbooks.com/browse/recent.json?imprint_ids=202205&languages=en"
+      }
+     ]
+    },
+    "description": "Wrongfully imprisoned on the eve of his wedding, a young sailor loses everything—his freedom, his future, and the woman he loves. From that moment begins one of the most extraordinary stories of betrayal, vengeance, transformation, and redemption ever written.\n\nEdmond Dantès is a promising young sailor whose life appears destined for happiness. He is about to marry the beautiful Mercédès and has earned the respect of his captain. But jealousy and political intrigue turn his good fortune into catastrophe. Betrayed by men he once trusted, Edmond is falsely accused of treason and secretly imprisoned in the formidable Château d’If.\n\nYears of isolation nearly destroy him. Then he meets Abbé Faria, a brilliant fellow prisoner who becomes his mentor and reveals the location of a hidden treasure. Armed with knowledge, patience, and a carefully constructed new identity, Edmond escapes and reenters society as the mysterious and immensely wealthy Count of Monte Cristo.\n\nFrom the salons of Paris to the shores of the Mediterranean, the Count methodically confronts those responsible for his downfall. Yet as his plans unfold, revenge proves more complicated than he imagined. Innocent lives are caught in the consequences, old loyalties are tested, and the line between justice and cruelty begins to disappear.\n\nAlexandre Dumas combines suspense, romance, political conspiracy, hidden identities, fortune, and moral conflict in a sweeping narrative that has captivated generations of readers. At once an adventure novel, a psychological drama, and a meditation on power and forgiveness, The Count of Monte Cristo remains one of the greatest works of popular literature ever written.\n\nRich in unforgettable characters and dramatic reversals, this timeless masterpiece asks whether any person has the right to judge and punish others—and whether true freedom can ever be achieved through revenge alone.",
+    "subject": [
+     {
+      "code": "FBFIC000000",
+      "name": "Fiction",
+      "scheme": "http://www.feedbooks.com/categories",
+      "links": [
+       {
+        "type": "application/opds+json",
+        "href": "https://catalog.feedbooks.com/category/FBFIC000000.json?languages=en"
+       }
+      ]
+     },
+     {
+      "code": "FBFIC002000",
+      "name": "Action & adventure",
+      "scheme": "http://www.feedbooks.com/categories",
+      "links": [
+       {
+        "type": "application/opds+json",
+        "href": "https://catalog.feedbooks.com/category/FBFIC002000.json?languages=en"
+       }
+      ]
+     },
+     {
+      "code": "FBFIC004000",
+      "name": "Classics",
+      "scheme": "http://www.feedbooks.com/categories",
+      "links": [
+       {
+        "type": "application/opds+json",
+        "href": "https://catalog.feedbooks.com/category/FBFIC004000.json?languages=en"
+       }
+      ]
+     },
+     {
+      "code": "FBFIC014000",
+      "name": "Historical",
+      "scheme": "http://www.feedbooks.com/categories",
+      "links": [
+       {
+        "type": "application/opds+json",
+        "href": "https://catalog.feedbooks.com/category/FBFIC014000.json?languages=en"
+       }
+      ]
+     }
+    ]
+   },
+   "images": [
+    {
+     "href": "https://covers.feedbooks.net/item/7668930.jpg?size=large&t=1784939446",
+     "type": "image/jpeg",
+     "width": 260,
+     "height": 420
+    },
+    {
+     "href": "https://covers.feedbooks.net/item/7668930.jpg?t=1784939446",
+     "type": "image/jpeg",
+     "width": 100,
+     "height": 180
+    }
+   ],
+   "links": [
+    {
+     "rel": "http://opds-spec.org/acquisition/sample",
+     "href": "https://catalog.feedbooks.com/item/7668930/preview",
+     "type": "application/epub+zip"
+    },
+    {
+     "rel": "self",
+     "href": "https://catalog.feedbooks.com/item/7668930.json",
+     "type": "application/opds-publication+json",
+     "properties": {
+      "authenticate": {
+       "href": "https://catalog.feedbooks.com/user/authentication",
+       "type": "application/opds-authentication+json"
+      }
+     }
+    }
+   ],
+   "licenses": [
+    {
+     "metadata": {
+      "identifier": "urn:X-UNKNOWN:cant-14167839-4213-6161299-1784927645125-libraries",
+      "format": "application/epub+zip",
+      "price": {
+       "value": "0.49",
+       "currency": "EUR"
+      },
+      "created": "2026-07-24T23:30:24.000+02:00",
+      "terms": {
+       "checkouts": 55,
+       "concurrency": 1,
+       "length": 5097600,
+       "lifetime": 0
+      },
+      "protection": {
+       "devices": 6,
+       "copy": true,
+       "print": false
+      }
+     }
+    }
+   ]
+  },
+  {
+   "metadata": {
+    "@type": "http://schema.org/Book",
+    "title": "Pumas",
+    "abridged": "false",
+    "language": "en",
+    "modified": "2026-10-15T23:49:36+02:00",
+    "published": "2015-01-01T00:00:00+01:00",
+    "identifier": "urn:ISBN:9781629705934",
+    "schema:encodingFormat": "application/pdf",
+    "author": [
+     {
+      "name": "Claire Archer",
+      "links": [
+       {
+        "type": "application/opds+json",
+        "href": "https://catalog.feedbooks.com/browse/recent.json?author_ids=2478572&languages=en"
+       }
+      ]
+     }
+    ],
+    "publisher": {
+     "name": "Abdo Publishing",
+     "links": [
+      {
+       "type": "application/opds+json",
+       "href": "https://catalog.feedbooks.com/browse/recent.json?imprint_ids=201800&languages=en"
+      }
+     ]
+    },
+    "description": "This title will introduce your little readers to pumas, one of the fiercest cats on Earth. Complete with bolded glossary terms and a More Facts section. Young readers will gather basic information about pumas through easy-to-read, simple text alongside beautiful full-bleed photographs. Translated by native Spanish speakers. Aligned to Common Core standards and correlated to state standards. Abdo Kids is a division of ABDO.",
+    "subject": [
+     {
+      "code": "FBNFC000000",
+      "name": "Nonfiction",
+      "scheme": "http://www.feedbooks.com/categories",
+      "links": [
+       {
+        "type": "application/opds+json",
+        "href": "https://catalog.feedbooks.com/category/FBNFC000000.json?languages=en"
+       }
+      ]
+     },
+     {
+      "code": "FBJNF000000",
+      "name": "Juvenile",
+      "scheme": "http://www.feedbooks.com/categories",
+      "links": [
+       {
+        "type": "application/opds+json",
+        "href": "https://catalog.feedbooks.com/category/FBJNF000000.json?languages=en"
+       }
+      ]
+     },
+     {
+      "code": "FBJNF003000",
+      "name": "Animals",
+      "scheme": "http://www.feedbooks.com/categories",
+      "links": [
+       {
+        "type": "application/opds+json",
+        "href": "https://catalog.feedbooks.com/category/FBJNF003000.json?languages=en"
+       }
+      ]
+     },
+     {
+      "code": "FBJNF003130",
+      "name": "Lions, tigers, leopards, etc.",
+      "scheme": "http://www.feedbooks.com/categories",
+      "links": [
+       {
+        "type": "application/opds+json",
+        "href": "https://catalog.feedbooks.com/category/FBJNF003130.json?languages=en"
+       }
+      ]
+     },
+     {
+      "code": "FBJNF020000",
+      "name": "Foreign language study",
+      "scheme": "http://www.feedbooks.com/categories",
+      "links": [
+       {
+        "type": "application/opds+json",
+        "href": "https://catalog.feedbooks.com/category/FBJNF020000.json?languages=en"
+       }
+      ]
+     },
+     {
+      "code": "FBJNF020030",
+      "name": "Spanish",
+      "scheme": "http://www.feedbooks.com/categories",
+      "links": [
+       {
+        "type": "application/opds+json",
+        "href": "https://catalog.feedbooks.com/category/FBJNF020030.json?languages=en"
+       }
+      ]
+     },
+     {
+      "code": "FBJNF051000",
+      "name": "Science & nature",
+      "scheme": "http://www.feedbooks.com/categories",
+      "links": [
+       {
+        "type": "application/opds+json",
+        "href": "https://catalog.feedbooks.com/category/FBJNF051000.json?languages=en"
+       }
+      ]
+     },
+     {
+      "code": "FBJNF051150",
+      "name": "Zoology",
+      "scheme": "http://www.feedbooks.com/categories",
+      "links": [
+       {
+        "type": "application/opds+json",
+        "href": "https://catalog.feedbooks.com/category/FBJNF051150.json?languages=en"
+       }
+      ]
+     }
+    ]
+   },
+   "images": [
+    {
+     "href": "https://covers.feedbooks.net/item/7592192.jpg?size=large&t=1781192345",
+     "type": "image/jpeg",
+     "width": 260,
+     "height": 420
+    },
+    {
+     "href": "https://covers.feedbooks.net/item/7592192.jpg?t=1781192345",
+     "type": "image/jpeg",
+     "width": 100,
+     "height": 180
+    }
+   ],
+   "links": [
+    {
+     "rel": "http://opds-spec.org/acquisition/sample",
+     "href": "https://catalog.feedbooks.com/item/7592192/preview.html",
+     "type": "text/html"
+    },
+    {
+     "rel": "self",
+     "href": "https://catalog.feedbooks.com/item/7592192.json",
+     "type": "application/opds-publication+json",
+     "properties": {
+      "authenticate": {
+       "href": "https://catalog.feedbooks.com/user/authentication",
+       "type": "application/opds-authentication+json"
+      }
+     }
+    }
+   ],
+   "licenses": [
+    {
+     "metadata": {
+      "identifier": "urn:X-UNKNOWN:cant-13398442-4705-5938237-1773677092997-libraries",
+      "format": "application/pdf",
+      "price": {
+       "value": "18.9",
+       "currency": "EUR"
+      },
+      "created": "2026-06-11T17:38:20.000+02:00",
+      "terms": {
+       "checkouts": 0,
+       "concurrency": 1,
+       "length": 5097600,
+       "lifetime": 730
+      },
+      "protection": {
+       "devices": 6,
+       "copy": true,
+       "print": false
+      }
+     }
+    }
+   ]
+  },
+  {
+   "metadata": {
+    "@type": "http://schema.org/Book",
+    "title": "The Club Dumas",
+    "duration": 21558,
+    "abridged": "true",
+    "accessibility": {
+     "accessMode": [
+      "auditory"
+     ]
+    },
+    "language": "en",
+    "modified": "2026-10-15T01:30:02+02:00",
+    "published": "2007-01-01T00:00:00+01:00",
+    "identifier": "urn:ISBN:9781597772235",
+    "schema:encodingFormat": "application/audiobook+json",
+    "author": [
+     {
+      "name": "Arturo P Reverte",
+      "links": [
+       {
+        "type": "application/opds+json",
+        "href": "https://catalog.feedbooks.com/browse/recent.json?author_ids=2248140&languages=en"
+       }
+      ]
+     }
+    ],
+    "artist": [
+     {
+      "name": "P Arturo Reverte",
+      "links": [
+       {
+        "type": "application/opds+json",
+        "href": "https://catalog.feedbooks.com/browse/recent.json?contributor_ids=2248139&languages=en"
+       }
+      ]
+     }
+    ],
+    "narrator": [
+     {
+      "name": "David Warner",
+      "links": [
+       {
+        "type": "application/opds+json",
+        "href": "https://catalog.feedbooks.com/browse/recent.json?contributor_ids=605532&languages=en"
+       }
+      ]
+     }
+    ],
+    "translator": [
+     {
+      "name": "Sonia Soto",
+      "links": [
+       {
+        "type": "application/opds+json",
+        "href": "https://catalog.feedbooks.com/browse/recent.json?contributor_ids=57930&languages=en"
+       }
+      ]
+     }
+    ],
+    "publisher": {
+     "name": "Phoenix Books, Inc.",
+     "links": [
+      {
+       "type": "application/opds+json",
+       "href": "https://catalog.feedbooks.com/browse/recent.json?imprint_ids=178995&languages=en"
+      }
+     ]
+    },
+    "description": "Middle-aged Lucas Corso is a tired and cynical book detective, a mercenary hired to hunt down rare editions for wealthy and unscrupulous clients. When a well-known bibliophile is found hanged, leaving behind part of the original manuscript of Alexandre Dumas' \n                    <i>The Three Musketeers</i>, Corso is brought in to authenticate the fragment. Soon the unsuspecting Corso is drawn into a swirling plot involving devil worship, occult practices, and swashbuckling derring-do among a cast of characters bearing a suspicious resemblance to those of Dumas' masterpiece.",
+    "subject": [
+     {
+      "code": "FBFIC000000",
+      "name": "Fiction",
+      "scheme": "http://www.feedbooks.com/categories",
+      "links": [
+       {
+        "type": "application/opds+json",
+        "href": "https://catalog.feedbooks.com/category/FBFIC000000.json?languages=en"
+       }
+      ]
+     },
+     {
+      "code": "FBFIC014000",
+      "name": "Historical",
+      "scheme": "http://www.feedbooks.com/categories",
+      "links": [
+       {
+        "type": "application/opds+json",
+        "href": "https://catalog.feedbooks.com/category/FBFIC014000.json?languages=en"
+       }
+      ]
+     }
+    ]
+   },
+   "images": [
+    {
+     "href": "https://covers.feedbooks.net/item/6666681.jpg?size=large&t=1758616283",
+     "type": "image/jpeg",
+     "width": 260,
+     "height": 420
+    },
+    {
+     "href": "https://covers.feedbooks.net/item/6666681.jpg?t=1758616283",
+     "type": "image/jpeg",
+     "width": 100,
+     "height": 180
+    }
+   ],
+   "links": [
+    {
+     "rel": "self",
+     "href": "https://catalog.feedbooks.com/item/6666681.json",
+     "type": "application/opds-publication+json",
+     "properties": {
+      "authenticate": {
+       "href": "https://catalog.feedbooks.com/user/authentication",
+       "type": "application/opds-authentication+json"
+      }
+     }
+    }
+   ],
+   "licenses": [
+    {
+     "metadata": {
+      "identifier": "urn:X-UNKNOWN:cant-12765632-4170-5301122-1746826602831-libraries",
+      "format": "application/audiobook+json",
+      "price": {
+       "value": "60.45",
+       "currency": "EUR"
+      },
+      "created": "2025-05-10T18:38:59.000+02:00",
+      "terms": {
+       "checkouts": 0,
+       "concurrency": 1,
+       "length": 5097600,
+       "lifetime": 0
+      },
+      "protection": {
+       "devices": 6,
+       "copy": true,
+       "print": false
+      }
+     }
+    },
+    {
+     "metadata": {
+      "identifier": "urn:X-UNKNOWN:cant-12765632-4788-5301122-1775664177656-libraries",
+      "format": "application/audiobook+json",
+      "price": {
+       "value": "24.18",
+       "currency": "EUR"
+      },
+      "created": "2026-04-08T18:49:10.000+02:00",
+      "terms": {
+       "checkouts": 26,
+       "concurrency": 1,
+       "length": 5097600,
+       "lifetime": 0
+      },
+      "protection": {
+       "devices": 6,
+       "copy": true,
+       "print": false
+      }
+     }
+    },
+    {
+     "metadata": {
+      "identifier": "urn:X-UNKNOWN:cant-12765632-4789-5301122-1775664197962-libraries",
+      "format": "application/audiobook+json",
+      "price": {
+       "value": "33.86",
+       "currency": "EUR"
+      },
+      "created": "2026-04-08T18:49:11.000+02:00",
+      "terms": {
+       "checkouts": 55,
+       "concurrency": 1,
+       "length": 5097600,
+       "lifetime": 0
+      },
+      "protection": {
+       "devices": 6,
+       "copy": true,
+       "print": false
+      }
+     }
+    }
+   ]
+  }
+ ]
+}

@@ -132,7 +132,7 @@ class OpdsClient(val root: String, private val user: String = "", private val pa
         const val TIMEOUT_MS = 20_000
         const val MAX_REDIRECTS = 6
         const val USER_AGENT = "Perigee"
-        const val ACCEPT_FEED = "application/atom+xml;profile=opds-catalog, application/atom+xml;q=0.9, application/xml;q=0.8, */*;q=0.5"
+        const val ACCEPT_FEED = "application/atom+xml;profile=opds-catalog, application/opds+json, application/atom+xml;q=0.9, application/json;q=0.8, application/xml;q=0.8, */*;q=0.5"
         val REDIRECTS = setOf(301, 302, 303, 307, 308)
 
         /** Scheme, host and port: what a password belongs to. */

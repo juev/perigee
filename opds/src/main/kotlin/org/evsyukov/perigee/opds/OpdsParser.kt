@@ -12,26 +12,29 @@ import org.xmlpull.v1.XmlPullParserFactory
 /** What was fetched is not a catalog page. */
 class NotACatalogException(message: String, cause: Throwable? = null) : IOException(message, cause)
 
-/** Reads OPDS 1.x catalog pages (Atom) and OpenSearch descriptions. */
+/** Reads catalog pages, OPDS 1.x (Atom) and 2.0 (JSON), and OpenSearch descriptions. */
 object OpdsParser {
-    private const val ACQUISITION = "http://opds-spec.org/acquisition"
-    private const val OPEN_ACCESS = "http://opds-spec.org/acquisition/open-access"
+    internal const val ACQUISITION = "http://opds-spec.org/acquisition"
+    internal const val OPEN_ACCESS = "http://opds-spec.org/acquisition/open-access"
     private const val IMAGE = "http://opds-spec.org/image"
     private const val THUMBNAIL = "http://opds-spec.org/image/thumbnail"
-    private const val OPEN_SEARCH = "application/opensearchdescription+xml"
+    internal const val OPEN_SEARCH = "application/opensearchdescription+xml"
     private const val ATOM = "application/atom+xml"
     private const val TERMS = "{searchTerms}"
 
     // Links of an entry that are about it but do not lead into it.
-    private val ASIDE = setOf("self", "related", "search", "start", "up", "replies")
+    internal val ASIDE = setOf("self", "related", "search", "start", "up", "replies")
 
     /**
      * @param base the address the page was fetched from; relative links are resolved against it
-     * @throws NotACatalogException when the input is not an Atom feed
+     * @throws NotACatalogException when the input is neither an Atom feed nor an OPDS 2.0 page
      */
     fun parse(input: InputStream, base: String): OpdsFeed {
+        val buffered = input.buffered()
+        // Told apart by what the page is, not by what the server calls it: many call everything XML or JSON.
+        if (startsWithBrace(buffered)) return OpdsJson.parse(buffered, base)
         try {
-            val xml = parser(input)
+            val xml = parser(buffered)
             xml.nextTag()
             return when (xml.name) {
                 "feed" -> feed(xml, base)
@@ -64,13 +67,39 @@ object OpdsParser {
     }
 
     /**
-     * The address that searches for [query]. Other placeholders of the
-     * template are optional by the OpenSearch rules and are left empty.
+     * The address that searches for [query]. A template is OpenSearch, with
+     * `{searchTerms}`, or a URI template of OPDS 2.0, with `query` in an
+     * expression such as `{?query}`. Other placeholders are optional by both
+     * rules and are left empty.
      */
     fun searchUrl(template: String, base: String, query: String): String? {
-        val filled = template.replace(TERMS, URLEncoder.encode(query.trim(), "UTF-8"))
-            .replace(Regex("\\{[^}]*\\}"), "")
+        val terms = URLEncoder.encode(query.trim(), "UTF-8")
+        val filled = template.replace(TERMS, terms)
+            .replace(Regex("\\{([?&]?)([^}]*)\\}")) { match ->
+                val (operator, names) = match.destructured
+                val given = names.split(',').map(String::trim).filter { it == "query" }
+                when {
+                    given.isEmpty() -> ""
+                    operator.isEmpty() -> terms
+                    else -> "${operator}query=$terms"
+                }
+            }
         return resolve(base, filled)
+    }
+
+    /** Whether [input] holds JSON: its first character, past white space and a byte order mark, is a brace. */
+    private fun startsWithBrace(input: java.io.BufferedInputStream): Boolean {
+        input.mark(4096)
+        try {
+            while (true) {
+                val byte = input.read()
+                if (byte < 0) return false
+                if (byte == ' '.code || byte == '\t'.code || byte == '\n'.code || byte == '\r'.code || byte == 0xEF || byte == 0xBB || byte == 0xBF) continue
+                return byte == '{'.code
+            }
+        } finally {
+            input.reset()
+        }
     }
 
     private fun parser(input: InputStream): XmlPullParser =

@@ -156,6 +156,10 @@ class OpdsClientTest {
                         <Url type="application/atom+xml" template="/find?q={searchTerms}"/></OpenSearchDescription>""".toByteArray(),
                     type = "application/opensearchdescription+xml",
                 )
+                path.startsWith("/json") -> Answer(
+                    body = """{"metadata": {"title": "Found"}, "navigation": [{"href": "/more", "title": "Hit for $path"}]}""".toByteArray(),
+                    type = "application/opds+json",
+                )
                 path.startsWith("/find") || path.startsWith("/direct") -> page("<entry><title>Hit for $path</title><id>1</id></entry>")
                 else -> page()
             }
@@ -167,6 +171,9 @@ class OpdsClientTest {
 
         val described = OpdsFeed("", emptyList(), searchDescription = "${server.url}/osd.xml")
         assertEquals("Hit for /find?q=dune", client.search(described, "${server.url}/opds", "dune")!!.entries.single().title)
+
+        val json = OpdsFeed("", emptyList(), searchTemplate = "/json{?query,page}")
+        assertEquals("an OPDS 2.0 template", "Hit for /json?query=dune", client.search(json, "${server.url}/opds", "dune")!!.entries.single().title)
 
         assertNull(client.search(OpdsFeed("", emptyList()), "${server.url}/opds", "dune"))
     }

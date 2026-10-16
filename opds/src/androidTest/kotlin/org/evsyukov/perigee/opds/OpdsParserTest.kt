@@ -12,7 +12,9 @@ import org.junit.runner.RunWith
 
 /**
  * Pages recorded on 2026-10-13 from bookOrbit 3.3.0 (the contract server) and
- * from Project Gutenberg, as two catalogs that write OPDS differently.
+ * from Project Gutenberg, as two catalogs that write OPDS differently; and
+ * OPDS 2.0 pages recorded on 2026-10-16 from Feedbooks (cut down to a few
+ * books) and from the test catalog of the OPDS authors, test.opds.io.
  */
 @RunWith(AndroidJUnit4::class)
 class OpdsParserTest {
@@ -121,12 +123,92 @@ class OpdsParserTest {
     }
 
     @Test
+    fun jsonRootListsSectionsGroupsAndItsSearch() {
+        val root = feed("feedbooks-root.json", "https://catalog.feedbooks.com/catalog/index.json")
+        assertEquals("Cantook Market", root.title)
+        assertEquals(
+            "a group with a page of its own is a section",
+            listOf("Fiction", "Nonfiction", "Selections", "New & noteworthy", "Featured picks"),
+            root.entries.map { it.title },
+        )
+        assertEquals("https://catalog.feedbooks.com/category/FBFIC000000/sub.json", root.entries.first().feed)
+        assertEquals("https://catalog.feedbooks.com/featured.json?languages=en", root.entries[3].feed)
+        assertEquals("https://catalog.feedbooks.com/search.json{?query}", root.searchTemplate)
+        assertEquals(
+            "https://catalog.feedbooks.com/search.json?query=war+%26+peace",
+            OpdsParser.searchUrl(root.searchTemplate!!, "https://catalog.feedbooks.com/catalog/index.json", " war & peace "),
+        )
+    }
+
+    @Test
+    fun jsonPageOfPaidBooksOffersNoFiles() {
+        val found = feed("feedbooks-search.json", "https://catalog.feedbooks.com/search.json?query=dumas")
+        assertEquals("https://catalog.feedbooks.com/search.json?page=2&query=dumas", found.next)
+        assertEquals(listOf("Alexandre Dumas", "The Count of Monte Cristo", "Pumas", "The Club Dumas"), found.entries.map { it.title })
+        val book = found.entries[1]
+        assertEquals(listOf("Alexandre Dumas"), book.authors)
+        assertEquals("urn:ISBN:9791044615107", book.id)
+        assertTrue("samples are left out: ${book.downloads}", book.downloads.isEmpty())
+        assertNull("its own page is beside it, not a section", book.feed)
+        assertTrue("the small picture is preferred: ${book.cover}", book.cover!!.startsWith("https://covers.feedbooks.net/item/") && "size=large" !in book.cover!!)
+    }
+
+    @Test
+    fun jsonPublicationsAreReadHoweverTheyNameTheirAuthors() {
+        val page = feed("opds2-test-publications.json", "https://test.opds.io/2.0/publications.json")
+        assertEquals("OPDS 2.0 Test Publications", page.title)
+        val byTitle = page.entries.associateBy { it.title }
+        assertEquals(listOf("Jules Verne"), byTitle.getValue("Voyage au centre de la Terre").authors)
+        assertEquals(listOf("Jules Verne", "Second Author"), byTitle.getValue("Multiple Authors").authors)
+        assertEquals(listOf("Jules Verne"), byTitle.getValue("Author Using an Object").authors)
+        assertEquals(listOf("Jules Verne", "Second Author"), byTitle.getValue("Multiple Authors Using Objects").authors)
+        assertTrue("a title in several languages reads as one", "Title in multiple languages" in byTitle)
+
+        val free = byTitle.getValue("Voyage au centre de la Terre")
+        assertEquals(listOf(OpdsLink("https://test.opds.io/assets/centredelaterre/file.epub", "application/epub+zip")), free.downloads)
+        assertEquals("epub", free.downloads.single().format)
+        assertEquals("https://test.opds.io/assets/centredelaterre/small.jpg", free.cover)
+        assertTrue(free.summary.startsWith("Le professeur Lidenbrock"))
+
+        for (title in listOf("Buy", "Sample", "Subscribe", "Borrow")) {
+            assertTrue("$title is not offered", byTitle.getValue(title).downloads.isEmpty())
+        }
+    }
+
+    @Test
+    fun jsonGroupsWithoutAPageAreShownInPlace() {
+        val home = feed("opds2-test-home.json", "https://test.opds.io/2.0/home.json")
+        val titles = home.entries.map { it.title }
+        assertEquals("Explore (Navigation Feed)", titles.first())
+        assertEquals(
+            listOf("Moby-Dick", "Le Mystère de la chambre jaune", "French Classics", "French Books", "English Books", "Moby-Dick", "Romeo and Juliet", "Jane Eyre"),
+            titles.drop(8),
+        )
+        assertEquals("https://test.opds.io/2.0/publications.json", home.entries.first { it.title == "French Classics" }.feed)
+        assertFalse(home.searchable)
+    }
+
+    @Test
+    fun jsonBookPageAndRelativeLinks() {
+        val page = """{"metadata": {"title": "Alone", "author": "Someone"},
+            "links": [{"rel": ["preview", "http://opds-spec.org/acquisition"], "href": "files/alone.fb2", "type": "application/x-fictionbook+xml"}],
+            "images": [{"href": "data:image/png;base64,AAAA"}]}""".byteInputStream().use { OpdsParser.parse(it, "https://shop.example/opds/book.json") }
+        val book = page.entries.single()
+        assertEquals("Alone", book.title)
+        assertEquals(listOf("https://shop.example/opds/files/alone.fb2"), book.downloads.map { it.url })
+        assertNull(book.cover)
+    }
+
+    @Test
     fun whatIsNotACatalogIsRefused() {
         assertThrows(NotACatalogException::class.java) {
             OpdsParser.parse("<html><body>Sign in</body></html>".byteInputStream(), bookorbit)
         }
         assertThrows(NotACatalogException::class.java) { OpdsParser.parse("{\"error\": true}".byteInputStream(), bookorbit) }
         assertThrows(NotACatalogException::class.java) { OpdsParser.parse("<feed><entry><title>cut".byteInputStream(), bookorbit) }
+        assertThrows(NotACatalogException::class.java) {
+            OpdsParser.parse("""{"metadata": {"title": "Cut"}, "publications": [{"metadata": {"ti""".byteInputStream(), bookorbit)
+        }
     }
 
     @Test
