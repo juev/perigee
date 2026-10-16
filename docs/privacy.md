@@ -24,7 +24,7 @@ Requests for the pages of the catalogue, your searches in it and the downloads, 
 - A name for this device: "Perigee" and the model of the device.
 - A fingerprint (a partial MD5) of each book file in your library, so that the server can say which of them it has. The server keeps the fingerprints it does not know.
 - For the books the server has: where you stopped, bookmarks, highlights and notes, status, rating, and the time spent on pages.
-- A book file, when you choose "Send to the server" for it.
+- A book file and the name it has in its folder, when you choose "Send to the server" for it.
 
 All of this goes to that server and nowhere else. What the server does with it is up to whoever runs it; Perigee is not affiliated with bookOrbit.
 
