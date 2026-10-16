@@ -6,6 +6,14 @@ plugins {
 // The same list as in :engine.
 val abis = (findProperty("perigeeAbis") as String?)?.split(",") ?: listOf("arm64-v8a", "armeabi-v7a", "x86_64")
 
+// The Play build is signed with the upload key when one is given, as the release
+// workflow and scripts/build-release-macos.sh do. Without it the bundle is unsigned.
+val uploadKeystore: String? = providers.environmentVariable("PERIGEE_UPLOAD_KEYSTORE").orNull
+val uploadPassword: String? = providers.environmentVariable("PERIGEE_UPLOAD_PASSWORD").orNull
+if (uploadKeystore != null && uploadPassword.isNullOrEmpty()) {
+    throw GradleException("PERIGEE_UPLOAD_KEYSTORE is set, PERIGEE_UPLOAD_PASSWORD is not")
+}
+
 android {
     namespace = "org.evsyukov.perigee"
     compileSdk = 36
@@ -28,12 +36,36 @@ android {
     buildFeatures {
         compose = true
     }
+    signingConfigs {
+        if (uploadKeystore != null) {
+            create("upload") {
+                storeFile = file(uploadKeystore)
+                storePassword = uploadPassword
+                keyAlias = "perigee"
+                keyPassword = uploadPassword
+            }
+        }
+    }
+    // Room, WorkManager, Compose and the engine bring their own rules for R8.
+    buildTypes {
+        getByName("release") {
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"))
+        }
+    }
     // One build per store. The code is the same; the stores differ in what
     // they accept, and a difference, when one comes, has a place to live.
     flavorDimensions += "store"
     productFlavors {
+        // F-Droid builds the app from source and signs it with its own key.
         create("fdroid") { dimension = "store" }
-        create("play") { dimension = "store" }
+        // Google Play takes a bundle signed with the upload key and signs the app itself.
+        // The key of a build type comes first: the debug build keeps the debug key.
+        create("play") {
+            dimension = "store"
+            if (uploadKeystore != null) signingConfig = signingConfigs.getByName("upload")
+        }
     }
     // The list of dependencies the build tools put into the package is sealed
     // with a key of Google's: F-Droid cannot read it and turns the build down.
