@@ -57,7 +57,7 @@ There are two builds of the app, `fdroid` and `play`, one for each store. Their 
 ./gradlew :app:assembleFdroidRelease :app:bundlePlayRelease
 ```
 
-F-Droid builds the app from source and signs it with its own key. Google Play takes a bundle signed with an upload key. With `PERIGEE_UPLOAD_KEYSTORE` and `PERIGEE_UPLOAD_PASSWORD` set, `bundlePlayRelease` signs the bundle with the key `perigee` from that keystore.
+F-Droid builds the app from source and signs it with its own key. Two clean builds of the same commit give the same APK byte for byte, whatever directory they are made in. Google Play takes a bundle signed with an upload key. With `PERIGEE_UPLOAD_KEYSTORE` and `PERIGEE_UPLOAD_PASSWORD` set, `bundlePlayRelease` signs the bundle with the key `perigee` from that keystore.
 
 The [release workflow](.github/workflows/release.yml) builds the signed bundle on a `v`-prefixed tag that matches `versionName`, or when run by hand. It takes the key and its password from the repository secrets `PERIGEE_UPLOAD_KEYSTORE_B64` and `PERIGEE_UPLOAD_PASSWORD`, checks the certificate of the bundle and keeps the bundle as an artifact of the run for 90 days.
 
