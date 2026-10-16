@@ -177,7 +177,7 @@ Sending is safe to repeat: the last place wins by its own time, status and ratin
 
 ## Sending books to the server
 
-A book of the library whose file the server has not can be sent there, from the book's menu in the library. Nothing is sent without the reader asking for that book.
+A book of the library whose file the server has not can be sent there, from the book's menu in the library, or together with others picked by a long press. Nothing is sent without the reader asking for that book.
 
 ### What a book is to the server
 
@@ -188,6 +188,8 @@ Each book in the library says where it stands, once the reader is signed in and 
 | on the server | the server has this very file, by its fingerprint | the book is synced |
 | a similar one on the server | the server has a book of the same title and authors, and another file | nothing is synced; sending asks first |
 | not on the server | neither | the book can be sent |
+| waiting to be sent | asked for with others, its turn has not come | the book can be called off |
+| sent in part | the file was cut off on its way, and the server keeps what it got | the book can be sent on, or called off |
 
 A likeness is found by what the books say of themselves: the same title, an author in common or none named by either, and not two different books of one series. Case, repeated spaces, punctuation and "ё" against "е" do not tell two titles apart, nor does the order of the words in an author's name. A series tells books apart only when both name one. It is looked for through the server's whole list, 200 books to a page, each time the server is asked about files it was not known to have; `Likeness` holds the rules.
 
@@ -195,16 +197,23 @@ A likeness is a hint and no more. The book here is not tied to the server's one,
 
 ### Sending
 
-`POST libraries/:id/upload`, the file as the one part of a form; `?folderId=` when the library has several folders. `BookOrbit.upload` does, in order:
+A file goes through an upload session of the server, in parts. `BookOrbit.upload` does, in order:
 
 1. Asks the server for the file by its fingerprint once more (`match-check`). A file that got there meanwhile is not sent; the book is marked as on the server.
-2. Asks what the server takes (`GET uploads/capabilities`) and stops before sending when the reader may not send, the format is not taken by the server or by the library, the library or folder is gone, or the file is larger than the limit.
-3. Sends the file, streamed, under a name made of the book's title. A token the server no longer takes is renewed and the file is sent once more.
-4. Asks for the file by its fingerprint again, to learn which file of which book it has become. From then on the book is synced like any other.
+2. Looks up the session the book keeps from an earlier try (`GET uploads/:id`, `Book.uploadSession`). One still taking the same file is gone on with; one that has the whole file is done with, as in step 5; one the server let go of — cancelled, run out after 7 days, failed — or one for a file of another size is forgotten.
+3. Without a session to go on with: asks what the server takes (`GET uploads/capabilities`) and stops before sending when the reader may not send, the format is not taken by the server or by the library, the library or folder is gone, or the file is larger than the limit. Then opens a session (`POST uploads`: the file's name and size, the library and folder, a key of its own so that asking twice opens one session) and keeps its id with the book.
+4. Sends the rest of the file from where the server got, in parts as large as the server says (16 MB), each with `Upload-Offset`. When the server got more or less of a part than was known here, it answers 409 `UPLOAD_OFFSET_MISMATCH` with the offset to go on from. Then `POST uploads/:id/complete`: the server files the book away and answers with it. A token the server no longer takes is renewed and the request is sent once more.
+5. Asks for the file by its fingerprint again, to learn which file of which book it has become, and lets go of the session. From then on the book is synced like any other.
 
-One book is sent at a time, so a second asking for the same book finds it there.
+The name the file goes under is the one it has in its folder, an FB2 from an archive without the archive's `.zip`. A book with no folder, as one kept in the app's storage, goes under a name made of its title, as does one whose file name does not end as its format does. The server places the file by the library's pattern of names; the name it was sent under counts only where the pattern has nothing to go on, as with an FB2 to this server.
 
-Sending is offered only for a book whose file the server has not, in a format it takes — of those the app reads, epub, fb2 and mobi — and to a reader allowed to add books (permission `library_upload`). When the server has one library with one folder, the book goes there; otherwise the reader is asked where, once, and the answer is kept with the account. A place that is gone is asked for again.
+One book is sent at a time, so a second asking for the same book finds it there. Books asked for together go one after another, in the order asked; those whose turn has not come say so.
+
+**Cut off.** When the network goes, the server keeps what it got, and the book says it was sent in part; sending it again goes on from there. The app closed while a book was on its way leaves the same, and the next round of syncing, and every start of the library, looks the session up (`BookOrbit.settleUploads`): a book whose file the server filed away is marked as on the server, one whose session the server let go of is forgotten here. A refusal of the server, as opposed to its own trouble (5xx), ends the session: it is called off on the server and forgotten here.
+
+**Called off.** A book being sent, waiting to be, or sent in part can be called off from its menu. The file stops between two of its bytes, and the server is asked to let go of what it got (`DELETE uploads/:id`). Once the server has the whole file it files it away all the same, and the book turns out to be there.
+
+Sending is offered only for a book whose file the server has not, in a format it takes — of those the app reads, epub, fb2 and mobi — and to a reader allowed to add books (permission `library_upload`). When the server has one library with one folder, the book goes there; otherwise the reader is asked where, once, and the answer is kept with the account. A place that is gone is asked for again. Books sent together are asked about together: where they go, if that is not known, and whether to send those that look like books the server has — all of them, or only the rest.
 
 An FB2 kept in a zip archive is sent unpacked, as the book it is: the server takes no archives, and the library knows such a book by the file inside (`library.md`, "A book in an archive").
 
@@ -220,9 +229,9 @@ Checked against 3.3.0 by the contract tests, in a library that keeps a book to a
 - **Another title** is another book.
 - The fingerprint is known as soon as the server has answered; the title and authors a little later.
 
-Refusals told apart for the reader: too large (`UPLOAD_TOO_LARGE`, or 413), a format not taken (`UPLOAD_FORMAT_NOT_ALLOWED`, `UPLOAD_FORMAT_UNSUPPORTED`), a name taken (`UPLOAD_DESTINATION_CONFLICT`), not the book its name says (`UPLOAD_CONTENT_INVALID`, `UPLOAD_EMPTY`), no room (`UPLOAD_STORAGE_FULL`), a library or folder that is gone (404, or 400 about the folder), not allowed (403). What became of the book is shown at the book: how much has gone, then "on the server", or why not.
+Refusals told apart for the reader: too large (`UPLOAD_TOO_LARGE`, or 413), a format not taken (`UPLOAD_FORMAT_NOT_ALLOWED`, `UPLOAD_FORMAT_UNSUPPORTED`), a name taken (`UPLOAD_DESTINATION_CONFLICT`), not the book its name says (`UPLOAD_CONTENT_INVALID`, `UPLOAD_EMPTY`), no room (`UPLOAD_STORAGE_FULL`), a library or folder that is gone (`UPLOAD_TARGET_INVALID`, 404, or 400 about the folder), not allowed (403). What became of the book is shown at the book: how much has gone, then "on the server", or why not.
 
-The server has two other ways to take a file, which the app does not use: the Book Dock (`book-dock/upload`, a staging area the reader files books from in the browser) and resumable sessions (`uploads`, in chunks of 16 MB). The limit is 500 MB unless the administrator set another.
+The server has two other ways to take a file, which the app does not use: the Book Dock (`book-dock/upload`, a staging area the reader files books from in the browser) and a file sent whole, as the one part of a form (`POST libraries/:id/upload`). The limit is 500 MB in 3.3 and 4 GB from 3.4 on, unless the administrator set another.
 
 ## Tests
 
@@ -236,10 +245,10 @@ The server has two other ways to take a file, which the app does not use: the Bo
 - `:sync` `MarksRoundTest` — a quote made, changed and removed on either side, an answer lost on the way, a list too long to be whole, hundreds of quotes in parts, bookmarks both ways, a bookmark the server cannot place, marks made before signing in, the reader's own quotes not taken twice after signing in again, a book the server has no more, colours; stars both ways, one changed here standing over the server's, a star going with a new quote and to the next server, bookmarks' titles given on the server. `PairingTest` — which of the server's marks a mark here is taken for.
 - `:contract` `MarksContractTest` — against bookOrbit 3.3.0: a quote made here seen by the web reader at an exact CFI, changed here, sent twice without a second one made, changed and removed in the web reader; a quote made in the web reader taken with a place the engine finds the same words by, and removed here; bookmarks made and removed on either side; a star given here and taken off in the web reader; a bookmark renamed in the web reader.
 - `:contract` `SyncContractTest` — against bookOrbit 3.3.0: a place sent and seen by the web reader as a CFI, a later place from the web reader offered with an xpointer the engine finds on the right page and not overwritten, the reader staying, FB2 kept word for word, status and rating both ways including `on_hold`, a review both ways and taken off, pages read in the book's statistics once.
-- `:sync` `LikenessTest` — which books are taken for one: case, spaces, punctuation and "ё", an author's name either way round, one author in common, no title, series. `UploadTest` — against the stand-in server: what the server takes, a book sent whole under its title and synced from then on, a book not sent twice, one that got there meanwhile, the same book asked for twice at once, what is not sent at all, each refusal, a session renewed, no devices' channel, a likeness pointed out, gone with the server's book, looked for through the whole list, and left behind by a book that was sent.
-- `:data` `AccountsTest` — a likeness kept until the book's own file is there, the place books are sent to forgotten with the server.
-- `:app` `LibraryScreenTest` — a book sent from its menu, sending offered only for what the server takes from the reader, the question before a book like one on the server, where to send asked once, a refusal said at the book, a server that does not answer.
-- `:contract` `UploadContractTest` — against bookOrbit 3.3.0: what it takes, a book sent, found by its fingerprint and not sent twice, an FB2 with a Russian title, a file that is not what its name says, a place that is not there, and the three things the server does with a book that looks like one it has. A book from an archive, sent unpacked and found by the fingerprint the archive was known by. The books are taken off the server afterwards.
+- `:sync` `LikenessTest` — which books are taken for one: case, spaces, punctuation and "ё", an author's name either way round, one author in common, no title, series. `UploadTest` — against the stand-in server: what the server takes, a book sent whole under its title and synced from then on, a book not sent twice, one that got there meanwhile, the same book asked for twice at once, what is not sent at all, each refusal, before the file goes and once it is all there, a session renewed, no devices' channel, a likeness pointed out, gone with the server's book, looked for through the whole list, and left behind by a book that was sent; a file in parts cut off and gone on with by an app started anew, the server having got more than was known, a file the server filed away while the answer was lost, a session the server let go of, one still waiting, one for a file that changed since, a book called off on its way, the name a file goes under.
+- `:data` `AccountsTest` — a likeness kept until the book's own file is there, the place books are sent to forgotten with the server, a session kept until the file is there, called off, or the server forgotten.
+- `:app` `LibraryViewModelTest` — a book sent, sending offered only for what the server takes from the reader, the question before a book like one on the server, where to send asked once, a refusal said at the book, a server that does not answer; several books in the order asked, one waiting its turn called off, one cut off gone on with and another called off, books like ones on the server asked about together and left out, where several go asked once, the name of the file in its folder, a book the server filed away while the app was closed. `LibraryScreenTest` — a book sent from its menu, books picked by a long press and sent together, a book sent in part gone on with from its menu.
+- `:contract` `UploadContractTest` — against bookOrbit 3.3.0: what it takes, a book sent, found by its fingerprint and not sent twice, an FB2 with a Russian title, a file that is not what its name says, a place that is not there, and the three things the server does with a book that looks like one it has. A book from an archive, sent unpacked and found by the fingerprint the archive was known by. A book larger than a part cut off after the first and gone on with in the same session; a book called off and let go of by the server. The books are taken off the server afterwards.
 - `:contract` `AccountContractTest` — against bookOrbit 3.3.0 in docker: signing in, a refused password, the KOReader password asked for and refused, a channel made for a reader who has none, the list and search, a download read by the engine and found back by its fingerprint, a book the server has not, a missing cover, renewal of a token that ran out and of one that is not taken, signing out ending the session on the server.
 
 ```
@@ -253,7 +262,7 @@ Checked by hand on the emulator against the same server: signing in over `http:/
 ## Not done
 
 - Server's books in the library's own list: a book that is only on the server is seen on the server's screen, not among the reader's books.
-- Sending several books at once, or without being asked; cancelling a book on its way; going on with one that broke off.
+- Sending books without being asked, or going on with one cut off without being asked.
 - Tying a book to the server's one by its title and authors.
 - OIDC.
 - Download progress, cancelling, resuming.
