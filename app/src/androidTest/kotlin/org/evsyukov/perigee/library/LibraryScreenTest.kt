@@ -64,7 +64,7 @@ class LibraryScreenTest {
     private var opened: File? = null
     private var askedForFile = false
     private var wentToServer = false
-    private var wentToLicenses = false
+    private var wentToAbout = false
 
     @Before
     fun defaultShelfAndSort() {
@@ -124,7 +124,7 @@ class LibraryScreenTest {
             MaterialTheme {
                 LibraryScreen(
                     onOpen = { opened = it }, onOpenFile = { askedForFile = true }, onCatalogs = {},
-                    onServer = { wentToServer = true }, onLicenses = { wentToLicenses = true }, model = model,
+                    onServer = { wentToServer = true }, onAbout = { wentToAbout = true }, model = model,
                 )
             }
         }
@@ -341,15 +341,15 @@ class LibraryScreenTest {
     }
 
     @Test
-    fun menuOfTheScreenLeadsToTheServerAndTheLicenses() {
+    fun menuOfTheScreenLeadsToTheServerAndToWhatTheAppIs() {
         show()
         rule.onNodeWithContentDescription(string(R.string.action_more)).performClick()
         rule.onNodeWithText(string(R.string.action_server)).performClick()
         assertTrue(wentToServer)
 
         rule.onNodeWithContentDescription(string(R.string.action_more)).performClick()
-        rule.onNodeWithText(string(R.string.action_licenses)).performClick()
-        assertTrue(wentToLicenses)
+        rule.onNodeWithText(string(R.string.action_about)).performClick()
+        assertTrue(wentToAbout)
     }
 
     @Test
