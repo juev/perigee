@@ -6,6 +6,8 @@ import androidx.test.platform.app.InstrumentationRegistry
 import androidx.work.WorkInfo
 import androidx.work.WorkManager
 import java.io.File
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import org.evsyukov.perigee.data.Accounts
 import org.evsyukov.perigee.data.Library
@@ -37,6 +39,7 @@ class SyncWorkTest {
     @After
     fun signOut() = runBlocking {
         work.cancelUniqueWork(SyncWork.NAME).result.get()
+        work.cancelUniqueWork(SyncWork.PERIODIC_NAME).result.get()
         Server.get(context).signOut()
         server.close()
     }
@@ -81,6 +84,23 @@ class SyncWorkTest {
         SyncWork.soon(context)
 
         until("the round waits to be run again") { round()?.let { it.state == WorkInfo.State.ENQUEUED && it.runAttemptCount == 1 } == true }
+    }
+
+    private fun periodic(): WorkInfo? = work.getWorkInfosForUniqueWork(SyncWork.PERIODIC_NAME).get().singleOrNull()
+
+    @Test
+    fun roundsRepeatWhileSignedInAndStopOnSigningOut() = runBlocking<Unit> {
+        val following = launch(Dispatchers.Default) { SyncWork.followAccount(context) }
+        try {
+            until("the rounds repeat") { periodic()?.state == WorkInfo.State.ENQUEUED }
+            assertEquals(15L * 60_000, periodic()?.periodicityInfo?.repeatIntervalMillis)
+
+            Server.get(context).signOut()
+
+            until("the rounds stop") { periodic()?.state == WorkInfo.State.CANCELLED }
+        } finally {
+            following.cancel()
+        }
     }
 
     private companion object {

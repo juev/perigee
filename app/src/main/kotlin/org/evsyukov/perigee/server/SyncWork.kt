@@ -4,13 +4,19 @@ import android.content.Context
 import androidx.work.BackoffPolicy
 import androidx.work.Constraints
 import androidx.work.CoroutineWorker
+import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.ExistingWorkPolicy
 import androidx.work.NetworkType
 import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import java.io.IOException
 import java.util.concurrent.TimeUnit
+import kotlin.time.Duration.Companion.minutes
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import org.evsyukov.perigee.data.Accounts
 import org.evsyukov.perigee.sync.BookOrbit
 import org.evsyukov.perigee.sync.DeviceChannelException
@@ -63,21 +69,66 @@ internal class SyncWorker(context: Context, parameters: WorkerParameters) : Coro
 
 internal object SyncWork {
     const val NAME = "sync"
+    const val PERIODIC_NAME = "sync-periodic"
     private const val DELAY_SECONDS = 10L
+
+    /** The least period WorkManager allows for work that repeats. */
+    private const val PERIOD_MINUTES = 15L
+    private val IN_SIGHT_PERIOD = 1.minutes
+
+    private val network = Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build()
 
     /**
      * Asks for a round of syncing shortly. Asked again before it began, it
      * waits anew: a reader who is turning pages or setting things is let finish.
      * Does nothing for a reader who is signed in nowhere.
      */
-    suspend fun soon(context: Context) {
+    suspend fun soon(context: Context) = ask(context, ExistingWorkPolicy.REPLACE)
+
+    /** Asks for a round of syncing, unless one is already waiting or under way: that one is let be. */
+    private suspend fun again(context: Context) = ask(context, ExistingWorkPolicy.KEEP)
+
+    private suspend fun ask(context: Context, policy: ExistingWorkPolicy) {
         val app = context.applicationContext
         if (Accounts.get(app).current() == null) return
         val request = OneTimeWorkRequestBuilder<SyncWorker>()
-            .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build())
+            .setConstraints(network)
             .setInitialDelay(DELAY_SECONDS, TimeUnit.SECONDS)
             .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 1, TimeUnit.MINUTES)
             .build()
-        WorkManager.getInstance(app).enqueueUniqueWork(NAME, ExistingWorkPolicy.REPLACE, request)
+        WorkManager.getInstance(app).enqueueUniqueWork(NAME, policy, request)
+    }
+
+    /**
+     * While the app is in sight, a round a minute, so that what was done on
+     * other devices shows up here; the first one shortly. Runs until cancelled.
+     */
+    suspend fun whileInSight(context: Context): Nothing {
+        soon(context)
+        while (true) {
+            delay(IN_SIGHT_PERIOD)
+            again(context)
+        }
+    }
+
+    /**
+     * Keeps a round every [PERIOD_MINUTES] minutes, run by the system while
+     * the app is put away, for as long as the reader is signed in; signing out
+     * stops it. Runs until cancelled.
+     */
+    suspend fun followAccount(context: Context) {
+        val app = context.applicationContext
+        val work = WorkManager.getInstance(app)
+        Accounts.get(app).account().map { it != null }.distinctUntilChanged().collect { signedIn ->
+            if (!signedIn) {
+                work.cancelUniqueWork(PERIODIC_NAME)
+                return@collect
+            }
+            val request = PeriodicWorkRequestBuilder<SyncWorker>(PERIOD_MINUTES, TimeUnit.MINUTES)
+                .setConstraints(network)
+                .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 1, TimeUnit.MINUTES)
+                .build()
+            work.enqueueUniquePeriodicWork(PERIODIC_NAME, ExistingPeriodicWorkPolicy.KEEP, request)
+        }
     }
 }

@@ -18,6 +18,8 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.repeatOnLifecycle
 import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -61,8 +63,11 @@ class MainActivity : ComponentActivity(), VolumeKeyHost {
                             ready = true
                         }
                     }
-                    // What other devices did since the app was last used is asked for at the start.
-                    LaunchedEffect(Unit) { SyncWork.soon(this@MainActivity) }
+                    // What other devices did is asked for when the app comes in sight, and every minute it stays there.
+                    LaunchedEffect(Unit) {
+                        lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) { SyncWork.whileInSight(this@MainActivity) }
+                    }
+                    LaunchedEffect(Unit) { SyncWork.followAccount(this@MainActivity) }
                     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
                         if (uri != null) scope.launch { bookPath = importBook(uri).path }
                     }
