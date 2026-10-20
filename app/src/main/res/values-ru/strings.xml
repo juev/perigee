@@ -271,6 +271,11 @@
         <item quantity="other">Выбрано %1$d книги</item>
     </plurals>
     <string name="action_clear_selection">Снять выбор</string>
+    <string name="action_about">О программе</string>
+    <string name="about_what">Читалка электронных книг для Android</string>
+    <string name="about_version">Версия %1$s</string>
+    <string name="about_author">Автор</string>
+    <string name="about_source">Исходный код</string>
     <string name="action_licenses">Лицензии</string>
     <string name="licenses_title">Лицензии</string>
     <string name="licenses_gpl">GNU General Public License, версия 3</string>

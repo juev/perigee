@@ -24,6 +24,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.evsyukov.perigee.data.Covers
 import org.evsyukov.perigee.data.Library
+import org.evsyukov.perigee.legal.AboutScreen
 import org.evsyukov.perigee.legal.LicensesScreen
 import org.evsyukov.perigee.library.LibraryScreen
 import org.evsyukov.perigee.library.describeKeptFile
@@ -49,6 +50,7 @@ class MainActivity : ComponentActivity(), VolumeKeyHost {
                     // Closing a book that came from a catalog or the server returns there.
                     var catalogs by rememberSaveable { mutableStateOf(false) }
                     var server by rememberSaveable { mutableStateOf(false) }
+                    var about by rememberSaveable { mutableStateOf(false) }
                     var licenses by rememberSaveable { mutableStateOf(false) }
                     // Until the last book is looked up there is nothing to show, not even the library.
                     var ready by rememberSaveable { mutableStateOf(false) }
@@ -75,13 +77,15 @@ class MainActivity : ComponentActivity(), VolumeKeyHost {
                             onOpen = { bookPath = it.path },
                             onClose = { server = false },
                         )
+                        // The licenses are read from the screen about the app and lead back to it.
                         path == null && licenses -> LicensesScreen(onClose = { licenses = false })
+                        path == null && about -> AboutScreen(onLicenses = { licenses = true }, onClose = { about = false })
                         path == null -> LibraryScreen(
                             onOpen = { bookPath = it.path },
                             onOpenFile = { picker.launch(arrayOf("*/*")) },
                             onCatalogs = { catalogs = true },
                             onServer = { server = true },
-                            onLicenses = { licenses = true },
+                            onAbout = { about = true },
                         )
                         else -> ReaderScreen(File(path), onClose = { bookPath = null })
                     }
