@@ -2,9 +2,8 @@ name: Release
 
 # The Play bundle signed with the upload key, kept as an artifact of the run for
 # an upload to the Play Console, and an F-Droid APK for each ABI signed with the
-# release key. On a tag the APKs go to a draft GitHub release of that tag, whose
-# notes are written and which is published by hand. A run by hand checks the
-# signing without a tag.
+# release key. On a tag the APKs go to a GitHub release of that tag, published
+# with notes made from the commits. A run by hand checks the signing without a tag.
 on:
   push:
     tags:
@@ -137,13 +136,13 @@ jobs:
           path: ${{ runner.temp }}/apks
           if-no-files-found: error
           retention-days: 90
-      - name: Draft the GitHub release
+      - name: Publish the GitHub release
         if: github.event_name == 'push'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           prerelease=()
           if [[ "$GITHUB_REF_NAME" == *-* ]]; then prerelease=(--prerelease); fi
-          gh release create "$GITHUB_REF_NAME" --draft --verify-tag "${prerelease[@]}" \
+          gh release create "$GITHUB_REF_NAME" --verify-tag "${prerelease[@]}" \
             --title "Perigee ${GITHUB_REF_NAME#v}" --generate-notes \
             "$RUNNER_TEMP"/apks/*.apk "$RUNNER_TEMP/apks/SHA256SUMS"
