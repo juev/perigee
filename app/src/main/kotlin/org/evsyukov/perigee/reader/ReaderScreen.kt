@@ -60,6 +60,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.onGloballyPositioned
@@ -87,7 +88,9 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import java.io.File
 import kotlin.math.abs
 import kotlin.math.roundToInt
+import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.launch
 import org.evsyukov.perigee.R
 import org.evsyukov.perigee.data.PageTurn
@@ -154,6 +157,10 @@ fun ReaderScreen(file: File, onClose: () -> Unit, viewModel: ReaderViewModel = v
     LifecycleEventEffect(Lifecycle.Event.ON_STOP) { viewModel.paused() }
     LifecycleEventEffect(Lifecycle.Event.ON_START) { viewModel.resumed() }
     ScreenBrightness(prefs.brightness)
+    // Each touch and each new page restart the time the screen stays on.
+    val activity = remember { MutableSharedFlow<Unit>(extraBufferCapacity = 1, onBufferOverflow = BufferOverflow.DROP_OLDEST) }
+    LaunchedEffect(state.page) { activity.tryEmit(Unit) }
+    ScreenOn(prefs.screenOnMinutes, activity)
     VolumeKeys(prefs.volumeKeysTurnPages && panel == Panel.None) { forward -> viewModel.turn(if (forward) 1 else -1) }
 
     // The page shown sets the colours around it: a new scheme reaches the strips and the page together.
@@ -166,7 +173,20 @@ fun ReaderScreen(file: File, onClose: () -> Unit, viewModel: ReaderViewModel = v
     val cutout = WindowInsets.displayCutout.asPaddingValues()
     val direction = LocalLayoutDirection.current
     val sideInset = maxOf(cutout.calculateLeftPadding(direction), cutout.calculateRightPadding(direction))
-    Box(Modifier.fillMaxSize().background(paper)) {
+    Box(
+        Modifier
+            .fillMaxSize()
+            .background(paper)
+            // Sees every touch before the page does, and takes none of them.
+            .pointerInput(activity) {
+                awaitPointerEventScope {
+                    while (true) {
+                        awaitPointerEvent(PointerEventPass.Initial)
+                        activity.tryEmit(Unit)
+                    }
+                }
+            },
+    ) {
         // The area the page gets; known once the screen is measured.
         var area by remember { mutableStateOf(IntSize.Zero) }
         val densityDpi = LocalConfiguration.current.densityDpi
