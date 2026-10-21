@@ -56,6 +56,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -195,6 +196,16 @@ internal fun SettingsSheet(
                 }
                 Toggle(R.string.setting_day_night_corner, prefs.dayNightByCorner) { on -> onChange { it.copy(dayNightByCorner = on) } }
                 Toggle(R.string.setting_bookmark_corner, prefs.bookmarkByCorner) { on -> onChange { it.copy(bookmarkByCorner = on) } }
+                Choice(
+                    R.string.setting_screen_on, prefs.screenOnMinutes, ReaderPrefs.SCREEN_ON_CHOICES,
+                    label = {
+                        when (it) {
+                            ReaderPrefs.SCREEN_ON_SYSTEM -> stringResource(R.string.screen_on_system)
+                            ReaderPrefs.SCREEN_ON_ALWAYS -> stringResource(R.string.screen_on_always)
+                            else -> pluralStringResource(R.plurals.screen_on_minutes, it, it)
+                        }
+                    },
+                ) { chosen -> onChange { it.copy(screenOnMinutes = chosen) } }
             }
         }
     }

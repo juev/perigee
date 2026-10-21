@@ -62,6 +62,13 @@
     <string name="setting_brightness_gesture">Brightness by sliding along the left edge</string>
     <string name="setting_day_night_corner">Day and night by touching the top left corner</string>
     <string name="setting_bookmark_corner">Bookmark by touching the top right corner</string>
+    <string name="setting_screen_on">Keep the screen on</string>
+    <string name="screen_on_system">As the system sets</string>
+    <string name="screen_on_always">While the book is open</string>
+    <plurals name="screen_on_minutes">
+        <item quantity="one">%d minute</item>
+        <item quantity="other">%d minutes</item>
+    </plurals>
     <string name="percent" translatable="false">%1$d%%</string>
 
     <string name="tab_contents">Contents</string>

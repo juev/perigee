@@ -57,6 +57,8 @@ data class ReaderPrefs(
     val brightness: Float? = null,
     val dayNightByCorner: Boolean = true,
     val bookmarkByCorner: Boolean = true,
+    /** How long the screen stays on after the last touch or turn: [SCREEN_ON_SYSTEM], [SCREEN_ON_ALWAYS] or minutes. */
+    val screenOnMinutes: Int = 10,
 ) {
     /** Choosing a scheme by hand; a light one becomes what night switches back to. */
     fun withScheme(scheme: ColorScheme): ReaderPrefs =
@@ -70,6 +72,13 @@ data class ReaderPrefs(
         val FONT_SIZES = 10..40
         val LINE_SPACINGS = 80..200 step 10
         val PARAGRAPH_SPACINGS = 0..100 step 10
+
+        /** The screen goes off when the system says. */
+        const val SCREEN_ON_SYSTEM = 0
+
+        /** The screen stays on while the book is open. */
+        const val SCREEN_ON_ALWAYS = -1
+        val SCREEN_ON_CHOICES = listOf(SCREEN_ON_SYSTEM, 2, 5, 10, 20, SCREEN_ON_ALWAYS)
     }
 }
 
@@ -104,6 +113,7 @@ class ReaderPreferences private constructor(private val store: DataStore<Prefere
             brightness = p[BRIGHTNESS],
             dayNightByCorner = p[DAY_NIGHT_CORNER] ?: d.dayNightByCorner,
             bookmarkByCorner = p[BOOKMARK_CORNER] ?: d.bookmarkByCorner,
+            screenOnMinutes = p[SCREEN_ON] ?: d.screenOnMinutes,
         )
     }
 
@@ -127,6 +137,7 @@ class ReaderPreferences private constructor(private val store: DataStore<Prefere
         if (v.brightness == null) p.remove(BRIGHTNESS) else p[BRIGHTNESS] = v.brightness
         p[DAY_NIGHT_CORNER] = v.dayNightByCorner
         p[BOOKMARK_CORNER] = v.bookmarkByCorner
+        p[SCREEN_ON] = v.screenOnMinutes
     }
 
     /** A value written by a newer version that this one does not know reads as the default. */
@@ -153,6 +164,7 @@ class ReaderPreferences private constructor(private val store: DataStore<Prefere
         private val BRIGHTNESS = floatPreferencesKey("brightness")
         private val DAY_NIGHT_CORNER = booleanPreferencesKey("day_night_corner")
         private val BOOKMARK_CORNER = booleanPreferencesKey("bookmark_corner")
+        private val SCREEN_ON = intPreferencesKey("screen_on_minutes")
 
         @Volatile
         private var instance: ReaderPreferences? = null
