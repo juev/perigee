@@ -61,7 +61,11 @@ F-Droid builds the app from source and signs it with its own key. Two clean buil
 
 The [release workflow](.github/workflows/release.yml) builds the signed bundle on a `v`-prefixed tag that matches `versionName`, or when run by hand. It takes the key and its password from the repository secrets `PERIGEE_UPLOAD_KEYSTORE_B64` and `PERIGEE_UPLOAD_PASSWORD`, checks the certificate of the bundle and keeps the bundle as an artifact of the run for 90 days.
 
+The same workflow builds the `fdroid` APK once for each ABI and signs it with the release key: with `PERIGEE_RELEASE_KEYSTORE` and `PERIGEE_RELEASE_PASSWORD` set, `assembleFdroidRelease` signs the APK with the key `perigee` from that keystore. The key comes from the secrets `PERIGEE_RELEASE_KEYSTORE_B64` and `PERIGEE_RELEASE_PASSWORD`. On a tag the APKs and their `SHA256SUMS` go to a draft GitHub release of that tag; write its notes and publish it by hand. Releases are built there only: an unsigned APK does not install on a phone.
+
 On a Mac, `scripts/make-upload-key.sh` makes the upload key once. It writes the keystore to `~/.local/share/perigee/upload.jks`, puts the password into the Keychain (service `org.evsyukov.perigee.upload`, account `perigee`) and sets both secrets. `scripts/build-release-macos.sh` builds the signed bundle from that key. Keep a copy of the keystore and its password elsewhere: Google Play takes bundles signed with the registered upload key only, and a lost one is replaced through its support.
+
+`scripts/make-release-key.sh` makes the release key the same way: `~/.local/share/perigee/release.jks`, Keychain service `org.evsyukov.perigee.release`, account `perigee`. A phone takes an update signed with the same key only, and a lost release key cannot be replaced: keep a copy of it too.
 
 ## Tests
 

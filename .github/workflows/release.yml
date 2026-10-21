@@ -1,7 +1,10 @@
 name: Release
 
 # The Play bundle signed with the upload key, kept as an artifact of the run for
-# an upload to the Play Console. A run by hand checks the signing without a tag.
+# an upload to the Play Console, and an F-Droid APK for each ABI signed with the
+# release key. On a tag the APKs go to a draft GitHub release of that tag, whose
+# notes are written and which is published by hand. A run by hand checks the
+# signing without a tag.
 on:
   push:
     tags:
@@ -20,12 +23,16 @@ env:
   CMAKE_VERSION: 3.31.6
   # SHA-256 of the upload certificate made by scripts/make-upload-key.sh.
   UPLOAD_CERTIFICATE_SHA256: d6dc475e749b6450d876f852cd96aad0152a2aae156fc2ed3169f8efa6b17bb6
+  # SHA-256 of the release certificate made by scripts/make-release-key.sh.
+  RELEASE_CERTIFICATE_SHA256: 93c9e14fdaf0375a7d4f0631bee6cbba8c413f297545385f0badb3250e7b9281
 
 jobs:
   play:
-    name: Signed Play bundle
+    name: Signed Play bundle and APKs
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -86,3 +93,57 @@ jobs:
           path: app/build/outputs/bundle/playRelease/app-play-release.aab
           if-no-files-found: error
           retention-days: 90
+      - name: Restore the release key
+        env:
+          RELEASE_KEYSTORE_B64: ${{ secrets.PERIGEE_RELEASE_KEYSTORE_B64 }}
+        run: |
+          if [[ -z "$RELEASE_KEYSTORE_B64" ]]; then
+            echo 'The secret PERIGEE_RELEASE_KEYSTORE_B64 is missing' >&2
+            exit 1
+          fi
+          printf '%s' "$RELEASE_KEYSTORE_B64" | base64 --decode > "$RUNNER_TEMP/release.jks"
+          chmod 600 "$RUNNER_TEMP/release.jks"
+      # One APK for each ABI: the engine for all three makes a package too big
+      # for a phone that runs one of them.
+      - name: Build the APKs
+        env:
+          PERIGEE_RELEASE_KEYSTORE: ${{ runner.temp }}/release.jks
+          PERIGEE_RELEASE_PASSWORD: ${{ secrets.PERIGEE_RELEASE_PASSWORD }}
+        run: |
+          if [[ -z "$PERIGEE_RELEASE_PASSWORD" ]]; then
+            echo 'The secret PERIGEE_RELEASE_PASSWORD is missing' >&2
+            exit 1
+          fi
+          version="$(sed -n 's/^ *versionName = "\(.*\)"$/\1/p' app/build.gradle.kts)"
+          mkdir -p "$RUNNER_TEMP/apks"
+          for abi in arm64-v8a armeabi-v7a x86_64; do
+            ./gradlew -PperigeeAbis="$abi" :app:assembleFdroidRelease
+            cp app/build/outputs/apk/fdroid/release/app-fdroid-release.apk "$RUNNER_TEMP/apks/perigee-$version-$abi.apk"
+          done
+      - name: The APKs are signed with the release key
+        run: |
+          apksigner="$(printf '%s\n' "$ANDROID_HOME"/build-tools/* | sort -V | tail -n 1)/apksigner"
+          for apk in "$RUNNER_TEMP"/apks/*.apk; do
+            digest="$("$apksigner" verify --print-certs "$apk" | sed -n 's/^.*certificate SHA-256 digest: //p' | sort -u)"
+            if [[ "$digest" != "$RELEASE_CERTIFICATE_SHA256" ]]; then
+              echo "$apk is signed with '$digest', not with the release key" >&2
+              exit 1
+            fi
+          done
+          (cd "$RUNNER_TEMP/apks" && sha256sum -- *.apk > SHA256SUMS)
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: perigee-apks-${{ github.ref_name }}
+          path: ${{ runner.temp }}/apks
+          if-no-files-found: error
+          retention-days: 90
+      - name: Draft the GitHub release
+        if: github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          prerelease=()
+          if [[ "$GITHUB_REF_NAME" == *-* ]]; then prerelease=(--prerelease); fi
+          gh release create "$GITHUB_REF_NAME" --draft --verify-tag "${prerelease[@]}" \
+            --title "Perigee ${GITHUB_REF_NAME#v}" --generate-notes \
+            "$RUNNER_TEMP"/apks/*.apk "$RUNNER_TEMP/apks/SHA256SUMS"

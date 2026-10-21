@@ -14,6 +14,15 @@ if (uploadKeystore != null && uploadPassword.isNullOrEmpty()) {
     throw GradleException("PERIGEE_UPLOAD_KEYSTORE is set, PERIGEE_UPLOAD_PASSWORD is not")
 }
 
+// The F-Droid build is signed with the release key when one is given, as the release
+// workflow does for the APKs of a GitHub release. Without it the APK is unsigned:
+// F-Droid signs its own build.
+val releaseKeystore: String? = providers.environmentVariable("PERIGEE_RELEASE_KEYSTORE").orNull
+val releasePassword: String? = providers.environmentVariable("PERIGEE_RELEASE_PASSWORD").orNull
+if (releaseKeystore != null && releasePassword.isNullOrEmpty()) {
+    throw GradleException("PERIGEE_RELEASE_KEYSTORE is set, PERIGEE_RELEASE_PASSWORD is not")
+}
+
 android {
     namespace = "org.evsyukov.perigee"
     compileSdk = 36
@@ -45,6 +54,14 @@ android {
                 keyPassword = uploadPassword
             }
         }
+        if (releaseKeystore != null) {
+            create("release") {
+                storeFile = file(releaseKeystore)
+                storePassword = releasePassword
+                keyAlias = "perigee"
+                keyPassword = releasePassword
+            }
+        }
     }
     // Room, WorkManager, Compose and the engine bring their own rules for R8.
     buildTypes {
@@ -59,7 +76,11 @@ android {
     flavorDimensions += "store"
     productFlavors {
         // F-Droid builds the app from source and signs it with its own key.
-        create("fdroid") { dimension = "store" }
+        // The APKs of a GitHub release are this build signed with the release key.
+        create("fdroid") {
+            dimension = "store"
+            if (releaseKeystore != null) signingConfig = signingConfigs.getByName("release")
+        }
         // Google Play takes a bundle signed with the upload key and signs the app itself.
         // The key of a build type comes first: the debug build keeps the debug key.
         create("play") {
