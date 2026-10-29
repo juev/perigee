@@ -53,6 +53,7 @@
     <string name="align_center">Центру</string>
     <string name="align_right">Правому краю</string>
     <string name="setting_hyphenation">Перенос слов</string>
+    <string name="hint_justify_without_hyphenation">Без переноса слов строки по ширине получат широкие пробелы.</string>
     <string name="setting_paragraph_spacing">Интервал абзаца</string>
     <string name="setting_paragraph_indent">Отступ абзаца</string>
     <string name="setting_page_margins">Поля страниц</string>
