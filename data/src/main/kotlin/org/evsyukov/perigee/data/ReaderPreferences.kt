@@ -66,6 +66,8 @@ data class ReaderPrefs(
     val brightnessGesture: Boolean = false,
     /** Screen brightness 0..1 set by the gesture; null follows the system. */
     val brightness: Float? = null,
+    /** Below a floor the gesture darkens the page instead of the backlight, against OLED flicker. */
+    val dimBelowFlicker: Boolean = false,
     val dayNightByCorner: Boolean = true,
     val bookmarkByCorner: Boolean = true,
     /** How long the screen stays on after the last touch or turn: [SCREEN_ON_SYSTEM], [SCREEN_ON_ALWAYS] or minutes. */
@@ -133,6 +135,7 @@ class ReaderPreferences private constructor(private val store: DataStore<Prefere
             twoPagesInLandscape = p[TWO_PAGES] ?: d.twoPagesInLandscape,
             volumeKeysTurnPages = p[VOLUME_KEYS] ?: d.volumeKeysTurnPages,
             brightnessGesture = p[BRIGHTNESS_GESTURE] ?: d.brightnessGesture,
+            dimBelowFlicker = p[DIM_BELOW_FLICKER] ?: d.dimBelowFlicker,
             brightness = p[BRIGHTNESS],
             dayNightByCorner = p[DAY_NIGHT_CORNER] ?: d.dayNightByCorner,
             bookmarkByCorner = p[BOOKMARK_CORNER] ?: d.bookmarkByCorner,
@@ -163,6 +166,7 @@ class ReaderPreferences private constructor(private val store: DataStore<Prefere
         p[TWO_PAGES] = v.twoPagesInLandscape
         p[VOLUME_KEYS] = v.volumeKeysTurnPages
         p[BRIGHTNESS_GESTURE] = v.brightnessGesture
+        p[DIM_BELOW_FLICKER] = v.dimBelowFlicker
         if (v.brightness == null) p.remove(BRIGHTNESS) else p[BRIGHTNESS] = v.brightness
         p[DAY_NIGHT_CORNER] = v.dayNightByCorner
         p[BOOKMARK_CORNER] = v.bookmarkByCorner
@@ -196,6 +200,7 @@ class ReaderPreferences private constructor(private val store: DataStore<Prefere
         private val TWO_PAGES = booleanPreferencesKey("two_pages")
         private val VOLUME_KEYS = booleanPreferencesKey("volume_keys")
         private val BRIGHTNESS_GESTURE = booleanPreferencesKey("brightness_gesture")
+        private val DIM_BELOW_FLICKER = booleanPreferencesKey("dim_below_flicker")
         private val BRIGHTNESS = floatPreferencesKey("brightness")
         private val DAY_NIGHT_CORNER = booleanPreferencesKey("day_night_corner")
         private val BOOKMARK_CORNER = booleanPreferencesKey("bookmark_corner")

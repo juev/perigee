@@ -303,6 +303,18 @@ class ReaderScreenTest {
     }
 
     @Test
+    fun darkerWithoutFlickerDarkensThePageBelowTheFloor() {
+        show()
+        waitForBook()
+        fun corner() = rule.onNodeWithTag("page").captureToImage().toPixelMap()[2, 2]
+        assertEquals("a white page before", 1f, corner().red, 0.02f)
+        model().updatePrefs { it.copy(brightnessGesture = true, brightness = 0.01f, dimBelowFlicker = true) }
+        rule.waitUntil(TIMEOUT) { corner().red < 0.5f }
+        assertEquals("the page gives up four fifths of its light", 1f - Dimming.MAX_DIM, corner().red, 0.03f)
+        assertEquals("the backlight stays at the floor", Dimming.FLOOR, activity.window.attributes.screenBrightness, 0.001f)
+    }
+
+    @Test
     fun topLeftCornerSwitchesDayAndNight() {
         show()
         waitForBook()
