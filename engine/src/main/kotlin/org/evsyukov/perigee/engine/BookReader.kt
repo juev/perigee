@@ -26,11 +26,12 @@ class Page(
 
 /** How a book is laid out: the settings and the page size. */
 data class Layout(val settings: EngineSettings, val width: Int, val height: Int) {
-    /** Whether the pages fall the same way in [other], whatever colours either is painted in. */
-    fun fallsAs(other: Layout): Boolean = copy(settings = settings.copy(colors = other.settings.colors)) == other
+    /** Whether the pages fall the same way in [other], whatever colours and contrast either is painted in. */
+    fun fallsAs(other: Layout): Boolean =
+        copy(settings = settings.copy(colors = other.settings.colors, contrast = other.settings.contrast)) == other
 
-    /** Whether [other] is this layout painted in other colours. */
-    fun differsInColorsOnly(other: Layout): Boolean = this != other && fallsAs(other)
+    /** Whether [other] is this layout painted in other colours or contrast. */
+    fun differsInPaintOnly(other: Layout): Boolean = this != other && fallsAs(other)
 }
 
 /**
@@ -53,9 +54,10 @@ class BookReader private constructor(
 ) {
     /** The second copy and the layout it has. */
     private class Spare(val document: EngineDocument, val layout: Layout) {
-        fun recolored(colors: PageColors): Spare {
-            document.recolor(colors)
-            return Spare(document, layout.copy(settings = layout.settings.copy(colors = colors)))
+        fun repainted(settings: EngineSettings): Spare {
+            val painted = layout.settings.copy(colors = settings.colors, contrast = settings.contrast)
+            document.repaint(painted)
+            return Spare(document, layout.copy(settings = painted))
         }
     }
     private var spare: Spare? = null
@@ -121,16 +123,17 @@ class BookReader private constructor(
             val ready = spare
             val shown = Layout(this.settings, this.width, this.height)
             val swapped = ready != null && ready.layout.fallsAs(wanted)
-            val recolored = !swapped && shown.differsInColorsOnly(wanted)
+            val repainted = !swapped && shown.differsInPaintOnly(wanted)
             if (ready != null && swapped) {
                 // Laid out for this already: the copies change places, and the one shown so far waits for the way back.
-                if (ready.layout != wanted) ready.document.recolor(settings.colors)
+                // The contrast is the engine's for every book: it is set again even for a copy painted as wanted.
+                ready.document.repaint(settings)
                 spare = Spare(document, shown)
                 document = ready.document
-            } else if (recolored) {
-                // Only the colours changed: the pages are painted again where they are.
-                document.recolor(settings.colors)
-                ready?.let { spare = it.recolored(settings.colors) }
+            } else if (repainted) {
+                // Only the colours or the contrast changed: the pages are painted again where they are.
+                document.repaint(settings)
+                ready?.let { spare = it.repainted(settings) }
             } else {
                 document.apply(settings, width, height)
             }
@@ -138,7 +141,7 @@ class BookReader private constructor(
             this.width = width
             this.height = height
             relaidOut().also {
-                val how = if (swapped) "copy shown" else if (recolored) "painted" else "laid out"
+                val how = if (swapped) "copy shown" else if (repainted) "painted" else "laid out"
                 Log.d(TAG, "$how at ${width}x$height in ${millisSince(started)} ms")
             }
         }
@@ -153,9 +156,9 @@ class BookReader private constructor(
         if (layout == Layout(settings, width, height) || spare?.layout == layout) return@onEngine
         val started = System.nanoTime()
         val old = spare
-        if (old != null && old.layout.differsInColorsOnly(layout)) {
-            // A copy laid out for this already, in the colours before: painting it is enough.
-            spare = old.recolored(layout.settings.colors)
+        if (old != null && old.layout.differsInPaintOnly(layout)) {
+            // A copy laid out for this already, in the colours and contrast before: painting it is enough.
+            spare = old.repainted(layout.settings)
             Log.d(TAG, "copy painted in ${millisSince(started)} ms")
             return@onEngine
         }

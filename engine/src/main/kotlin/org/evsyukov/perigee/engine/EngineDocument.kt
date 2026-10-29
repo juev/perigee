@@ -91,13 +91,18 @@ class EngineDocument private constructor(
             settings.hyphenation, settings.footnotes, settings.twoPages,
             settings.colors.text, settings.colors.background, renderDpi, width, height,
         )
+        NativeEngine.setGamma(settings.gamma)
         colors = settings.colors
     }
 
-    /** Paints the pages in other [colors]; nothing moves, and the book is not laid out again. */
-    fun recolor(colors: PageColors) {
-        NativeEngine.setColors(checked(), colors.text, colors.background)
-        this.colors = colors
+    /**
+     * Paints the pages in the colours and contrast of [settings]; nothing moves, and the book is not laid out
+     * again. The rest of [settings] is left as it was applied.
+     */
+    fun repaint(settings: EngineSettings) {
+        NativeEngine.setColors(checked(), settings.colors.text, settings.colors.background)
+        NativeEngine.setGamma(settings.gamma)
+        this.colors = settings.colors
     }
 
     /** Whether the book's text is shaped in full, ligatures and all, as its script needs. */

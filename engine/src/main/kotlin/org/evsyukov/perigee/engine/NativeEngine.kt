@@ -29,6 +29,9 @@ internal object NativeEngine {
     /** Text and page colours of the pages drawn from now on; the book is not laid out again. */
     external fun setColors(handle: Long, textColor: Int, backgroundColor: Int)
 
+    /** Gamma of the glyphs drawn from now on, for every book: the engine keeps one for all. */
+    external fun setGamma(gamma: Double)
+
     external fun applySettings(
         handle: Long, cssFile: String, extraCss: String, fontFace: String, fontSize: Int, fontWeight: Int,
         lineSpacingPercent: Int, marginHorizontal: Int, marginTop: Int, marginBottom: Int,
