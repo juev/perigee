@@ -39,6 +39,7 @@ internal object NativeEngine {
         renderDpi: Int,
         /** The page size to lay the book out at; 0 keeps the size it has. */
         width: Int, height: Int,
+        boldWordStarts: Boolean,
     )
 
     /** Returns false when the file cannot be opened. */

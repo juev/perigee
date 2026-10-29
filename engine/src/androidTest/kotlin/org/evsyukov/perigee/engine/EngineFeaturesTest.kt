@@ -352,6 +352,93 @@ class EngineFeaturesTest {
     }
 
     @Test
+    fun boldWordStartsDarkenTheStartOfAWordOnly() {
+        val file = TestBooks.epub(dir)
+        // Ink in the left and the right half of the word "brown" ("bro" is bold, "wn" is not).
+        fun halves(bold: Boolean) = open(file, base.copy(boldWordStarts = bold)).use { doc ->
+            val (_, rect) = doc.locate("brown")
+            val page = doc.render()
+            val middle = rect.left + rect.width() / 2
+            inkIn(page, Rect(rect.left, rect.top, middle, rect.bottom)) to inkIn(page, Rect(middle, rect.top, rect.right, rect.bottom))
+        }
+        val (plainStart, plainEnd) = halves(false)
+        val (boldStart, boldEnd) = halves(true)
+        assertTrue("the start of the word is darker: $boldStart against $plainStart", boldStart > plainStart * 13 / 10)
+        assertTrue("its end hardly changes: $boldEnd against $plainEnd", boldEnd < plainEnd * 12 / 10)
+    }
+
+    @Test
+    fun boldWordStartsKeepWordsWhereTheyAreFound() {
+        for (file in listOf(TestBooks.epub(dir), TestBooks.russianFb2(dir))) {
+            open(file, base.copy(boldWordStarts = true)).use { doc ->
+                // Words in the middle of a text node: the rectangle of each covers it from end to end.
+                for (word in if (file.name.endsWith("fb2")) listOf("сообщение", "медленно") else listOf("quick", "brown", "lazy")) {
+                    val (hit, rect) = doc.locate(word)
+                    assertTrue("$word has a rectangle in ${file.name}: $rect", rect.width() > 0)
+                    val y = rect.centerY()
+                    for (x in listOf(rect.left + 2, rect.centerX(), rect.right - 2)) {
+                        val picked = doc.select(x, y) ?: error("nothing at $x,$y on $word")
+                        assertEquals("the word under $x on $word", hit.range.start to hit.range.end, picked.start to picked.end)
+                    }
+                }
+            }
+        }
+    }
+
+    @Test
+    fun aPhraseAcrossBoldAndRegularPartsIsOneRectanglePerLine() = open(TestBooks.epub(dir), base.copy(boldWordStarts = true)).use { doc ->
+        val (phrase, rect) = doc.locate("quick brown fox")
+        assertEquals("one line, one rectangle", 1, doc.rects(phrase.range.start, phrase.range.end).size)
+        assertEquals("from the start of the first word", doc.locate("quick").second.left, rect.left)
+        assertEquals("to the end of the last", doc.locate("fox").second.right, rect.right)
+    }
+
+    @Test
+    fun headingsAndScriptsWithoutSeparateLettersAreLeftAsTheyAre() {
+        // A heading, Chinese with no spaces between words, Arabic whose letters join: nothing here is made bold.
+        val file = File(dir, "left-alone.html").apply {
+            writeText(
+                """<!DOCTYPE html><html><head><meta charset="utf-8"/></head><body>""" +
+                    "<h1>Heading words stay</h1>" +
+                    "<p>这是一个没有空格的中文句子，读者照常阅读。</p>" +
+                    "<p dir=\"rtl\">هذه جملة عربية تتصل حروفها ببعض</p>" +
+                    "<pre>code words stay</pre></body></html>",
+            )
+        }
+        val plain = open(file).use { it.render() }
+        val bold = open(file, base.copy(boldWordStarts = true)).use { it.render() }
+        assertTrue("the page is the same to the pixel", bold.sameAs(plain))
+        // A paragraph of plain text in the same kind of file does change.
+        val control = File(dir, "control.html").apply {
+            writeText("""<!DOCTYPE html><html><head><meta charset="utf-8"/></head><body><p>Plain words get bold starts</p></body></html>""")
+        }
+        assertFalse(open(control).use { it.render() }.sameAs(open(control, base.copy(boldWordStarts = true)).use { it.render() }))
+    }
+
+    @Test
+    fun boldWordStartsGoAwayWhenSwitchedOff() = open(TestBooks.epub(dir)).use { doc ->
+        val plain = doc.render()
+        doc.apply(base.copy(boldWordStarts = true))
+        assertFalse(doc.render().sameAs(plain))
+        doc.apply(base)
+        assertTrue("the same page as before, to the pixel", doc.render().sameAs(plain))
+    }
+
+    @Test
+    fun aCachedLayoutIsKeptApartWithBoldWordStartsOnAndOff() {
+        // Large enough for the engine to cache its layout.
+        val file = TestBooks.russianFb2(dir)
+        fun page(bold: Boolean) = open(file, base.copy(boldWordStarts = bold)).use { doc ->
+            doc.render().also { doc.saveCache() }
+        }
+        val plain = page(false)
+        val bold = page(true)
+        assertFalse(bold.sameAs(plain))
+        assertTrue("the plain layout comes back from the cache plain", page(false).sameAs(plain))
+        assertTrue("and the bold one bold", page(true).sameAs(bold))
+    }
+
+    @Test
     fun coloursOfThePageFollowTheSettings() = open(TestBooks.epub(dir), base.copy(colors = PageColors.Sepia)).use { doc ->
         val page = pixels(doc.render(), Rect(0, 0, WIDTH, HEIGHT))
         assertEquals("the margin has the page colour", PageColors.Sepia.background, page[0] and 0xFFFFFF)
@@ -469,6 +556,8 @@ class EngineFeaturesTest {
         }
 
     private fun ink(bitmap: Bitmap): Int = pixels(bitmap, Rect(0, 0, WIDTH, HEIGHT)).count { luminance(it) < 128 }
+
+    private fun inkIn(bitmap: Bitmap, rect: Rect): Int = pixels(bitmap, rect).count { luminance(it) < 128 }
 
     /** Pixel rows whose text ends within a few pixels of the right margin. */
     private fun rowsAtRightMargin(bitmap: Bitmap): Int {

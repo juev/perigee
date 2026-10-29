@@ -52,6 +52,8 @@ data class EngineSettings(
     val footnotes: Boolean = true,
     /** Two pages side by side; meant for landscape tablets. */
     val twoPages: Boolean = false,
+    /** The opening letters of each word in bold, in the font's own bold face; the book is laid out again. */
+    val boldWordStarts: Boolean = false,
 ) {
     /** The engine's gamma for [contrast]. */
     internal val gamma: Double get() = GAMMAS[contrast.coerceIn(CONTRASTS)]
@@ -67,6 +69,9 @@ data class EngineSettings(
                 append("p { text-indent: ${if (it) PARAGRAPH_INDENT else "0"} !important; }\n")
             }
             append(FOOTNOTE_CSS)
+            // A rule that matches nothing: it makes the stylesheet, and so the layout kept in the engine's
+            // cache, differ with bold word starts on and off.
+            if (boldWordStarts) append(".perigee-bold-word-starts { font-style: normal }\n")
         }
 
     companion object {
