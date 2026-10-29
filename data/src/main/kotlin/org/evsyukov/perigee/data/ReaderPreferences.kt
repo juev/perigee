@@ -56,6 +56,8 @@ data class ReaderPrefs(
     val fontWeight: Int = 400,
     /** How dark letters are drawn, 0 as the font has them; the steps are `EngineSettings.CONTRASTS`. */
     val contrast: Int = 0,
+    /** The opening letters of each word in bold. */
+    val boldWordStarts: Boolean = false,
     val lineSpacingPercent: Int = 120,
     val alignment: Alignment = Alignment.Justify,
     val hyphenation: Boolean = true,
@@ -129,6 +131,7 @@ class ReaderPreferences private constructor(private val store: DataStore<Prefere
             fontSize = p[FONT_SIZE] ?: d.fontSize,
             fontWeight = p[FONT_WEIGHT] ?: d.fontWeight,
             contrast = p[CONTRAST] ?: d.contrast,
+            boldWordStarts = p[BOLD_WORD_STARTS] ?: d.boldWordStarts,
             lineSpacingPercent = p[LINE_SPACING] ?: d.lineSpacingPercent,
             alignment = p[ALIGNMENT].enumOr(d.alignment),
             hyphenation = p[HYPHENATION] ?: d.hyphenation,
@@ -161,6 +164,7 @@ class ReaderPreferences private constructor(private val store: DataStore<Prefere
         p[FONT_SIZE] = v.fontSize
         p[FONT_WEIGHT] = v.fontWeight
         p[CONTRAST] = v.contrast
+        p[BOLD_WORD_STARTS] = v.boldWordStarts
         p[LINE_SPACING] = v.lineSpacingPercent
         p[ALIGNMENT] = v.alignment.name
         p[HYPHENATION] = v.hyphenation
@@ -196,6 +200,7 @@ class ReaderPreferences private constructor(private val store: DataStore<Prefere
         private val FONT_SIZE = intPreferencesKey("font_size")
         private val FONT_WEIGHT = intPreferencesKey("font_weight")
         private val CONTRAST = intPreferencesKey("contrast")
+        private val BOLD_WORD_STARTS = booleanPreferencesKey("bold_word_starts")
         private val LINE_SPACING = intPreferencesKey("line_spacing")
         private val ALIGNMENT = stringPreferencesKey("alignment")
         private val HYPHENATION = booleanPreferencesKey("hyphenation")

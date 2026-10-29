@@ -163,6 +163,17 @@ class BookReaderTest {
     }
 
     @Test
+    fun boldWordStartsKeepThePlace() = reading { reader ->
+        val before = reader.goToPage(5)
+        val bold = reader.apply(EngineSettings(boldWordStarts = true))
+        assertTrue("wider letters take more pages", bold.pageCount > before.pageCount)
+        assertEquals("the page shown holds the place read", reader.read { it.pageOf(before.xpointer) }, bold.index)
+        val back = reader.apply(EngineSettings())
+        assertEquals(before.index, back.index)
+        assertEquals(before.pageCount, back.pageCount)
+    }
+
+    @Test
     fun newColoursPaintTheSamePage() = reading { reader ->
         val before = reader.goToPage(5)
         val night = EngineSettings(colors = PageColors.Night)

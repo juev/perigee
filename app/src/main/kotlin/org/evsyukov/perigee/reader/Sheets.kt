@@ -163,6 +163,7 @@ internal fun SettingsSheet(
                 StepSlider(R.string.setting_contrast, prefs.contrast, EngineSettings.CONTRASTS, "contrast") { chosen ->
                     onChange { it.copy(contrast = chosen) }
                 }
+                Toggle(R.string.setting_bold_word_starts, prefs.boldWordStarts) { on -> onChange { it.copy(boldWordStarts = on) } }
                 Stepper(
                     R.string.setting_line_spacing, stringResource(R.string.percent, prefs.lineSpacingPercent), "line-spacing",
                     onLess = { onChange { it.copy(lineSpacingPercent = stepped(it.lineSpacingPercent, -1, ReaderPrefs.LINE_SPACINGS)) } },

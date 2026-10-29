@@ -1,0 +1,195 @@
+diff --git a/crengine/src/lvrend.cpp b/crengine/src/lvrend.cpp
+index caea9b6b..8eead45a 100644
+--- a/crengine/src/lvrend.cpp
++++ b/crengine/src/lvrend.cpp
+@@ -21,6 +21,79 @@
+ #include "../include/lvrend.h"
+ #include "../include/renderutil.h"
+ #include "../include/drawutil.h"
++#include <unordered_set>
++#include <vector>
++#if USE_UTF8PROC == 1
++#include <utf8proc.h>
++#endif
++
++// Perigee: bold word starts. The opening letters of each word are set in the bold of their font, without
++// touching the document tree: a text node is handed to the line formatter as several sources, bold and
++// regular, each with the offsets of its part of the node, so xpointers, selections and highlights keep
++// pointing at the same text. Kept per document, as a page of one book may be formatted again lazily.
++static std::unordered_set<const ldomDocument *> perigeeBoldWordStartsDocs;
++
++void perigeeSetBoldWordStarts( const ldomDocument * doc, bool on )
++{
++    if ( on )
++        perigeeBoldWordStartsDocs.insert(doc);
++    else
++        perigeeBoldWordStartsDocs.erase(doc);
++}
++
++static bool perigeeBoldWordStartsIn( const ldomDocument * doc )
++{
++    return !perigeeBoldWordStartsDocs.empty() && perigeeBoldWordStartsDocs.count(doc) > 0;
++}
++
++// Letters of the scripts written in separate, unjoined letters with spaces between words: Latin, Greek,
++// Cyrillic, Armenian, Georgian, Hebrew, with their combining marks. A part of a word set in another font
++// breaks the shaping of joined scripts (Arabic, the scripts of India) and the clusters of others, and
++// scripts without word spaces (Chinese, Japanese, Thai) have no words to find: their words are left alone.
++static int perigeeWordCharKind( lChar32 c )
++{
++    // 0: not a word char; 1: a letter; 2: a mark, digit or inner apostrophe that belongs to the word
++    bool simple = c < 0x0250 || (c >= 0x0300 && c < 0x0530) || (c >= 0x0530 && c < 0x0600)
++               || (c >= 0x10A0 && c < 0x1100) || (c >= 0x1C80 && c < 0x1CC0) || (c >= 0x1E00 && c < 0x2000)
++               || (c >= 0x2DE0 && c < 0x2E00) || (c >= 0xA640 && c < 0xA6A0) || (c >= 0xFB00 && c < 0xFB50);
++#if USE_UTF8PROC == 1
++    utf8proc_category_t cat = utf8proc_category((utf8proc_int32_t)c);
++    bool letter = cat >= UTF8PROC_CATEGORY_LU && cat <= UTF8PROC_CATEGORY_LO;
++    bool mark = cat == UTF8PROC_CATEGORY_MN || cat == UTF8PROC_CATEGORY_MC;
++    bool digit = cat == UTF8PROC_CATEGORY_ND;
++#else
++    lUInt16 props = lGetCharProps(c);
++    bool letter = (props & CH_PROP_ALPHA) != 0;
++    bool mark = false;
++    bool digit = (props & CH_PROP_DIGIT) != 0;
++#endif
++    if ( letter )
++        return simple ? 1 : -1; // -1: a letter of a script left alone
++    if ( mark || digit )
++        return 2;
++    return 0;
++}
++
++// How many letters of a word of 'letters' letters are bold: one of up to three, else half, rounded up.
++static int perigeeBoldLetters( int letters )
++{
++    return letters <= 3 ? 1 : (letters + 1) / 2;
++}
++
++// Whether the text of 'parent' gets bold word starts: not text already bold, not headings, not code.
++static bool perigeeBoldWordStartsFor( ldomNode * parent, const css_style_rec_t * style )
++{
++    if ( style->font_weight >= 1 && style->font_weight <= 1000 && style->font_weight >= 600 )
++        return false;
++    if ( style->font_family == css_ff_monospace || style->white_space >= css_ws_pre )
++        return false;
++    for ( ldomNode * n = parent; n && !n->isRoot(); n = n->getParentNode() ) {
++        lUInt16 id = n->getNodeId();
++        if ( (id >= el_h1 && id <= el_h6) || id == el_title || id == el_subtitle || id == el_code || id == el_pre )
++            return false;
++    }
++    return true;
++}
+ 
+ // Note about box model/sizing in crengine:
+ // https://quirksmode.org/css/user-interface/boxsizing.html says:
+@@ -4739,7 +4812,90 @@ void renderFinalBlock( ldomNode * enode, LFormattedText * txform, RenderRectAcce
+             // to cause no harm to text rendering, and it helps getRect() not
+             // ignoring this single letter.
+ 
+-            if ( txt.length() > 0 ) {
++            // Perigee: bold word starts, as parts of the text: [start, end) of each, and whether it is bold.
++            struct PerigeePart { int start; int end; bool bold; };
++            std::vector<PerigeePart> perigeeParts;
++            LVFontRef perigeeBold;
++            if ( txt.length() > textOffset && txt.length() < 0xFFFF
++                    && perigeeBoldWordStartsIn(enode->getDocument())
++                    && perigeeBoldWordStartsFor(parent, style.get()) ) {
++                int i = textOffset;
++                int partStart = textOffset;
++                while ( i < txt.length() ) {
++                    if ( perigeeWordCharKind(txt[i]) == 0 ) {
++                        i++;
++                        continue;
++                    }
++                    // A word: letters, marks and digits, with apostrophes between letters.
++                    int wordStart = i;
++                    int letters = 0;
++                    bool leftAlone = false;
++                    while ( i < txt.length() ) {
++                        int kind = perigeeWordCharKind(txt[i]);
++                        if ( kind == 0 && (txt[i] == U'\'' || txt[i] == 0x2019) && i + 1 < txt.length()
++                                && perigeeWordCharKind(txt[i + 1]) == 1 && letters > 0 )
++                            kind = 2;
++                        if ( kind == 0 )
++                            break;
++                        if ( kind == -1 )
++                            leftAlone = true;
++                        if ( kind == 1 )
++                            letters++;
++                        i++;
++                    }
++                    if ( leftAlone || letters == 0 )
++                        continue;
++                    // The bold part ends after its last letter, with the marks that belong to that letter.
++                    int wanted = perigeeBoldLetters(letters);
++                    int boldEnd = wordStart;
++                    for ( int seen = 0; boldEnd < i; boldEnd++ ) {
++                        int kind = perigeeWordCharKind(txt[boldEnd]);
++                        if ( kind == 1 ) {
++                            if ( seen == wanted )
++                                break;
++                            seen++;
++                        }
++                    }
++                    if ( wordStart > partStart )
++                        perigeeParts.push_back({partStart, wordStart, false});
++                    perigeeParts.push_back({wordStart, boldEnd, true});
++                    partStart = boldEnd;
++                }
++                if ( partStart < txt.length() )
++                    perigeeParts.push_back({partStart, (int)txt.length(), false});
++                // The formatter counts its sources in 16 bits.
++                if ( txform->GetSrcCount() + (int)perigeeParts.size() > 60000 )
++                    perigeeParts.clear();
++                if ( !perigeeParts.empty() ) {
++                    css_style_rec_t boldStyle = *style.get();
++                    boldStyle.font_weight = 700;
++                    perigeeBold = getFont(parent, &boldStyle, enode->getDocument()->getFontContextDocIndex());
++                    if ( perigeeBold.isNull() )
++                        perigeeParts.clear();
++                }
++            }
++            if ( perigeeParts.size() > 1 ) {
++                // The last part owns a copy of the node's text from its start; the parts before it share
++                // that copy, so the text is copied once however many parts there are.
++                int firstIndex = txform->GetSrcCount();
++                for ( size_t k = 0; k < perigeeParts.size(); k++ ) {
++                    const PerigeePart & part = perigeeParts[k];
++                    bool last = k + 1 == perigeeParts.size();
++                    LVFont * partFont = part.bold ? perigeeBold.get() : font.get();
++                    lUInt32 partFlags = baseflags | (last ? tflags : (tflags & ~LTEXT_FLAG_OWNTEXT));
++                    // A link is gathered as an in-page footnote from its first source only.
++                    if ( k > 0 )
++                        partFlags &= ~LTEXT_IS_LINK;
++                    txform->AddSourceLine( txt.c_str(), part.end, cl, bgcl, partFont, lang_cfg, partFlags,
++                        line_h, valign_dy, indent, enode, part.start, letter_spacing,
++                        part.bold ? perigeeBold : LVFontRef() );
++                    baseflags &= ~LTEXT_FLAG_NEWLINE & ~LTEXT_SRC_IS_CLEAR_BOTH;
++                }
++                const lChar32 * shared = txform->GetSrcInfo(txform->GetSrcCount() - 1)->t.text;
++                for ( int k = firstIndex; k < txform->GetSrcCount() - 1; k++ )
++                    const_cast<src_text_fragment_t *>(txform->GetSrcInfo(k))->t.text = shared;
++            }
++            else if ( txt.length() > 0 ) {
+                 txform->AddSourceLine( txt.c_str(), txt.length(), cl, bgcl, font.get(), lang_cfg, baseflags | tflags,
+                     line_h, valign_dy, indent, enode, textOffset, letter_spacing );
+                 baseflags &= ~LTEXT_FLAG_NEWLINE & ~LTEXT_SRC_IS_CLEAR_BOTH; // clear newline flag
+diff --git a/crengine/src/lvtinydom.cpp b/crengine/src/lvtinydom.cpp
+index edce35e9..5072be41 100644
+--- a/crengine/src/lvtinydom.cpp
++++ b/crengine/src/lvtinydom.cpp
+@@ -10843,6 +10843,14 @@ bool ldomXPointer::getRect(lvRect & rect, bool extended, bool adjusted, int * ct
+                     // Don't break, we want to find the non-first-line srcIndex
+                 }
+                 else {
++                    // Perigee: a text node may come as several sources, each a part of its text (bold word
++                    // starts): the one taken is the part holding offset, not the first.
++                    if ( !isObject && offset >= (int)src->t.len && i + 1 < txtform->GetSrcCount() ) {
++                        const src_text_fragment_t * next = txtform->GetSrcInfo(i + 1);
++                        if ( next->object == src->object && !(next->flags & LTEXT_SRC_IS_OBJECT)
++                                && (int)next->t.offset <= offset && (int)next->t.offset >= (int)src->t.len )
++                            continue;
++                    }
+                     srcIndex = i;
+                     if ( firstLineSrcIndex >= 0)
+                         laterLineSrcIndex = i;

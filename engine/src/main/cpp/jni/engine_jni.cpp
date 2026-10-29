@@ -282,6 +282,11 @@ static bool needsFullShaping(const std::string& language) {
 // The stylesheet each view was last given, to tell a change of it.
 static std::unordered_map<LVDocView*, lString8> gStylesheets;
 
+// Bold word starts, kept per document by the engine (patches/0001-bold-word-starts.patch); per view
+// here, as the settings come before the book is loaded.
+extern "C++" void perigeeSetBoldWordStarts(const ldomDocument* doc, bool on);
+static std::unordered_map<LVDocView*, bool> gBoldWordStarts;
+
 /// The colours a book's pages are painted in. The engine always draws black on
 /// white: in crengine the text colour is part of the styles, and a new one has
 /// the whole book styled and laid out again. The page drawn is mapped onto the
@@ -349,10 +354,12 @@ Java_org_evsyukov_perigee_engine_NativeEngine_applySettings(
         JNIEnv* env, jobject, jlong handle, jstring cssFile, jstring extraCss, jstring fontFace,
         jint fontSize, jint fontWeight, jint lineSpacingPercent, jint marginHorizontal, jint marginTop, jint marginBottom,
         jboolean hyphenation, jboolean footnotes, jboolean twoPages, jint textColor, jint backgroundColor,
-        jint renderDpi, jint width, jint height) {
+        jint renderDpi, jint width, jint height, jboolean boldWordStarts) {
     LVDocView* view = viewOf(handle);
     // A new layout moves page boundaries; the reader stays where they were.
     const bool loaded = view->getDocument() != nullptr;
+    gBoldWordStarts[view] = boldWordStarts;
+    if (loaded) perigeeSetBoldWordStarts(view->getDocument(), boldWordStarts);
     ldomXPointer position = loaded ? view->getBookmark() : ldomXPointer();
 
     CRPropRef props = LVCreatePropsContainer();
@@ -406,6 +413,7 @@ JNIEXPORT jboolean JNICALL
 Java_org_evsyukov_perigee_engine_NativeEngine_load(JNIEnv* env, jobject, jlong handle, jstring path) {
     LVDocView* view = viewOf(handle);
     if (!view->LoadDocument(toStd(env, path).c_str(), false) || !view->getDocument()) return JNI_FALSE;
+    perigeeSetBoldWordStarts(view->getDocument(), gBoldWordStarts[view]);
     // Hyphenation and line breaking follow the book's language unless a
     // fragment declares its own.
     lString32 language = view->getLanguage();
@@ -431,9 +439,13 @@ Java_org_evsyukov_perigee_engine_NativeEngine_saveCache(JNIEnv*, jobject, jlong 
 JNIEXPORT void JNICALL
 Java_org_evsyukov_perigee_engine_NativeEngine_close(JNIEnv*, jobject, jlong handle) {
     LVDocView* view = viewOf(handle);
-    if (view->getDocument()) view->close();
+    if (view->getDocument()) {
+        perigeeSetBoldWordStarts(view->getDocument(), false);
+        view->close();
+    }
     gStylesheets.erase(view);
     gPalettes.erase(view);
+    gBoldWordStarts.erase(view);
     delete view;
 }
 

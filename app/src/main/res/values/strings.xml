@@ -59,6 +59,7 @@
     <string name="setting_font_size">Font size</string>
     <string name="setting_font_weight">Font boldness</string>
     <string name="setting_contrast">Contrast</string>
+    <string name="setting_bold_word_starts">Bold word starts</string>
     <string name="setting_line_spacing">Line spacing</string>
     <string name="setting_alignment">Align text</string>
     <string name="align_justify">Justified</string>

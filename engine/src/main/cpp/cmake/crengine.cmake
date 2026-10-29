@@ -44,7 +44,43 @@ foreach(F
     list(APPEND CRE_SRCS ${CRENGINE_DIR}/crengine/${F})
 endforeach()
 
+# Changes Perigee carries on top of crengine, as patches in ../patches. The files a patch touches are
+# copied into the build tree and patched there, and those copies are compiled in place of the originals:
+# the submodule stays as upstream has it. A patch may change source files only, not headers, so that
+# every file of the engine sees the same declarations.
+find_package(Git REQUIRED)
+set(CRENGINE_PATCHED ${CMAKE_BINARY_DIR}/crengine-patched)
+file(GLOB CRENGINE_PATCHES ${CMAKE_CURRENT_LIST_DIR}/../patches/*.patch)
+list(SORT CRENGINE_PATCHES)
+file(REMOVE_RECURSE ${CRENGINE_PATCHED})
+foreach(PATCH ${CRENGINE_PATCHES})
+    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${PATCH})
+    file(STRINGS ${PATCH} TARGETS REGEX "^\\+\\+\\+ b/")
+    foreach(T ${TARGETS})
+        string(REGEX REPLACE "^\\+\\+\\+ b/" "" F "${T}")
+        if(NOT F MATCHES "\\.cpp$")
+            message(FATAL_ERROR "${PATCH} changes ${F}: patches may change source files only")
+        endif()
+        if(NOT EXISTS ${CRENGINE_PATCHED}/${F})
+            configure_file(${CRENGINE_DIR}/${F} ${CRENGINE_PATCHED}/${F} COPYONLY)
+            list(TRANSFORM CRE_SRCS REPLACE "^${CRENGINE_DIR}/${F}$" "${CRENGINE_PATCHED}/${F}")
+        endif()
+    endforeach()
+    # Outside any repository, git apply works as patch does; the build tree may be inside one.
+    execute_process(
+        COMMAND ${CMAKE_COMMAND} -E env GIT_CEILING_DIRECTORIES=${CMAKE_BINARY_DIR}
+                ${GIT_EXECUTABLE} apply --whitespace=nowarn ${PATCH}
+        WORKING_DIRECTORY ${CRENGINE_PATCHED}
+        RESULT_VARIABLE PATCH_RESULT
+        ERROR_VARIABLE PATCH_ERROR)
+    if(NOT PATCH_RESULT EQUAL 0)
+        message(FATAL_ERROR "${PATCH} does not apply to crengine: ${PATCH_ERROR}")
+    endif()
+endforeach()
+
 add_library(crengine STATIC ${CRE_SRCS})
+# A patched copy finds the headers next to the original ("../include/...") through this path.
+target_include_directories(crengine PRIVATE ${CRENGINE_DIR}/crengine/src)
 target_compile_features(crengine PUBLIC cxx_std_17)
 target_compile_options(crengine PRIVATE -ftabstop=4 -Wall)
 target_compile_definitions(crengine PRIVATE $<$<CONFIG:Debug>:_DEBUG=1> $<$<CONFIG:Debug>:DEBUG=1>)

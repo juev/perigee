@@ -58,6 +58,7 @@
     <string name="setting_font_size">Размер шрифта</string>
     <string name="setting_font_weight">Жирность шрифта</string>
     <string name="setting_contrast">Контрастность</string>
+    <string name="setting_bold_word_starts">Выделять начало слов</string>
     <string name="setting_line_spacing">Междустрочный интервал</string>
     <string name="setting_alignment">Выравнивать текст по</string>
     <string name="align_justify">Ширине</string>
