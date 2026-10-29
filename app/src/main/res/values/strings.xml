@@ -54,6 +54,7 @@
     <string name="align_center">Centre</string>
     <string name="align_right">Right</string>
     <string name="setting_hyphenation">Hyphenation</string>
+    <string name="hint_justify_without_hyphenation">Without hyphenation, justified lines get wide gaps between words.</string>
     <string name="setting_paragraph_spacing">Paragraph spacing</string>
     <string name="setting_paragraph_indent">Paragraph indent</string>
     <string name="setting_page_margins">Page margins</string>

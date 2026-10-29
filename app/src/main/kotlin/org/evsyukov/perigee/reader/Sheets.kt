@@ -167,6 +167,14 @@ internal fun SettingsSheet(
                     },
                 ) { chosen -> onChange { it.copy(alignment = chosen) } }
                 Toggle(R.string.setting_hyphenation, prefs.hyphenation) { on -> onChange { it.copy(hyphenation = on) } }
+                if (widensWordGaps(prefs)) {
+                    Text(
+                        stringResource(R.string.hint_justify_without_hyphenation),
+                        Modifier.testTag("justify-hint"),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
                 Stepper(
                     R.string.setting_paragraph_spacing, stringResource(R.string.percent, prefs.paragraphSpacingPercent), "paragraph-spacing",
                     onLess = { onChange { it.copy(paragraphSpacingPercent = stepped(it.paragraphSpacingPercent, -1, ReaderPrefs.PARAGRAPH_SPACINGS)) } },
@@ -217,6 +225,10 @@ internal const val SETTINGS_SHARE = 0.5f
 /** The next or previous value of a stepped range, staying inside it. */
 private fun stepped(value: Int, direction: Int, range: IntProgression): Int =
     (value + direction * range.step).coerceIn(range.first, range.last)
+
+/** Justified lines with no word broken at their end stretch the gaps between words. */
+internal fun widensWordGaps(prefs: ReaderPrefs): Boolean =
+    prefs.alignment == TextAlignment.Justify && !prefs.hyphenation
 
 @Composable
 private fun SettingLabel(label: Int) {
