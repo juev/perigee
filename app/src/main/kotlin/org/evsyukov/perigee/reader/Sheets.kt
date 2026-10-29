@@ -93,6 +93,7 @@ internal fun SettingsSheet(
     prefs: ReaderPrefs,
     fontFaces: List<String>,
     charsPerLine: Int?,
+    lightSensor: Boolean,
     onFontTrial: () -> Unit,
     onChange: ((ReaderPrefs) -> ReaderPrefs) -> Unit,
     onDismiss: () -> Unit,
@@ -143,6 +144,9 @@ internal fun SettingsSheet(
                         )
                     },
                 ) { chosen -> onChange { it.withScheme(chosen) } }
+                if (lightSensor) {
+                    Toggle(R.string.setting_scheme_by_light, prefs.schemeByLight) { on -> onChange { it.copy(schemeByLight = on) } }
+                }
                 Choice(R.string.setting_font, prefs.fontFace, fontFaces, label = { it }) { chosen ->
                     onChange { it.copy(fontFace = chosen) }
                 }

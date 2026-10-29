@@ -285,8 +285,28 @@ class ReaderViewModel(
     }
 
     fun updatePrefs(change: (ReaderPrefs) -> ReaderPrefs) {
-        viewModelScope.launch { preferences.update(change) }
+        viewModelScope.launch {
+            preferences.update { old ->
+                change(old).also { new ->
+                    // A scheme the reader chose by hand holds over the light around until the next book.
+                    if (new.colorScheme != old.colorScheme) lightSwitch.pause()
+                }
+            }
+        }
     }
+
+    /** Chooses the scheme by the light around, when the reader asked for that. */
+    private val lightSwitch = LightSensorSwitch(viewModelScope) { dark ->
+        viewModelScope.launch {
+            preferences.update { prefs ->
+                if (!prefs.schemeByLight || prefs.colorScheme.dark == dark) prefs
+                else prefs.copy(colorScheme = if (dark) prefs.nightScheme else prefs.dayScheme)
+            }
+        }
+    }
+
+    /** A reading of the light sensor, in lux. */
+    fun onLight(lux: Float) = lightSwitch.onLux(lux)
 
     /** One screen forward or back. */
     fun turn(screens: Int) {
@@ -580,6 +600,7 @@ class ReaderViewModel(
 
     private suspend fun openBook(file: File, viewport: Viewport) {
         _state.update { it.copy(busy = true) }
+        lightSwitch.resume()
         try {
             val prefs = preferences.prefs.first().also { _prefs.value = it }
             val target = laidOut(prefs, viewport)

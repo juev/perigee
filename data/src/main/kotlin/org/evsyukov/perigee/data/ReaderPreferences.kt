@@ -49,6 +49,8 @@ data class ReaderPrefs(
     val dayScheme: ColorScheme = ColorScheme.Day,
     /** The dark scheme the day/night switch goes to from a light one. */
     val nightScheme: ColorScheme = ColorScheme.Night,
+    /** The light around the screen chooses between [dayScheme] and [nightScheme]. */
+    val schemeByLight: Boolean = false,
     val fontFace: String = "Roboto",
     val fontSize: Int = 18,
     val fontWeight: Int = 400,
@@ -122,6 +124,7 @@ class ReaderPreferences private constructor(private val store: DataStore<Prefere
             colorScheme = p[COLOR_SCHEME].enumOr(d.colorScheme),
             dayScheme = p[DAY_SCHEME].enumOr(d.dayScheme),
             nightScheme = p[NIGHT_SCHEME].enumOr(d.nightScheme),
+            schemeByLight = p[SCHEME_BY_LIGHT] ?: d.schemeByLight,
             fontFace = p[FONT_FACE] ?: d.fontFace,
             fontSize = p[FONT_SIZE] ?: d.fontSize,
             fontWeight = p[FONT_WEIGHT] ?: d.fontWeight,
@@ -153,6 +156,7 @@ class ReaderPreferences private constructor(private val store: DataStore<Prefere
         p[COLOR_SCHEME] = v.colorScheme.name
         p[DAY_SCHEME] = v.dayScheme.name
         p[NIGHT_SCHEME] = v.nightScheme.name
+        p[SCHEME_BY_LIGHT] = v.schemeByLight
         p[FONT_FACE] = v.fontFace
         p[FONT_SIZE] = v.fontSize
         p[FONT_WEIGHT] = v.fontWeight
@@ -187,6 +191,7 @@ class ReaderPreferences private constructor(private val store: DataStore<Prefere
         private val COLOR_SCHEME = stringPreferencesKey("color_scheme")
         private val DAY_SCHEME = stringPreferencesKey("day_scheme")
         private val NIGHT_SCHEME = stringPreferencesKey("night_scheme")
+        private val SCHEME_BY_LIGHT = booleanPreferencesKey("scheme_by_light")
         private val FONT_FACE = stringPreferencesKey("font_face")
         private val FONT_SIZE = intPreferencesKey("font_size")
         private val FONT_WEIGHT = intPreferencesKey("font_weight")
