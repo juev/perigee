@@ -325,12 +325,15 @@ class ReaderScreenTest {
         openMenu()
         rule.onNodeWithContentDescription(string(R.string.action_settings)).performClick()
         rule.onNodeWithTag("font-size").assertTextEquals(ReaderPrefs().fontSize.toString())
+        val charsBefore = model().state.value.charsPerLine!!
+        rule.onNodeWithTag("chars-per-line").assertTextEquals(string(R.string.chars_per_line, charsBefore))
         repeat(4) { rule.onNodeWithTag("font-size-more").performClick() }
 
         // Each press is stored first and shown when the stored value comes back.
         rule.waitUntil(TIMEOUT) { model().prefs.value.fontSize == ReaderPrefs().fontSize + 4 }
         rule.onNodeWithTag("font-size").assertTextEquals((ReaderPrefs().fontSize + 4).toString())
-        rule.waitUntil(TIMEOUT) { model().state.value.page!!.pageCount > pagesBefore }
+        rule.waitUntil(TIMEOUT) { model().state.value.page!!.pageCount > pagesBefore && model().state.value.charsPerLine!! < charsBefore }
+        rule.onNodeWithTag("chars-per-line").assertTextEquals(string(R.string.chars_per_line, model().state.value.charsPerLine!!))
         assertEquals("the setting is stored", ReaderPrefs().fontSize + 4, runBlocking { preferences.prefs.first() }.fontSize)
     }
 

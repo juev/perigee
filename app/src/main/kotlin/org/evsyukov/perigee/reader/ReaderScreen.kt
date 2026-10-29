@@ -340,7 +340,7 @@ fun ReaderScreen(file: File, onClose: () -> Unit, viewModel: ReaderViewModel = v
     }
 
     when (panel) {
-        Panel.Settings -> SettingsSheet(prefs, state.fontFaces, viewModel::updatePrefs) { panel = Panel.None }
+        Panel.Settings -> SettingsSheet(prefs, state.fontFaces, state.charsPerLine, viewModel::updatePrefs) { panel = Panel.None }
         Panel.Contents -> ContentsSheet(
             state = state,
             onGoTo = { xpointer ->

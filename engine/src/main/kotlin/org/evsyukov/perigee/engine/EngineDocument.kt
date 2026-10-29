@@ -75,6 +75,13 @@ class EngineDocument private constructor(
     /** Position of the top of a page, or null when there is no such page. */
     fun xpointerOfPage(page: Int): String? = NativeEngine.xpointerOfPage(checked(), page)
 
+    /**
+     * About how many characters a line holds: the width between the side margins of one page over the
+     * average width of a character, measured in the regular font on the book's text from the page shown on.
+     * Null when the pages there have too little text to tell, as pictures and title pages do.
+     */
+    fun charsPerLine(): Int? = NativeEngine.charsPerLine(checked()).takeIf { it > 0 }
+
     /** Applies [settings], keeping the reading position; with a [width] and [height] the book is laid out at that page size, once. */
     fun apply(settings: EngineSettings, width: Int = 0, height: Int = 0) {
         NativeEngine.applySettings(

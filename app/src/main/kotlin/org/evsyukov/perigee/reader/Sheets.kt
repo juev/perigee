@@ -91,6 +91,7 @@ import org.evsyukov.perigee.engine.EngineSettings
 internal fun SettingsSheet(
     prefs: ReaderPrefs,
     fontFaces: List<String>,
+    charsPerLine: Int?,
     onChange: ((ReaderPrefs) -> ReaderPrefs) -> Unit,
     onDismiss: () -> Unit,
 ) {
@@ -182,6 +183,14 @@ internal fun SettingsSheet(
                 )
                 Toggle(R.string.setting_paragraph_indent, prefs.paragraphIndent) { on -> onChange { it.copy(paragraphIndent = on) } }
                 Toggle(R.string.setting_page_margins, prefs.pageMargins) { on -> onChange { it.copy(pageMargins = on) } }
+                if (charsPerLine != null) {
+                    Text(
+                        stringResource(R.string.chars_per_line, charsPerLine),
+                        Modifier.testTag("chars-per-line"),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
                 Toggle(R.string.setting_two_pages, prefs.twoPagesInLandscape) { on -> onChange { it.copy(twoPagesInLandscape = on) } }
 
                 Choice(

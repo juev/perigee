@@ -99,6 +99,8 @@ data class ReaderState(
     val search: SearchState = SearchState(),
     /** A place the reader got to somewhere else, later than here, and has not decided about. */
     val offer: RemotePosition? = null,
+    /** About how many characters a line of the book holds as it is laid out; null when the pages shown are not text enough. */
+    val charsPerLine: Int? = null,
 ) {
     /** The contents entry the page shown belongs to. */
     val chapter: TocEntry? get() = page?.let { shown -> toc.lastOrNull { it.page <= shown.index } }
@@ -520,7 +522,8 @@ class ReaderViewModel(
             book.xpointer?.let { open.goTo(it) }
             history.addAll(book.jumpedFrom)
             val toc = open.read { it.toc() }
-            _state.update { it.copy(book = book, toc = toc, failed = false) }
+            val charsPerLine = open.read { it.charsPerLine() }
+            _state.update { it.copy(book = book, toc = toc, failed = false, charsPerLine = charsPerLine) }
             watch(book)
             show(open.current())
             // Not waited for: the reader reads meanwhile, and is told if there is a later place.
@@ -546,7 +549,8 @@ class ReaderViewModel(
         Log.d(TAG, "new layout shown in ${(System.nanoTime() - started) / 1_000_000} ms")
         // Page numbers of the contents moved with the layout; the page is not kept waiting for them.
         val toc = open.read { it.toc() }
-        _state.update { it.copy(toc = toc) }
+        val charsPerLine = open.read { it.charsPerLine() }
+        _state.update { it.copy(toc = toc, charsPerLine = charsPerLine) }
     }
 
     /** Keeps the lists of the book's marks current and the quotes painted on the pages. */

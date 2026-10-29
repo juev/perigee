@@ -549,6 +549,51 @@ Java_org_evsyukov_perigee_engine_NativeEngine_xpointerOfPage(JNIEnv* env, jobjec
     return toJava(env, view->getPageBookmark(page).toString());
 }
 
+JNIEXPORT jint JNICALL
+Java_org_evsyukov_perigee_engine_NativeEngine_charsPerLine(JNIEnv*, jobject, jlong handle) {
+    LVDocView* view = viewOf(handle);
+    if (view->getDocument() == nullptr || view->getPageCount() == 0) return 0;
+    // The sample is the book's own text from the page shown on, with runs of white space as one space:
+    // its letters are those of the book's language, in their own proportions.
+    const int wanted = 1000;
+    lString32 sample;
+    bool space = true;
+    for (int page = view->getCurPage(); page < view->getPageCount() && page < view->getCurPage() + 4; page++) {
+        lString32 text = view->getPageText(false, page);
+        for (int i = 0; i < text.length() && sample.length() < wanted; i++) {
+            lChar32 c = text[i];
+            const bool blank = c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == 0xA0;
+            if (blank && space) continue;
+            sample << (blank ? lChar32(' ') : c);
+            space = blank;
+        }
+        if (sample.length() >= wanted) break;
+    }
+    if (sample.length() < 100) return 0;
+    // The regular text of the book, as the view takes it for the body (its default family is sans serif).
+    LVFontRef font = fontMan->GetFont(view->getFontSize(), LVRendGetBaseFontWeight(), false, css_ff_sans_serif,
+            view->getDefaultFontFace());
+    if (font.isNull()) return 0;
+    // The font measures at most 2048 px at a time: the sample goes in pieces.
+    static lUInt16 widths[256];
+    static lUInt8 flags[256];
+    long long width = 0;
+    int measured = 0;
+    while (measured < sample.length()) {
+        const int piece = std::min(256, sample.length() - measured);
+        const int fitted = font->measureText(sample.c_str() + measured, piece, widths, flags, 2048, U' ');
+        if (fitted <= 0) break;
+        width += widths[fitted - 1];
+        measured += fitted;
+    }
+    if (width <= 0) return 0;
+    lvRect page;
+    view->getPageRectangle(0, page);
+    const lvRect margins = view->getPageMargins();
+    const int line = page.width() - margins.left - margins.right;
+    return line <= 0 ? 0 : static_cast<jint>(line * static_cast<long long>(measured) / width);
+}
+
 JNIEXPORT jobjectArray JNICALL
 Java_org_evsyukov_perigee_engine_NativeEngine_toc(JNIEnv* env, jobject, jlong handle) {
     std::vector<lString32> out;

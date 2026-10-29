@@ -57,6 +57,7 @@
     <string name="setting_paragraph_spacing">Интервал абзаца</string>
     <string name="setting_paragraph_indent">Отступ абзаца</string>
     <string name="setting_page_margins">Поля страниц</string>
+    <string name="chars_per_line">≈%1$d знаков в строке</string>
     <string name="setting_two_pages">Две страницы в альбомной ориентации</string>
     <string name="setting_volume_keys">Листать кнопками громкости</string>
     <string name="setting_brightness_gesture">Яркость движением по левому краю</string>
