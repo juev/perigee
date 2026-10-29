@@ -18,16 +18,25 @@ internal object TestBooks {
     /** Text of the only link, in the first paragraph of the book. */
     const val LINK_TEXT = "seenote"
 
+    /** A word that opens the second paragraph of the footnote, when the note has one. */
+    const val NOTE_SECOND_WORD = "okapis"
+
+    private const val NOTE = "A footnote about zebras, shown under the text that cites it."
+
+    /** A second paragraph that takes the note to a few lines. */
+    private val NOTE_MORE = "$NOTE_SECOND_WORD and giraffes take this note on for a few more lines. ".repeat(4)
+
     private fun paragraph(chapter: Int, n: Int) =
         "Chapter $chapter, paragraph $n. " +
             "The quick brown fox jumps over the lazy dog while the engine lays out this line. ".repeat(3)
 
     /**
      * Three chapters with a table of contents. The first paragraph links to a
-     * footnote kept at the end of the first chapter.
+     * footnote kept at the end of the first chapter; [longNote] gives the note
+     * a second paragraph.
      */
-    fun epub(dir: File): File {
-        val file = File(dir, "test.epub")
+    fun epub(dir: File, longNote: Boolean = false): File {
+        val file = File(dir, if (longNote) "test-long-note.epub" else "test.epub")
         ZipOutputStream(file.outputStream()).use { zip ->
             // The EPUB container requires an uncompressed mimetype entry first.
             val mimetype = "application/epub+zip".toByteArray()
@@ -97,7 +106,8 @@ $navPoints
                     else -> ""
                 }
                 val tail = if (c == 1) {
-                    """<aside epub:type="footnote" id="fn1"><p>A footnote about zebras, shown under the text that cites it.</p></aside>"""
+                    val more = if (longNote) "<p>$NOTE_MORE</p>" else ""
+                    """<aside epub:type="footnote" id="fn1"><p>$NOTE</p>$more</aside>"""
                 } else {
                     ""
                 }
@@ -165,7 +175,7 @@ $body
 $sections
 </body>
 <body name="notes">
-<section id="n1"><title><p>1</p></title><p>A footnote about zebras, shown under the text that cites it.</p></section>
+<section id="n1"><title><p>1</p></title><p>$NOTE</p></section>
 </body>
 </FictionBook>""",
             )
