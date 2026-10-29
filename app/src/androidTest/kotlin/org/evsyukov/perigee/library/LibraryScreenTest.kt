@@ -2,10 +2,12 @@ package org.evsyukov.perigee.library
 
 import android.graphics.Color
 import androidx.activity.ComponentActivity
+import androidx.activity.enableEdgeToEdge
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasTestTag
@@ -21,6 +23,7 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextReplacement
 import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.swipeUp
 import androidx.compose.ui.test.longClick
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import java.io.File
@@ -142,6 +145,31 @@ class LibraryScreenTest {
         rule.onNodeWithText(string(R.string.action_add_folder)).assertIsDisplayed()
         rule.onNodeWithText(string(R.string.open_book)).performClick()
         assertTrue(askedForFile)
+    }
+
+    @Test
+    fun booksScrolledUnderTheSearchBarDoNotShowThrough() {
+        // Drawn under the status bar, as in the app: the strip above the search field is the top bar's too.
+        rule.runOnUiThread { activity.enableEdgeToEdge() }
+        shelve(*Array(40) { found("Book %02d".format(it + 1), author = "Author ${it + 1}") })
+        show()
+        rule.waitUntil(TIMEOUT) { rule.onAllNodesWithText("Book ", substring = true).fetchSemanticsNodes().size > 5 }
+        rule.onNodeWithContentDescription(string(R.string.action_search)).performClick()
+        rule.onNodeWithTag("library-search").assertIsDisplayed()
+
+        // The field itself blinks its cursor: only the rest of the bar is compared.
+        val bar = rule.onNodeWithTag("library-top-bar").fetchSemanticsNode().boundsInRoot
+        val field = rule.onNodeWithTag("library-search").fetchSemanticsNode().boundsInRoot
+        fun outsideField(): IntArray {
+            val image = rule.onNodeWithTag("library-top-bar").captureToImage()
+            val rows = (0 until image.height).filter { val y = bar.top + it; y < field.top || y >= field.bottom }
+            val pixels = IntArray(image.width * image.height).also { image.readPixels(it) }
+            return rows.flatMap { y -> (0 until image.width).map { pixels[y * image.width + it] } }.toIntArray()
+        }
+        val before = outsideField()
+        rule.onNodeWithTag("books").performTouchInput { swipeUp(startY = bottom * 0.8f, endY = bottom * 0.4f) }
+        rule.waitForIdle()
+        assertArrayEquals(before, outsideField())
     }
 
     @Test
