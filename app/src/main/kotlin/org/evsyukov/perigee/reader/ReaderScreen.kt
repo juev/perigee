@@ -161,6 +161,8 @@ fun ReaderScreen(file: File, onClose: () -> Unit, viewModel: ReaderViewModel = v
     LifecycleEventEffect(Lifecycle.Event.ON_START) { viewModel.resumed() }
     val (windowBrightness, dim) = Dimming.split(prefs.brightness, prefs.dimBelowFlicker, MIN_BRIGHTNESS)
     ScreenBrightness(windowBrightness)
+    LightSensor(prefs.schemeByLight, viewModel::onLight)
+    val lightSensor = remember { LightSensorSwitch.available(context) }
     // Each touch and each new page restart the time the screen stays on.
     val activity = remember { MutableSharedFlow<Unit>(extraBufferCapacity = 1, onBufferOverflow = BufferOverflow.DROP_OLDEST) }
     LaunchedEffect(state.page) { activity.tryEmit(Unit) }
@@ -366,7 +368,7 @@ fun ReaderScreen(file: File, onClose: () -> Unit, viewModel: ReaderViewModel = v
 
     when (panel) {
         Panel.Settings -> SettingsSheet(
-            prefs, state.fontFaces, state.charsPerLine,
+            prefs, state.fontFaces, state.charsPerLine, lightSensor,
             onFontTrial = {
                 panel = Panel.None
                 viewModel.startFontTrial()

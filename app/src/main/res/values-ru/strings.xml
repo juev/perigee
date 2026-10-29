@@ -43,6 +43,7 @@
     <string name="scheme_day">День</string>
     <string name="scheme_night">Ночь</string>
     <string name="scheme_oled">OLED</string>
+    <string name="setting_scheme_by_light">Схема по освещению</string>
     <string name="scheme_sepia">Сепия</string>
     <string name="setting_font">Шрифт</string>
     <string name="font_trial_open">Какой шрифт я читаю быстрее?</string>
