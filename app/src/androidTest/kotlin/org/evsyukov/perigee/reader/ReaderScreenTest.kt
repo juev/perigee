@@ -336,6 +336,22 @@ class ReaderScreenTest {
     }
 
     @Test
+    fun aDarkRoomTurnsThePageDarkUntilTheReaderChoosesByHand() {
+        show()
+        waitForBook()
+        model().updatePrefs { it.copy(schemeByLight = true) }
+        rule.waitUntil(TIMEOUT) { model().prefs.value.schemeByLight }
+        model().onLight(2f)
+        waitFor("the room is dark: the page goes dark after the level holds") { model().prefs.value.colorScheme == ColorScheme.Night }
+        // The reader takes the light scheme back by the corner: the light around decides nothing more for this book.
+        tapPage(0.05f, 0.03f)
+        waitFor("the scheme is Day by hand") { model().prefs.value.colorScheme == ColorScheme.Day }
+        model().onLight(1f)
+        Thread.sleep(LightSensorSwitch.HOLD_MILLIS + 1_000)
+        assertEquals(ColorScheme.Day, model().prefs.value.colorScheme)
+    }
+
+    @Test
     fun topLeftCornerSwitchesDayAndNight() {
         show()
         waitForBook()
