@@ -375,6 +375,34 @@ class EngineFeaturesTest {
         assertTrue("margins", pages(base.copy(paragraphSpacingPercent = 0, marginHorizontal = 120)) > tight)
     }
 
+    @Test
+    fun charactersPerLineMatchTheLinesOfThePage() {
+        for (file in listOf(TestBooks.epub(dir), TestBooks.russianFb2(dir))) {
+            open(file).use { doc ->
+                // The second page is all body text: the first has the chapter title on it.
+                assertTrue(doc.goToPage(1))
+                val estimate = doc.charsPerLine() ?: error("${file.name} has text enough to tell")
+                val start = doc.xpointerOfPage(1)!!
+                val end = doc.xpointerOfPage(2)!!
+                val text = doc.textBetween(start, end)!!.replace(Regex("\\s+"), " ").trim()
+                val lines = doc.rects(start, end).size
+                assertTrue("lines on the page: $lines", lines >= 10)
+                // Justified and hyphenated lines are as full as lines get; the last line of a paragraph is not.
+                val average = text.length / lines
+                assertTrue("estimate $estimate against $average a line in ${file.name}", estimate in average * 90 / 100..average * 120 / 100)
+            }
+        }
+    }
+
+    @Test
+    fun charactersPerLineFollowTheFontAndMargins() {
+        val file = TestBooks.epub(dir)
+        fun estimate(settings: EngineSettings) = open(file, settings).use { it.charsPerLine()!! }
+        val plain = estimate(base)
+        assertTrue("larger letters", estimate(base.copy(fontSize = base.fontSize * 3 / 2)) < plain * 3 / 4)
+        assertTrue("wider margins", estimate(base.copy(marginHorizontal = 120)) < plain)
+    }
+
     // --- fonts
 
     @Test

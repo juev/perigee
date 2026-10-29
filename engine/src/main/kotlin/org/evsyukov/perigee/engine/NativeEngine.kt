@@ -73,6 +73,9 @@ internal object NativeEngine {
     external fun pageOf(handle: Long, xpointer: String): Int
     external fun xpointerOfPage(handle: Long, page: Int): String?
 
+    /** Characters of the book's text that fit a line from the page shown on; 0 when there is too little text to tell. */
+    external fun charsPerLine(handle: Long): Int
+
     /** Four strings per entry: title, xpointer, depth (1 is the top level), page. */
     external fun toc(handle: Long): Array<String>
 
