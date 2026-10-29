@@ -62,6 +62,7 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.LayoutCoordinates
@@ -158,7 +159,8 @@ fun ReaderScreen(file: File, onClose: () -> Unit, viewModel: ReaderViewModel = v
     HideSystemBars()
     LifecycleEventEffect(Lifecycle.Event.ON_STOP) { viewModel.paused() }
     LifecycleEventEffect(Lifecycle.Event.ON_START) { viewModel.resumed() }
-    ScreenBrightness(prefs.brightness)
+    val (windowBrightness, dim) = Dimming.split(prefs.brightness, prefs.dimBelowFlicker, MIN_BRIGHTNESS)
+    ScreenBrightness(windowBrightness)
     // Each touch and each new page restart the time the screen stays on.
     val activity = remember { MutableSharedFlow<Unit>(extraBufferCapacity = 1, onBufferOverflow = BufferOverflow.DROP_OLDEST) }
     LaunchedEffect(state.page) { activity.tryEmit(Unit) }
@@ -172,6 +174,7 @@ fun ReaderScreen(file: File, onClose: () -> Unit, viewModel: ReaderViewModel = v
     // The warm filter tints the page and the strips around it, not the menus and sheets over them.
     val minute by minuteOfDay()
     val tint = Warmth.tintAt(prefs, minute)
+    val warmPaper = if (tint == null) paper else Color(paper.red * tint.red, paper.green * tint.green, paper.blue * tint.blue)
 
     // The page keeps clear of the camera cutout, and by the same amount on the
     // opposite side, so the text stays centred; the strips stay page-coloured.
@@ -181,7 +184,7 @@ fun ReaderScreen(file: File, onClose: () -> Unit, viewModel: ReaderViewModel = v
     Box(
         Modifier
             .fillMaxSize()
-            .background(if (tint == null) paper else Color(paper.red * tint.red, paper.green * tint.green, paper.blue * tint.blue))
+            .background(lerp(warmPaper, Color.Black, dim))
             // Sees every touch before the page does, and takes none of them.
             .pointerInput(activity) {
                 awaitPointerEventScope {
@@ -214,6 +217,8 @@ fun ReaderScreen(file: File, onClose: () -> Unit, viewModel: ReaderViewModel = v
                 .drawWithContent {
                     drawContent()
                     if (tint != null) drawRect(tint, blendMode = BlendMode.Multiply)
+                    // Darker than the backlight goes: the page and what is drawn on it, not the menus over it.
+                    if (dim > 0f) drawRect(Color.Black.copy(alpha = dim))
                 }
                 .onSizeChanged { area = it },
         ) {

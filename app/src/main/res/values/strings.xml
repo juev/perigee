@@ -64,6 +64,7 @@
     <string name="setting_two_pages">Two pages in landscape</string>
     <string name="setting_volume_keys">Volume keys turn pages</string>
     <string name="setting_brightness_gesture">Brightness by sliding along the left edge</string>
+    <string name="setting_dim_below_flicker">Darker without flicker</string>
     <string name="setting_day_night_corner">Day and night by touching the top left corner</string>
     <string name="setting_bookmark_corner">Bookmark by touching the top right corner</string>
     <string name="setting_warm_filter">Warm page by the clock</string>

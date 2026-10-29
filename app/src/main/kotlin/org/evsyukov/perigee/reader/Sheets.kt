@@ -216,6 +216,9 @@ internal fun SettingsSheet(
                     // Switching the gesture off hands brightness back to the system.
                     onChange { it.copy(brightnessGesture = on, brightness = if (on) it.brightness else null) }
                 }
+                if (prefs.brightnessGesture) {
+                    Toggle(R.string.setting_dim_below_flicker, prefs.dimBelowFlicker) { on -> onChange { it.copy(dimBelowFlicker = on) } }
+                }
                 Toggle(R.string.setting_day_night_corner, prefs.dayNightByCorner) { on -> onChange { it.copy(dayNightByCorner = on) } }
                 Toggle(R.string.setting_bookmark_corner, prefs.bookmarkByCorner) { on -> onChange { it.copy(bookmarkByCorner = on) } }
                 Toggle(R.string.setting_warm_filter, prefs.warmFilter) { on -> onChange { it.copy(warmFilter = on) } }

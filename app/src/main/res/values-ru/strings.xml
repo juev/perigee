@@ -63,6 +63,7 @@
     <string name="setting_two_pages">Две страницы в альбомной ориентации</string>
     <string name="setting_volume_keys">Листать кнопками громкости</string>
     <string name="setting_brightness_gesture">Яркость движением по левому краю</string>
+    <string name="setting_dim_below_flicker">Темнее без мерцания</string>
     <string name="setting_day_night_corner">День и ночь касанием левого верхнего угла</string>
     <string name="setting_bookmark_corner">Закладка касанием правого верхнего угла</string>
     <string name="setting_warm_filter">Тёплая страница по часам</string>
