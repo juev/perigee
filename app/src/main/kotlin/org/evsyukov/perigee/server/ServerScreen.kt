@@ -1,10 +1,12 @@
 package org.evsyukov.perigee.server
 
+import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.text.format.DateUtils
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.browser.customtabs.CustomTabsIntent
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -77,6 +79,7 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.core.net.toUri
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import java.io.File
@@ -91,6 +94,7 @@ import org.evsyukov.perigee.sync.BookOrbit
 import org.evsyukov.perigee.sync.DeviceChannel
 import org.evsyukov.perigee.sync.RemoteBook
 import org.evsyukov.perigee.sync.RemoteFile
+import org.evsyukov.perigee.sync.SignInProvider
 import org.evsyukov.perigee.ui.Centred
 import org.evsyukov.perigee.ui.EmptyState
 import org.evsyukov.perigee.ui.ShelfIcon
@@ -152,12 +156,23 @@ fun ServerScreen(onOpen: (File) -> Unit, onClose: () -> Unit, model: ServerViewM
     ) { padding ->
         when {
             !state.loaded -> Unit
-            !signedIn -> SignIn(padding, state, model::signIn)
+            !signedIn -> SignIn(padding, state, model::signIn, model::signInThroughProvider, model::chooseProvider, model::dismissProviders)
             else -> Books(padding, state, model, onOpen)
         }
     }
 
     val context = LocalContext.current
+    // The provider's page opens over the app, in the browser's tab; coming back from it closes the tab.
+    LaunchedEffect(state.providerPage) {
+        val page = state.providerPage ?: return@LaunchedEffect
+        val opened = try {
+            CustomTabsIntent.Builder().build().launchUrl(context, page.toUri())
+            true
+        } catch (e: ActivityNotFoundException) {
+            false
+        }
+        model.providerPageShown(opened)
+    }
     val downloadsPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
         if (uri == null) {
             model.dismissAsking()
@@ -194,6 +209,10 @@ private fun failureText(failure: ServerFailure): String = stringResource(
         ServerFailure.Unreachable -> R.string.server_unreachable
         ServerFailure.NotAllowed -> R.string.server_not_allowed
         ServerFailure.NotABook -> R.string.catalog_not_a_book
+        ServerFailure.NoProviders -> R.string.server_no_providers
+        ServerFailure.SignInExpired -> R.string.server_sign_in_expired
+        ServerFailure.SignInRefused -> R.string.server_sign_in_refused
+        ServerFailure.NoBrowser -> R.string.server_no_browser
     },
 )
 
@@ -223,7 +242,14 @@ private fun AccountMenu(account: Account, onSignOut: () -> Unit) {
 }
 
 @Composable
-private fun SignIn(padding: PaddingValues, state: ServerState, onSignIn: (String, String, String) -> Unit) {
+private fun SignIn(
+    padding: PaddingValues,
+    state: ServerState,
+    onSignIn: (String, String, String) -> Unit,
+    onProvider: (String) -> Unit,
+    onChoose: (String, SignInProvider) -> Unit,
+    onDismissProviders: () -> Unit,
+) {
     val account = state.account
     var address by rememberSaveable { mutableStateOf(account?.url.orEmpty()) }
     var user by rememberSaveable { mutableStateOf(account?.user.orEmpty()) }
@@ -238,6 +264,21 @@ private fun SignIn(padding: PaddingValues, state: ServerState, onSignIn: (String
                 onSignIn(address, user, password)
             },
             onDismiss = { warning = false },
+        )
+    }
+    if (state.providers.isNotEmpty()) {
+        AlertDialog(
+            onDismissRequest = onDismissProviders,
+            title = { Text(stringResource(R.string.server_choose_provider)) },
+            text = {
+                Column {
+                    for (provider in state.providers) {
+                        TextButton(onClick = { onChoose(address, provider) }, modifier = Modifier.fillMaxWidth()) { Text(provider.name) }
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = { TextButton(onClick = onDismissProviders) { Text(stringResource(R.string.action_cancel)) } },
         )
     }
     // On a wide screen the form keeps the width of a phone's, in the middle.
@@ -279,12 +320,25 @@ private fun SignIn(padding: PaddingValues, state: ServerState, onSignIn: (String
                 modifier = Modifier.fillMaxWidth().testTag("server-password"),
             )
             if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
-            state.signInFailure?.let { Text(failureText(it), color = MaterialTheme.colorScheme.error) }
+            state.signInFailure?.let { failure ->
+                val text = if (failure == ServerFailure.SignInRefused && state.signInRefusal.isNotBlank()) {
+                    stringResource(R.string.server_sign_in_refused_because, state.signInRefusal)
+                } else {
+                    failureText(failure)
+                }
+                Text(text, color = MaterialTheme.colorScheme.error)
+            }
             Button(
                 enabled = !busy && address.isNotBlank() && user.isNotBlank() && password.isNotEmpty(),
                 onClick = { if (isPlainHttp(address)) warning = true else onSignIn(address, user, password) },
                 modifier = Modifier.fillMaxWidth().padding(top = 4.dp).testTag("server-sign-in"),
             ) { Text(stringResource(R.string.server_sign_in)) }
+            // The password is not asked for: the provider asks for what it wants on its own page.
+            OutlinedButton(
+                enabled = !busy && address.isNotBlank(),
+                onClick = { onProvider(address) },
+                modifier = Modifier.fillMaxWidth().testTag("server-sign-in-provider"),
+            ) { Text(stringResource(R.string.server_sign_in_provider)) }
         }
     }
 }

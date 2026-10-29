@@ -33,7 +33,21 @@ Told apart for the reader: not an address; no bookOrbit server there; refused us
 
 The password is kept nowhere. Tokens are stored sealed with a key of the Android Keystore (`Secrets`, as catalog passwords are).
 
-OIDC is not supported: a server that lets nobody in by password cannot be used yet.
+### Through a provider (OIDC)
+
+"Sign in with SSO" signs in through a provider the server is set up with, as its web pages do; the password, if any, is given on the provider's page and never reaches the app.
+
+1. `GET auth/login-options` lists the providers; those switched off are left out. With none, the reader is told so; with one, it is gone to straight away; with several, the reader chooses.
+2. `POST auth/oidc/:slug/state` gives a state, which the server keeps for five minutes, and the address of the provider's sign-in page. With no address the server cannot reach the provider.
+3. The app makes a PKCE verifier and a nonce and opens the provider's page in a Custom Tab with `response_type=code`, the provider's `client_id` and scopes, the challenge (`S256`), the state, the nonce and the redirect URI `bookorbit://oauth2-callback`. The server takes that one address from every native client unless `NATIVE_REDIRECT_URI` says otherwise, so a server that changed it cannot be signed in to this way.
+4. The provider sends the reader back to that address. `SignInRedirectActivity` takes it, hands it to the server's screen and brings the app back, which closes the tab.
+5. An answer is taken only with the state the app is waiting for. `POST auth/oidc/callback` with the code, the verifier, the redirect URI, the nonce, the state and `clientKind: "native"` returns the same session as `auth/login`; the user name is the one the server gives. Then as above from step 4.
+
+The verifier, the nonce and the state are kept in memory only: an app closed while the reader is at the provider asks to start again, as the server would after five minutes anyway.
+
+Told apart for the reader: no providers; turned back at the provider (`error=access_denied`), which is no failure; too long (`errorCode: oidc_state_expired`, or an answer not waited for); refused by the provider or the server, with their own words (the server's English message, such as no account for this user); no browser.
+
+Another app that takes `bookorbit://` addresses, such as bookOrbit's own, makes Android ask which app the answer goes to.
 
 ### Plain HTTP
 
@@ -265,7 +279,7 @@ Checked by hand on the emulator against the same server: signing in over `http:/
 - Server's books in the library's own list: a book that is only on the server is seen on the server's screen, not among the reader's books.
 - Sending books without being asked, or going on with one cut off without being asked.
 - Tying a book to the server's one by its title and authors.
-- OIDC.
+- Signing out at the provider when signing out of the server.
 - Download progress, cancelling, resuming.
 - A round of syncing on a timer: a place read elsewhere while the open book stays on the screen is learnt when the reader next comes back to it.
 - A sign in the reader that something waits to be sent; which of a book's changes a round could not send.

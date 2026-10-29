@@ -8,6 +8,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.evsyukov.perigee.FakeAndroidKeyStore
@@ -65,8 +66,11 @@ class ServerViewModelTest {
             context, library, Covers(File(context.cacheDir, "server-covers")), preferences,
             { c, file, name -> describe(c, file, name) },
         ) { BookSink { _, _ -> null } }
-        ServerViewModel(context, orbit, accounts, library, arrivals)
+        ServerViewModel(context, orbit, accounts, library, arrivals, redirects)
     }
+
+    /** Where the provider's answer arrives, as from the browser. */
+    private val redirects = MutableStateFlow<String?>(null)
 
     @After
     fun stopServer() {
@@ -134,6 +138,76 @@ class ServerViewModelTest {
         assertEquals(listOf("Server Author"), state.books.single().authors)
         assertEquals(server.url, runBlocking { accounts.current() }?.url)
         assertEquals("reading is ready to be synced, and nothing is asked", DeviceChannel.Ready, state.channel)
+    }
+
+    private fun provider(slug: String, name: String) =
+        JSONObject().put("slug", slug).put("displayName", name).put("enabled", true).put("clientId", "bookorbit").put("scopes", "openid")
+
+    /** The provider's page the model asks to show; the screen is told it was shown. */
+    private fun providerPage(): String {
+        val page = checkNotNull(until("the provider's page is to be shown") { it.providerPage != null }.providerPage)
+        model.providerPageShown(opened = true)
+        return page
+    }
+
+    private fun stateOf(page: String) = Regex("[?&]state=([^&]+)").find(page)!!.groupValues[1]
+
+    @Test
+    fun signingInThroughTheOnlyProviderGoesStraightToItsPage() {
+        server.oidcProviders = JSONArray().put(provider("authelia", "Authelia"))
+        until("the account is looked up") { it.loaded }
+        model.signInThroughProvider(server.url)
+        val page = providerPage()
+        assertTrue(page, page.startsWith(server.authorizationEndpoint))
+        assertFalse("nothing is busy while the reader is at the provider", model.state.value.signingIn)
+
+        redirects.value = "bookorbit://oauth2-callback?code=c&state=${stateOf(page)}"
+        val state = until("the reader is signed in and reading is ready to be synced") { it.account != null && it.channel == DeviceChannel.Ready }
+        assertNull(state.signInFailure)
+        assertEquals("sso-reader", state.account?.user)
+        assertNull("the answer is taken once", redirects.value)
+    }
+
+    @Test
+    fun severalProvidersAreOfferedToChooseFrom() {
+        server.oidcProviders = JSONArray().put(provider("authelia", "Authelia")).put(provider("google", "Google"))
+        until("the account is looked up") { it.loaded }
+        model.signInThroughProvider(server.url)
+        val offered = until("the providers are offered") { it.providers.size == 2 }
+        assertEquals(listOf("Authelia", "Google"), offered.providers.map { it.name })
+
+        model.chooseProvider(server.url, offered.providers[1])
+        providerPage()
+        assertEquals(listOf("/api/v1/auth/oidc/google/state"), server.seen.map { it.path }.filter { "/oidc/" in it })
+        assertTrue(model.state.value.providers.isEmpty())
+    }
+
+    @Test
+    fun waysInThroughProvidersSayWhatIsWrong() {
+        until("the account is looked up") { it.loaded }
+        model.signInThroughProvider(server.url)
+        until("a server with no providers is told") { it.signInFailure == ServerFailure.NoProviders && !it.signingIn }
+
+        server.oidcProviders = JSONArray().put(provider("authelia", "Authelia"))
+        model.signInThroughProvider(server.url)
+        providerPage()
+        model.providerPageShown(opened = false)
+        until("no browser is told") { it.signInFailure == ServerFailure.NoBrowser }
+
+        model.signInThroughProvider(server.url)
+        var page = providerPage()
+        redirects.value = "bookorbit://oauth2-callback?error=access_denied&state=${stateOf(page)}"
+        until("turning back is no failure") { !it.signingIn && it.signInFailure == null && redirects.value == null }
+
+        model.signInThroughProvider(server.url)
+        page = providerPage()
+        server.oidcCallbackAnswer = Answer(401, """{"statusCode":401,"message":"No account exists for this user.","errorCode":"oidc_user_not_provisioned"}""")
+        redirects.value = "bookorbit://oauth2-callback?code=c&state=${stateOf(page)}"
+        until("the server's word is shown") { it.signInFailure == ServerFailure.SignInRefused && it.signInRefusal == "No account exists for this user." }
+
+        redirects.value = "bookorbit://oauth2-callback?code=c&state=${stateOf(page)}"
+        until("an answer that is not waited for is told") { it.signInFailure == ServerFailure.SignInExpired }
+        assertNull("nobody was signed in on the way", runBlocking { accounts.current() })
     }
 
     @Test

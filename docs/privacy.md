@@ -20,7 +20,7 @@ Requests for the pages of the catalogue, your searches in it and the downloads, 
 
 ## What goes to a bookOrbit server you signed in to
 
-- Your user name and password when you sign in, then the session keys the server gave.
+- Your user name and password when you sign in, then the session keys the server gave. Signing in with SSO sends no password: you sign in on the provider's page in the browser, and the app sends the server the code the provider gave.
 - A name for this device: "Perigee" and the model of the device.
 - A fingerprint (a partial MD5) of each book file in your library, so that the server can say which of them it has. The server keeps the fingerprints it does not know.
 - For the books the server has: where you stopped, bookmarks, highlights and notes, status, rating, and the time spent on pages.

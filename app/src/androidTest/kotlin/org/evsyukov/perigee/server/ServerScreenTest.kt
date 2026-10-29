@@ -111,6 +111,25 @@ class ServerScreenTest {
             "files":[{"id":$fileId,"format":"$format","role":"primary","sizeBytes":100}]}"""
 
     @Test
+    fun ssoOffersTheServersProvidersToChooseFrom() {
+        server.oidcProviders = JSONArray(
+            """[{"slug":"authelia","displayName":"Authelia","enabled":true,"clientId":"bookorbit","scopes":"openid"},
+                {"slug":"google","displayName":"Google","enabled":true,"clientId":"bookorbit","scopes":"openid"}]""",
+        )
+        show()
+        waitFor("the form is shown") { rule.onAllNodesWithTag("server-address").fetchSemanticsNodes().isNotEmpty() }
+        rule.onNodeWithTag("server-address").performTextReplacement(server.url)
+        rule.onNodeWithTag("server-sign-in-provider").performClick()
+
+        waitForText(string(R.string.server_choose_provider))
+        rule.onNodeWithText("Authelia").assertIsDisplayed()
+        rule.onNodeWithText("Google").assertIsDisplayed()
+        rule.onNodeWithText(string(R.string.action_cancel)).performClick()
+        waitUntilGone("Authelia")
+        assertTrue("nothing was started at a provider", server.seen.none { it.path.endsWith("/state") })
+    }
+
+    @Test
     fun signingInShowsTheServersBooks() {
         serverHas(book(7, "Listed Title", 70))
         show()

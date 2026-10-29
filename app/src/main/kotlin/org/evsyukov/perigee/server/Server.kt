@@ -3,6 +3,7 @@ package org.evsyukov.perigee.server
 import android.content.Context
 import android.os.Build
 import java.io.IOException
+import kotlinx.coroutines.flow.MutableStateFlow
 import org.evsyukov.perigee.data.Accounts
 import org.evsyukov.perigee.data.Library
 import org.evsyukov.perigee.sync.BookOrbit
@@ -11,6 +12,9 @@ import org.evsyukov.perigee.sync.BookOrbit
 internal object Server {
     @Volatile
     private var orbit: BookOrbit? = null
+
+    /** The address a provider sent the reader back to after signing in, until the server's screen takes it. */
+    val redirects = MutableStateFlow<String?>(null)
 
     fun get(context: Context): BookOrbit = orbit ?: synchronized(this) {
         orbit ?: run {

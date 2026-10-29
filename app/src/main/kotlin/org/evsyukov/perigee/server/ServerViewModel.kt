@@ -32,6 +32,10 @@ import org.evsyukov.perigee.sync.NotAllowedException
 import org.evsyukov.perigee.sync.PasswordLoginDisabledException
 import org.evsyukov.perigee.sync.RemoteBook
 import org.evsyukov.perigee.sync.RemoteFile
+import org.evsyukov.perigee.sync.SignInCancelledException
+import org.evsyukov.perigee.sync.SignInExpiredException
+import org.evsyukov.perigee.sync.SignInProvider
+import org.evsyukov.perigee.sync.SignInRefusedException
 import org.evsyukov.perigee.sync.SignedOutException
 import org.evsyukov.perigee.sync.TooManyAttemptsException
 import org.evsyukov.perigee.sync.WrongPasswordException
@@ -48,8 +52,20 @@ enum class ServerFailure {
     /** The server asks to wait before the next try. */
     TooManyAttempts,
 
-    /** The server lets nobody in by password, and the app knows no other way yet. */
+    /** The server lets nobody in by password. */
     PasswordLoginDisabled,
+
+    /** The server signs nobody in through a provider. */
+    NoProviders,
+
+    /** Signing in through a provider took too long, or the app was closed meanwhile. */
+    SignInExpired,
+
+    /** The provider or the server did not let the reader in; their word on it is in [ServerState.signInRefusal]. */
+    SignInRefused,
+
+    /** There is no browser to show the provider's page in. */
+    NoBrowser,
 
     /** The server cannot be reached or refuses. */
     Unreachable,
@@ -76,6 +92,12 @@ data class ServerState(
     val sessionOver: Boolean = false,
     val signingIn: Boolean = false,
     val signInFailure: ServerFailure? = null,
+    /** What the provider or the server said when it did not let the reader in. */
+    val signInRefusal: String = "",
+    /** The server's providers for the reader to choose from; empty while there is no choosing. */
+    val providers: List<SignInProvider> = emptyList(),
+    /** The provider's page to show the reader, until the screen has shown it. */
+    val providerPage: String? = null,
     /** How things stand with the channel reading is synced through; null until it is known. */
     val channel: DeviceChannel? = null,
     val channelBusy: Boolean = false,
@@ -104,6 +126,7 @@ class ServerViewModel(
     private val accounts: Accounts,
     private val library: Library,
     private val arrivals: Arrivals,
+    private val redirects: MutableStateFlow<String?> = Server.redirects,
 ) : AndroidViewModel(application) {
 
     @Suppress("unused") // The constructor the system makes the model with.
@@ -140,6 +163,12 @@ class ServerViewModel(
             }
         }
         viewModelScope.launch {
+            redirects.collect { redirect ->
+                // Taken once, even with two screens of the server about.
+                if (redirect != null && redirects.compareAndSet(redirect, null)) finishSignIn(redirect)
+            }
+        }
+        viewModelScope.launch {
             library.books().collect { books ->
                 val there = books.mapNotNull { book -> book.serverFileId?.let { it to book.id } }.toMap()
                 _state.update { it.copy(onDevice = there, unsent = books.count { book -> book.syncUnsent }) }
@@ -162,6 +191,73 @@ class ServerViewModel(
             }
             _state.update { it.copy(signingIn = false, signInFailure = failure) }
         }
+    }
+
+    /**
+     * Signs in through a provider of the server at [address]: the only one is
+     * gone to straight away, several are offered to choose from.
+     */
+    fun signInThroughProvider(address: String) {
+        if (_state.value.signingIn) return
+        _state.update { it.copy(signingIn = true, signInFailure = null, providers = emptyList()) }
+        viewModelScope.launch {
+            try {
+                val providers = orbit.signInOptions(address).providers
+                when (providers.size) {
+                    0 -> _state.update { it.copy(signingIn = false, signInFailure = ServerFailure.NoProviders) }
+                    1 -> startSignIn(address, providers.single())
+                    else -> _state.update { it.copy(signingIn = false, providers = providers) }
+                }
+            } catch (e: IllegalArgumentException) {
+                _state.update { it.copy(signingIn = false, signInFailure = ServerFailure.BadAddress) }
+            } catch (e: IOException) {
+                signInFailed(e)
+            }
+        }
+    }
+
+    /** The reader chose one of the server's providers to sign in through. */
+    fun chooseProvider(address: String, provider: SignInProvider) {
+        if (_state.value.signingIn) return
+        _state.update { it.copy(signingIn = true, providers = emptyList()) }
+        viewModelScope.launch { startSignIn(address, provider) }
+    }
+
+    /** The reader chose none of the providers. */
+    fun dismissProviders() = _state.update { it.copy(providers = emptyList()) }
+
+    /** The provider's page is shown, or could not be: there is no browser when [opened] is false. */
+    fun providerPageShown(opened: Boolean) =
+        _state.update { it.copy(providerPage = null, signInFailure = if (opened) null else ServerFailure.NoBrowser) }
+
+    private suspend fun startSignIn(address: String, provider: SignInProvider) {
+        try {
+            val page = orbit.startSignIn(address, provider)
+            // Nothing is shown as busy while the reader is at the provider: they may come back without signing in.
+            _state.update { it.copy(signingIn = false, providerPage = page) }
+        } catch (e: IllegalArgumentException) {
+            _state.update { it.copy(signingIn = false, signInFailure = ServerFailure.BadAddress) }
+        } catch (e: IOException) {
+            signInFailed(e)
+        }
+    }
+
+    private fun finishSignIn(redirect: String) {
+        _state.update { it.copy(signingIn = true, signInFailure = null) }
+        viewModelScope.launch {
+            try {
+                orbit.finishSignIn(redirect)
+                _state.update { it.copy(signingIn = false) }
+            } catch (e: SignInCancelledException) {
+                _state.update { it.copy(signingIn = false) }
+            } catch (e: IOException) {
+                signInFailed(e)
+            }
+        }
+    }
+
+    private fun signInFailed(e: IOException) = _state.update {
+        it.copy(signingIn = false, signInFailure = failureOf(e), signInRefusal = (e as? SignInRefusedException)?.message.orEmpty())
     }
 
     fun signOut() {
@@ -365,6 +461,8 @@ class ServerViewModel(
         is TooManyAttemptsException -> ServerFailure.TooManyAttempts
         is PasswordLoginDisabledException -> ServerFailure.PasswordLoginDisabled
         is NotAllowedException -> ServerFailure.NotAllowed
+        is SignInExpiredException -> ServerFailure.SignInExpired
+        is SignInRefusedException -> ServerFailure.SignInRefused
         else -> ServerFailure.Unreachable
     }
 }
