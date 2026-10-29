@@ -151,6 +151,10 @@ Day is the scheme a new reader starts with, and it stays so (`ColorSchemeTest`).
 
 "Warm page by the clock" (`ReaderPrefs.warmFilter`, off by default) tints the page warm between two hours the reader chooses, 22:00 to 07:00 by default, the hours may run over midnight (`Warmth`). The page and the page-coloured strips around it are multiplied by a warm colour: red stays, green and more of blue go, by five steps of strength, the strongest being `#FFB266`; the menus and sheets keep their colours. It is offered for comfort only. Cochrane 2023 found that blue-light filtering lenses probably do not reduce eye strain, and a randomised study of iOS Night Shift found no effect on sleep, so neither the app nor the store texts claim either.
 
+### Font trial
+
+Under the font choice, "Which font do I read fastest?" starts a rough trial (`FontTrial`). Each shipped font, in random order, shows one passage of about 120 words of the open book from the page shown on (or from its start when too little text follows), joined from short paragraphs or cut at the end of a sentence; the passage is laid out by the engine as a page with the reader's settings in that font. The reader taps Next when done, the words per minute are counted, and at the end the speeds are listed with a button to take the fastest font. The result is marked as rough: one passage per font and no check of understanding. Wallace et al. 2022 found one reader's speed differed by about 35 % between their fastest and slowest font, and their stated preference did not predict it (https://jeffhuang.com/papers/Readability_TOCHI22.pdf).
+
 ### Screen on
 
 While a book is on screen the reader keeps the screen on (`FLAG_KEEP_SCREEN_ON`) for the time chosen in "Keep the screen on": as the system sets, 2, 5, 10 or 20 minutes, or while the book is open; 10 minutes by default, as ReadEra keeps it ten minutes longer than the system does. Every touch and every new page, volume keys included, start the time again (`keepScreenOn`). When it runs out the flag is cleared and the system timeout takes over, so the screen goes off that much later. Leaving the book or the app clears the flag.

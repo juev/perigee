@@ -46,6 +46,15 @@
     <string name="scheme_oled">OLED</string>
     <string name="scheme_sepia">Sepia</string>
     <string name="setting_font">Font</string>
+    <string name="font_trial_open">Which font do I read fastest?</string>
+    <string name="font_trial_step">%1$d of %2$d</string>
+    <string name="font_trial_hint">Read at your usual pace, then tap Next.</string>
+    <string name="font_trial_next">Next</string>
+    <string name="font_trial_close">Close</string>
+    <string name="font_trial_result_title">Words per minute</string>
+    <string name="font_trial_rough">Rough: one passage per font, and no check that it was understood.</string>
+    <string name="font_trial_use">Use %1$s</string>
+    <string name="font_trial_too_short">There is too little text here for a trial.</string>
     <string name="setting_font_size">Font size</string>
     <string name="setting_font_weight">Font boldness</string>
     <string name="setting_contrast">Contrast</string>

@@ -101,6 +101,8 @@ data class ReaderState(
     val offer: RemotePosition? = null,
     /** About how many characters a line of the book holds as it is laid out; null when the pages shown are not text enough. */
     val charsPerLine: Int? = null,
+    /** A font trial under way or just finished; null when there is none. */
+    val fontTrial: FontTrialState? = null,
 ) {
     /** The contents entry the page shown belongs to. */
     val chapter: TocEntry? get() = page?.let { shown -> toc.lastOrNull { it.page <= shown.index } }
@@ -404,6 +406,76 @@ class ReaderViewModel(
 
     fun clearSelection() = _state.update { it.copy(selection = null, quoteTouch = null) }
 
+    /** When the passage of the font trial now shown came on the screen. */
+    private var trialShownAt = 0L
+
+    /**
+     * Starts a font trial over passages of the open book from the page shown on, or from its start when
+     * too little text follows. Each shipped font gets one passage, in random order.
+     */
+    fun startFontTrial() = act { open ->
+        val faces = _state.value.fontFaces.shuffled()
+        if (faces.isEmpty()) return@act
+        val (text, language) = open.read { doc ->
+            fun textFrom(page: Int): String {
+                val last = minOf(page + TRIAL_PAGES, doc.pageCount - 1)
+                val start = doc.xpointerOfPage(page) ?: return ""
+                val end = doc.xpointerOfPage(last) ?: return ""
+                return doc.textBetween(start, end).orEmpty()
+            }
+            val ahead = textFrom(doc.currentPage)
+            val text = if (FontTrial.passages(ahead, faces.size).size >= faces.size) ahead else textFrom(0)
+            text to doc.info().language
+        }
+        val passages = FontTrial.passages(text, faces.size)
+        val trial = FontTrialState(faces.take(passages.size), passages)
+        // Fewer than two passages compare nothing: the trial ends at once and says why.
+        if (passages.size < 2) {
+            _state.update { it.copy(fontTrial = trial.copy(faces = emptyList(), passages = emptyList())) }
+            return@act
+        }
+        trialLanguage = language
+        _state.update { it.copy(fontTrial = trial) }
+        showTrialPassage(trial)
+    }
+
+    /** The reader has read the passage shown: its speed is noted and the next font comes. */
+    fun nextFontTrial() = act {
+        val trial = _state.value.fontTrial ?: return@act
+        if (trial.done || trial.page == null) return@act
+        val words = FontTrial.wordCount(trial.passages[trial.step])
+        val speed = FontTrial.wordsPerMinute(words, clock() - trialShownAt)
+        val next = trial.copy(step = trial.step + 1, page = null, results = trial.results + (trial.faces[trial.step] to speed))
+        _state.update { it.copy(fontTrial = next) }
+        if (!next.done) showTrialPassage(next)
+    }
+
+    fun closeFontTrial() = _state.update { it.copy(fontTrial = null) }
+
+    private var trialLanguage = ""
+
+    /** Sets the passage of [trial]'s step in its font, as a page of the book would be laid out, and shows it. */
+    private suspend fun showTrialPassage(trial: FontTrialState) {
+        val viewport = viewport ?: return
+        val (width, height, settings) = laidOut(_prefs.value.copy(twoPagesInLandscape = false), viewport)
+        val file = File(getApplication<Application>().cacheDir, "font-trial.html")
+        file.writeText(trialHtml(trial.passages[trial.step], trialLanguage))
+        val reader = BookReader.open(
+            getApplication(), file, width, height, settings.copy(fontFace = trial.faces[trial.step]),
+            densityDpi = viewport.densityDpi,
+        )
+        val page = try {
+            reader.current()
+        } finally {
+            reader.close()
+        }
+        _state.update { state ->
+            // The trial may have been closed meanwhile.
+            if (state.fontTrial?.step == trial.step) state.copy(fontTrial = state.fontTrial.copy(page = page)) else state
+        }
+        trialShownAt = clock()
+    }
+
     /** Turns the selection into a quote of the given colour. */
     fun quoteSelection(color: Int, note: String? = null) = act {
         val current = _state.value
@@ -625,6 +697,16 @@ class ReaderViewModel(
 
         /** The time pages are timed by; the tests set their own. */
         internal var clock: () -> Long = System::currentTimeMillis
+
+        /** Pages of the book read through for the passages of a font trial. */
+        private const val TRIAL_PAGES = 40
+
+        /** A passage as a page of its own, in the book's language for hyphenation. */
+        internal fun trialHtml(passage: String, language: String): String {
+            fun escaped(text: String) = text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+            val paragraphs = passage.split('\n').joinToString("") { "<p>${escaped(it)}</p>" }
+            return """<!DOCTYPE html><html lang="${escaped(language)}"><head><meta charset="utf-8"/></head><body>$paragraphs</body></html>"""
+        }
 
         // One turn in flight and one behind it: enough for a quick double tap.
         private const val MAX_TURNS_WAITING = 2
