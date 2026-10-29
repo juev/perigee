@@ -203,7 +203,8 @@ fun LibraryScreen(
     Scaffold(
         snackbarHost = { SnackbarHost(snackbar) },
         topBar = {
-            Column {
+            // The list scrolls under the bar: the strip above the search field and the shelves row show it unless painted over.
+            Column(Modifier.background(MaterialTheme.colorScheme.surface).testTag("library-top-bar")) {
                 if (picked.isNotEmpty()) {
                     val sendable = picked.filter { state.canSend(it) }
                     TopAppBar(
