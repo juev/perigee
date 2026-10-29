@@ -92,6 +92,8 @@ A block is treated as a footnote when the book marks it:
 
 Such a note is shown under a rule at the bottom of the page whose text links to it. A book that marks its notes in neither way keeps them where the author put them; the screen can still follow the link with `linkAt`.
 
+Notes are set at 80 % of the text size, with line height to match, so that a note of a few lines fits on the page that cites it; a longer one goes on to the next page. The paragraph spacing setting does not reach note paragraphs. The FB2 reference in the text keeps its own size from `fb2.css`. The size is the same with footnotes off, where notes stay at the end of the chapter or the book.
+
 ## Reading screen
 
 `ReaderScreen` in `:app` shows one book on the whole screen. `ReaderViewModel` owns the open book and outlives rotations; the screen only tells it the size of the page area.

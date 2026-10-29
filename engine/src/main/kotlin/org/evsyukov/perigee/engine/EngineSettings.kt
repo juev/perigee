@@ -71,10 +71,22 @@ data class EngineSettings(
         // Which blocks are footnotes: the notes body of FB2 and the EPUB 3
         // structural semantics. A book that marks its notes in neither way keeps
         // them where the author put them.
-        private const val FOOTNOTE_CSS =
-            "body[name=\"notes\"] section, body[name=\"comments\"] section, " +
-                "*[type~=\"footnote\"], *[type~=\"note\"], *[type~=\"endnote\"], *[type~=\"rearnote\"], " +
-                "*[role~=\"doc-footnote\"], *[role~=\"doc-endnote\"] " +
-                "{ -cr-hint: footnote-inpage; margin: 0 !important; }\n"
+        private val FOOTNOTES = listOf(
+            "body[name=\"notes\"] section", "body[name=\"comments\"] section",
+            "*[type~=\"footnote\"]", "*[type~=\"note\"]", "*[type~=\"endnote\"]", "*[type~=\"rearnote\"]",
+            "*[role~=\"doc-footnote\"]", "*[role~=\"doc-endnote\"]",
+        )
+
+        // Notes are set smaller than the text, as on paper, so that one of a few
+        // lines fits under the text that cites it; the line height follows the
+        // size. `-cr-only-if` keeps the size off inline matches such as the FB2
+        // reference `<a type="note">`, which has its own size in fb2.css. Note
+        // paragraphs get no paragraph spacing: the descendant selectors outrank
+        // the bare `p` of the spacing setting.
+        private val FOOTNOTE_CSS =
+            FOOTNOTES.joinToString(", ") +
+                " { -cr-hint: footnote-inpage; margin: 0 !important; -cr-only-if: not-inline; font-size: 80% !important; }\n" +
+                FOOTNOTES.joinToString(", ") { "$it p" } +
+                " { margin-top: 0 !important; margin-bottom: 0 !important; }\n"
     }
 }

@@ -287,6 +287,46 @@ class EngineFeaturesTest {
         assertFalse("the first page changes when its footnote joins it", with.sameAs(without))
     }
 
+    // The engine reports where note text lies in the flow of the book, not in
+    // the footnote area at the bottom of a page, so the note is measured there;
+    // the same style sets it in both places.
+
+    @Test
+    fun epubFootnoteIsSetSmallerThanTheText() = footnoteIsSmallerThanTheText(TestBooks.epub(dir))
+
+    @Test
+    fun fb2FootnoteIsSetSmallerThanTheText() = footnoteIsSmallerThanTheText(TestBooks.fb2(dir))
+
+    private fun footnoteIsSmallerThanTheText(file: File) = open(file).use { doc ->
+        val (_, text) = doc.locate(TestBooks.LINK_TEXT)
+        val (_, note) = doc.locate("zebras")
+        assertTrue(
+            "note lines are ${note.height()} px high, text lines ${text.height()} px",
+            note.height() < text.height() * 9 / 10,
+        )
+    }
+
+    @Test
+    fun fb2NoteReferenceKeepsItsOwnSize() {
+        // fb2.css sets the reference at 70 %; the note size must not reach it.
+        val full = open(TestBooks.epub(dir)).use { it.locate(TestBooks.LINK_TEXT).second.width() }
+        val reference = open(TestBooks.fb2(dir)).use { it.locate(TestBooks.LINK_TEXT).second.width() }
+        assertTrue("the reference is $reference px wide, $full px at full size", reference < full * 3 / 4)
+    }
+
+    // FB2 notes kept their paragraphs together before the setting was kept out
+    // of them, so only EPUB is checked.
+    @Test
+    fun footnoteParagraphsTakeNoParagraphSpacing() {
+        val file = TestBooks.epub(dir, longNote = true)
+        fun gap(spacing: Int) = open(file, base.copy(paragraphSpacingPercent = spacing)).use { doc ->
+            val (_, first) = doc.locate("zebras")
+            val (_, second) = doc.locate(TestBooks.NOTE_SECOND_WORD)
+            second.top - first.top
+        }
+        assertEquals("from the first paragraph of the note to the second", gap(0), gap(100))
+    }
+
     // --- layout settings
 
     @Test
