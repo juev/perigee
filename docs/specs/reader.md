@@ -68,7 +68,7 @@ Not done yet: fonts of the reader's own, from a folder.
 
 | Setting | Field | Notes |
 |---|---|---|
-| Colour scheme | `colors` | Text and page colour. Presets: `Day`, `Night`, `Sepia`. Night is `#C8C8C8` on dark grey `#1E1E1E`, not on black. Sepia is `#644D32` on `#F0DEC7`, measured from ReadEra. |
+| Colour scheme | `colors` | Text and page colour. Presets: `Day`, `Night`, `Oled`, `Sepia`. Night is `#C8C8C8` on dark grey `#1E1E1E`, not on black. OLED is `#FFFFFF` on pure black, so the black pixels of an OLED screen stay off; its colours are those of ReadEra's "Night contrast", measured on the reader's phone on 2026-10-29 (ReadEra's "Night" is `#A1A1A1` and its "Console" `#008000`, both on black). Sepia is `#644D32` on `#F0DEC7`, measured from ReadEra. |
 | Font | `fontFace` | A face from `Engine.fontFaces`. |
 | Font size | `fontSize` | |
 | Font boldness | `fontWeight` | CSS weight of regular text, 400 by default. Values the engine accepts are in `EngineSettings.FONT_WEIGHTS`. Bold text gets heavier with it. |
@@ -122,7 +122,7 @@ A touch is sorted out in this order:
 2. On a link: inside the book it jumps to the target and remembers where the reader came from; outside the book it is handed to the system.
 3. On a quote, it opens the quote's actions.
 4. With the menu open, it closes the menu.
-5. Otherwise by zone (`zoneOf`): the top left corner switches day and night, the top right corner sets or clears a bookmark (both can be switched off), the middle of the page opens the menu, and the rest turns pages by the scheme chosen — right forward and left back, bottom forward and top back, anywhere forward, or not at all.
+5. Otherwise by zone (`zoneOf`): the top left corner switches between the light scheme and the dark scheme (Night or OLED) chosen last, the top right corner sets or clears a bookmark (both can be switched off), the middle of the page opens the menu, and the rest turns pages by the scheme chosen — right forward and left back, bottom forward and top back, anywhere forward, or not at all.
 
 Swipes turn pages along the direction chosen in "Turn pages": sideways or up and down. Volume keys turn pages. Sliding along the left edge changes brightness when that is switched on.
 
@@ -140,7 +140,7 @@ A thin line at the bottom edge of the page shows the position in the book, with 
 
 In ReadEra's order: turn pages, colour scheme, font, font size, boldness, line spacing, alignment, hyphenation, paragraph spacing, paragraph indent, page margins; then two pages in landscape, the turn scheme, the gesture options and how long the screen stays on. Sizes are stored in dp. While text is justified and hyphenation is off, a note under the hyphenation switch says that the gaps between words will be wide; the reader's choice stays as it is.
 
-Differences from ReadEra, all open to change: the schemes are Day, Night and Sepia only; margins are a switch between wide (34 dp at the sides, 16 dp at the top, 23 dp at the bottom) and narrow (8 dp, 12 dp and 20 dp), narrow by default; the strip the page leaves clear under a camera cutout counts as top margin, so the text starts right under it. The widths are ReadEra's, measured on screenshots of both apps on the same 560 dpi phone on 2026-10-13: ReadEra's sides go from 30 px to 120 px with the switch, its top from 156 px to 160 px, counted to the nearest letter; its last line ended 75 to 161 px from the bottom edge over seven pages. At ReadEra's font size 62 and Perigee's 18 dp, both Roboto, the letters are the same: x-height 33 px, stroke about 7 px. Lines are 86 px apart in ReadEra at its 120 % and 81 px in Perigee at 110 %, which is the same spacing per 100 %; line spacing is 120 % by default since, as in the reader's ReadEra; font size is in dp, not ReadEra's units.
+Differences from ReadEra, all open to change: the schemes are Day, Night, OLED and Sepia only; margins are a switch between wide (34 dp at the sides, 16 dp at the top, 23 dp at the bottom) and narrow (8 dp, 12 dp and 20 dp), narrow by default; the strip the page leaves clear under a camera cutout counts as top margin, so the text starts right under it. The widths are ReadEra's, measured on screenshots of both apps on the same 560 dpi phone on 2026-10-13: ReadEra's sides go from 30 px to 120 px with the switch, its top from 156 px to 160 px, counted to the nearest letter; its last line ended 75 to 161 px from the bottom edge over seven pages. At ReadEra's font size 62 and Perigee's 18 dp, both Roboto, the letters are the same: x-height 33 px, stroke about 7 px. Lines are 86 px apart in ReadEra at its 120 % and 81 px in Perigee at 110 %, which is the same spacing per 100 %; line spacing is 120 % by default since, as in the reader's ReadEra; font size is in dp, not ReadEra's units.
 
 ### Colour schemes
 
