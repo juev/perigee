@@ -13,6 +13,7 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextReplacement
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import java.io.File
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.evsyukov.perigee.R
@@ -70,7 +71,8 @@ class ServerScreenTest {
         val arrivals = Arrivals(
             activity, library, Covers(File(activity.cacheDir, "server-covers")), LibraryPreferences.get(activity),
         ) { BookSink { _, _ -> null } }
-        model = ServerViewModel(activity.application, orbit, accounts, library, arrivals)
+        // A flow of its own: a model made here outlives its test, and would take the answers meant for SignInRedirectTest.
+        model = ServerViewModel(activity.application, orbit, accounts, library, arrivals, MutableStateFlow(null))
         rule.setContent { MaterialTheme { ServerScreen(onOpen = { opened = it }, onClose = {}, model = model) } }
     }
 
