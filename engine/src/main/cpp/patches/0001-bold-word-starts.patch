@@ -175,10 +175,10 @@ index caea9b6b..8eead45a 100644
                      line_h, valign_dy, indent, enode, textOffset, letter_spacing );
                  baseflags &= ~LTEXT_FLAG_NEWLINE & ~LTEXT_SRC_IS_CLEAR_BOTH; // clear newline flag
 diff --git a/crengine/src/lvtextfm.cpp b/crengine/src/lvtextfm.cpp
-index 07bb6352..ead0bc08 100644
+index 07bb6352..e84b01c7 100644
 --- a/crengine/src/lvtextfm.cpp
 +++ b/crengine/src/lvtextfm.cpp
-@@ -5619,11 +5619,14 @@ public:
+@@ -5619,11 +5619,15 @@ public:
                      // So, get the node (a cloneNode) and offset at which we stopped on,
                      // get its source node, and try to find it in the normal sequence:
                      // we can then restart on it at the same offset/charindex.
@@ -186,21 +186,22 @@ index 07bb6352..ead0bc08 100644
 +                    // Perigee: offsets are compared in the node's text (index in the source plus the
 +                    // source's offset), as a node may come as several sources (bold word starts) whose
 +                    // indexes each start from 0. With one source per node this is the comparison as before.
++                    // An object source keeps no text offset: the union holds its sizes there.
 +                    int orig_offset = 0;
                      ldomNode * orig_node = (ldomNode *) m_srcs[wrapPos]->object;
                      if ( orig_node ) {
                          orig_node = orig_node->getCloneNodeSource();
 -                        orig_offset = m_charindex[wrapPos];
-+                        orig_offset = m_charindex[wrapPos] + m_srcs[wrapPos]->t.offset;
++                        orig_offset = m_charindex[wrapPos] + ((m_srcs[wrapPos]->flags & LTEXT_SRC_IS_OBJECT) ? 0 : m_srcs[wrapPos]->t.offset);
                      }
                      // First, skip from here until non-first-line-clone
                      int i = wrapPos;
-@@ -5635,7 +5638,7 @@ public:
+@@ -5635,7 +5639,7 @@ public:
                          while (i < m_length) {
                              ldomNode * node = (ldomNode *) m_srcs[i]->object;
                              if ( node == orig_node ) {
 -                                if ( m_charindex[i] == orig_offset ) {
-+                                if ( m_charindex[i] + m_srcs[i]->t.offset == orig_offset ) {
++                                if ( m_charindex[i] + ((m_srcs[i]->flags & LTEXT_SRC_IS_OBJECT) ? 0 : m_srcs[i]->t.offset) == orig_offset ) {
                                      found = true;
                                      break;
                                  }
