@@ -110,6 +110,6 @@ SIL Open Font License 1.1.
 zlib and the C++ runtime
 Come with the Android NDK 28.2.13676358. zlib is under the zlib license; libc++ is under the Apache License 2.0 with LLVM exceptions.
 
-AndroidX (Activity, Compose, Core, DataStore, Lifecycle, Room, WorkManager), Kotlin and kotlinx.coroutines
+AndroidX (Activity, Browser, Compose, Core, DataStore, Lifecycle, Room, WorkManager), Kotlin and kotlinx.coroutines
 Copyright (C) The Android Open Source Project, JetBrains s.r.o. and contributors
 The Apache License, version 2.0.

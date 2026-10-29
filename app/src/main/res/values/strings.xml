@@ -194,7 +194,14 @@
     <string name="server_not_a_server">There is no bookOrbit server at this address.</string>
     <string name="server_wrong_password">The server does not accept this user name and password.</string>
     <string name="server_too_many_attempts">Too many attempts. The server asks to wait before the next one.</string>
-    <string name="server_password_login_disabled">This server does not let anyone in by password, and the app cannot sign in any other way yet.</string>
+    <string name="server_password_login_disabled">This server does not let anyone in by password. Sign in with SSO.</string>
+    <string name="server_sign_in_provider">Sign in with SSO</string>
+    <string name="server_choose_provider">Sign in with</string>
+    <string name="server_no_providers">This server has no single sign-on set up. Sign in with a user name and password.</string>
+    <string name="server_sign_in_expired">Signing in took too long. Start again.</string>
+    <string name="server_sign_in_refused">The server did not let you in.</string>
+    <string name="server_sign_in_refused_because">The server did not let you in: %1$s</string>
+    <string name="server_no_browser">There is no browser to open the sign-in page in.</string>
     <string name="server_unreachable">The server does not answer. Check the address and the network.</string>
     <string name="server_not_allowed">Your account on the server is not allowed to do this.</string>
     <string name="server_untitled">Untitled</string>

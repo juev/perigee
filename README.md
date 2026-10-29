@@ -17,7 +17,7 @@ Works today:
 
 - A library of the books in the folders you pick: shelves, authors, series, collections, search.
 - OPDS catalogues, 1.x and 2.0: browsing, search, downloading into the library with progress and a cancel; Project Gutenberg is suggested out of the box.
-- A bookOrbit server: signing in, its books with covers and search, downloading them, and finding which of your books the server already has.
+- A bookOrbit server: signing in by password or through the server's single sign-on (OIDC), its books with covers and search, downloading them, and finding which of your books the server already has.
 
 - Syncing with bookOrbit: the place you got to, both ways, with a later place read elsewhere offered rather than jumped to; highlights with notes and bookmarks, both ways; status and rating; time spent reading for the server's statistics.
 

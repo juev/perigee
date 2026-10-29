@@ -198,7 +198,14 @@
     <string name="server_not_a_server">По этому адресу нет сервера bookOrbit.</string>
     <string name="server_wrong_password">Сервер не принимает это имя пользователя и пароль.</string>
     <string name="server_too_many_attempts">Слишком много попыток. Сервер просит подождать перед следующей.</string>
-    <string name="server_password_login_disabled">На этом сервере вход по паролю отключён, а по-другому приложение входить пока не умеет.</string>
+    <string name="server_password_login_disabled">На этом сервере вход по паролю отключён. Войдите через SSO.</string>
+    <string name="server_sign_in_provider">Войти через SSO</string>
+    <string name="server_choose_provider">Войти через</string>
+    <string name="server_no_providers">На этом сервере не настроен единый вход. Войдите по имени пользователя и паролю.</string>
+    <string name="server_sign_in_expired">Вход занял слишком много времени. Начните заново.</string>
+    <string name="server_sign_in_refused">Сервер отказал во входе.</string>
+    <string name="server_sign_in_refused_because">Сервер отказал во входе: %1$s</string>
+    <string name="server_no_browser">Нет браузера, чтобы открыть страницу входа.</string>
     <string name="server_unreachable">Сервер не отвечает. Проверьте адрес и сеть.</string>
     <string name="server_not_allowed">Вашей учётной записи на сервере это не разрешено.</string>
     <string name="server_untitled">Без названия</string>
