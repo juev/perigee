@@ -70,6 +70,12 @@ data class ReaderPrefs(
     val bookmarkByCorner: Boolean = true,
     /** How long the screen stays on after the last touch or turn: [SCREEN_ON_SYSTEM], [SCREEN_ON_ALWAYS] or minutes. */
     val screenOnMinutes: Int = 10,
+    /** The page is tinted warm between [warmFromMinute] and [warmToMinute], minutes of the day. */
+    val warmFilter: Boolean = false,
+    val warmFromMinute: Int = 22 * 60,
+    val warmToMinute: Int = 7 * 60,
+    /** How warm the tint is, one of [WARM_STRENGTHS]. */
+    val warmStrength: Int = 3,
 ) {
     /** Choosing a scheme by hand; it becomes the one the day/night switch goes to on its side, light or dark. */
     fun withScheme(scheme: ColorScheme): ReaderPrefs =
@@ -90,6 +96,10 @@ data class ReaderPrefs(
         /** The screen stays on while the book is open. */
         const val SCREEN_ON_ALWAYS = -1
         val SCREEN_ON_CHOICES = listOf(SCREEN_ON_SYSTEM, 2, 5, 10, 20, SCREEN_ON_ALWAYS)
+
+        /** Times the warm filter can start or end at: each hour of the day, in minutes. */
+        val WARM_TIMES = (0 until 24).map { it * 60 }
+        val WARM_STRENGTHS = 1..5
     }
 }
 
@@ -127,6 +137,10 @@ class ReaderPreferences private constructor(private val store: DataStore<Prefere
             dayNightByCorner = p[DAY_NIGHT_CORNER] ?: d.dayNightByCorner,
             bookmarkByCorner = p[BOOKMARK_CORNER] ?: d.bookmarkByCorner,
             screenOnMinutes = p[SCREEN_ON] ?: d.screenOnMinutes,
+            warmFilter = p[WARM_FILTER] ?: d.warmFilter,
+            warmFromMinute = p[WARM_FROM] ?: d.warmFromMinute,
+            warmToMinute = p[WARM_TO] ?: d.warmToMinute,
+            warmStrength = p[WARM_STRENGTH] ?: d.warmStrength,
         )
     }
 
@@ -153,6 +167,10 @@ class ReaderPreferences private constructor(private val store: DataStore<Prefere
         p[DAY_NIGHT_CORNER] = v.dayNightByCorner
         p[BOOKMARK_CORNER] = v.bookmarkByCorner
         p[SCREEN_ON] = v.screenOnMinutes
+        p[WARM_FILTER] = v.warmFilter
+        p[WARM_FROM] = v.warmFromMinute
+        p[WARM_TO] = v.warmToMinute
+        p[WARM_STRENGTH] = v.warmStrength
     }
 
     /** A value written by a newer version that this one does not know reads as the default. */
@@ -182,6 +200,10 @@ class ReaderPreferences private constructor(private val store: DataStore<Prefere
         private val DAY_NIGHT_CORNER = booleanPreferencesKey("day_night_corner")
         private val BOOKMARK_CORNER = booleanPreferencesKey("bookmark_corner")
         private val SCREEN_ON = intPreferencesKey("screen_on_minutes")
+        private val WARM_FILTER = booleanPreferencesKey("warm_filter")
+        private val WARM_FROM = intPreferencesKey("warm_from_minute")
+        private val WARM_TO = intPreferencesKey("warm_to_minute")
+        private val WARM_STRENGTH = intPreferencesKey("warm_strength")
 
         @Volatile
         private var instance: ReaderPreferences? = null

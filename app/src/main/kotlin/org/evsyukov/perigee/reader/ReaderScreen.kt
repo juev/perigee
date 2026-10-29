@@ -56,8 +56,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.input.pointer.PointerEventPass
@@ -167,6 +169,9 @@ fun ReaderScreen(file: File, onClose: () -> Unit, viewModel: ReaderViewModel = v
     val colors = state.page?.colors ?: ReaderViewModel.colorsOf(prefs.colorScheme)
     val paper = Color(0xFF000000 or colors.background.toLong())
     val ink = Color(0xFF000000 or colors.text.toLong())
+    // The warm filter tints the page and the strips around it, not the menus and sheets over them.
+    val minute by minuteOfDay()
+    val tint = Warmth.tintAt(prefs, minute)
 
     // The page keeps clear of the camera cutout, and by the same amount on the
     // opposite side, so the text stays centred; the strips stay page-coloured.
@@ -176,7 +181,7 @@ fun ReaderScreen(file: File, onClose: () -> Unit, viewModel: ReaderViewModel = v
     Box(
         Modifier
             .fillMaxSize()
-            .background(paper)
+            .background(if (tint == null) paper else Color(paper.red * tint.red, paper.green * tint.green, paper.blue * tint.blue))
             // Sees every touch before the page does, and takes none of them.
             .pointerInput(activity) {
                 awaitPointerEventScope {
@@ -206,6 +211,10 @@ fun ReaderScreen(file: File, onClose: () -> Unit, viewModel: ReaderViewModel = v
                 .fillMaxSize()
                 .padding(start = sideInset, end = sideInset, top = cutout.calculateTopPadding(), bottom = cutout.calculateBottomPadding())
                 .clipToBounds()
+                .drawWithContent {
+                    drawContent()
+                    if (tint != null) drawRect(tint, blendMode = BlendMode.Multiply)
+                }
                 .onSizeChanged { area = it },
         ) {
             val width = area.width

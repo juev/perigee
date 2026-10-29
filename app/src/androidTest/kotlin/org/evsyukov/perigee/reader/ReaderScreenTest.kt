@@ -10,9 +10,11 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.toPixelMap
 import androidx.compose.ui.test.ComposeTimeoutException
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertTextEquals
+import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.click
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.longClick
@@ -33,6 +35,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModelProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import java.io.File
+import java.time.LocalTime
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.evsyukov.perigee.R
@@ -283,6 +286,20 @@ class ReaderScreenTest {
         rule.runOnUiThread { activity.onBackPressedDispatcher.onBackPressed() }
         waitForPage(0)
         assertTrue("nothing left to return to", !model().state.value.canGoBack)
+    }
+
+    @Test
+    fun warmFilterTintsThePageDuringItsHours() {
+        show()
+        waitForBook()
+        fun corner() = rule.onNodeWithTag("page").captureToImage().toPixelMap()[2, 2]
+        assertEquals("a white page before", 1f, corner().blue, 0.02f)
+        val hour = LocalTime.now().hour * 60
+        model().updatePrefs { it.copy(warmFilter = true, warmFromMinute = hour, warmToMinute = (hour + 120) % (24 * 60), warmStrength = 5) }
+        rule.waitUntil(TIMEOUT) { corner().blue < 0.5f }
+        val tinted = corner()
+        assertEquals("the page keeps its red", 1f, tinted.red, 0.02f)
+        assertTrue("and loses more blue than green: $tinted", tinted.blue < tinted.green && tinted.green < 0.8f)
     }
 
     @Test

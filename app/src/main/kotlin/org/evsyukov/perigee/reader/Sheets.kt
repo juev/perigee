@@ -150,7 +150,10 @@ internal fun SettingsSheet(
                     onMore = { onChange { it.copy(fontSize = (it.fontSize + 1).coerceIn(ReaderPrefs.FONT_SIZES)) } },
                 )
                 WeightSlider(prefs.fontWeight) { chosen -> onChange { it.copy(fontWeight = chosen) } }
-                ContrastSlider(prefs.contrast) { chosen -> onChange { it.copy(contrast = chosen) } }
+                // Darker strokes step by step, with no line moved; the page is painted again as the thumb is let go.
+                StepSlider(R.string.setting_contrast, prefs.contrast, EngineSettings.CONTRASTS, "contrast") { chosen ->
+                    onChange { it.copy(contrast = chosen) }
+                }
                 Stepper(
                     R.string.setting_line_spacing, stringResource(R.string.percent, prefs.lineSpacingPercent), "line-spacing",
                     onLess = { onChange { it.copy(lineSpacingPercent = stepped(it.lineSpacingPercent, -1, ReaderPrefs.LINE_SPACINGS)) } },
@@ -215,6 +218,18 @@ internal fun SettingsSheet(
                 }
                 Toggle(R.string.setting_day_night_corner, prefs.dayNightByCorner) { on -> onChange { it.copy(dayNightByCorner = on) } }
                 Toggle(R.string.setting_bookmark_corner, prefs.bookmarkByCorner) { on -> onChange { it.copy(bookmarkByCorner = on) } }
+                Toggle(R.string.setting_warm_filter, prefs.warmFilter) { on -> onChange { it.copy(warmFilter = on) } }
+                if (prefs.warmFilter) {
+                    Choice(R.string.setting_warm_from, prefs.warmFromMinute, ReaderPrefs.WARM_TIMES, label = { clockTime(it) }) { chosen ->
+                        onChange { it.copy(warmFromMinute = chosen) }
+                    }
+                    Choice(R.string.setting_warm_to, prefs.warmToMinute, ReaderPrefs.WARM_TIMES, label = { clockTime(it) }) { chosen ->
+                        onChange { it.copy(warmToMinute = chosen) }
+                    }
+                    StepSlider(R.string.setting_warm_strength, prefs.warmStrength, ReaderPrefs.WARM_STRENGTHS, "warm-strength") { chosen ->
+                        onChange { it.copy(warmStrength = chosen) }
+                    }
+                }
                 Choice(
                     R.string.setting_screen_on, prefs.screenOnMinutes, ReaderPrefs.SCREEN_ON_CHOICES,
                     label = {
@@ -304,20 +319,22 @@ private fun Stepper(label: Int, value: String, tag: String, onLess: () -> Unit, 
     }
 }
 
-/** Contrast: darker strokes step by step, with no line moved; the page is painted again as the thumb is let go. */
+/** A minute of the day as the clock shows it. */
+private fun clockTime(minute: Int): String = "%02d:%02d".format(minute / 60, minute % 60)
+
+/** A slider over a few whole steps; the choice is made when the thumb is let go. */
 @Composable
-private fun ContrastSlider(contrast: Int, onChoose: (Int) -> Unit) {
-    val steps = EngineSettings.CONTRASTS
-    var position by remember(contrast) { mutableFloatStateOf(contrast.coerceIn(steps).toFloat()) }
+private fun StepSlider(label: Int, value: Int, steps: IntRange, tag: String, onChoose: (Int) -> Unit) {
+    var position by remember(value) { mutableFloatStateOf(value.coerceIn(steps).toFloat()) }
     Column(Modifier.fillMaxWidth()) {
-        SettingLabel(R.string.setting_contrast)
+        SettingLabel(label)
         Slider(
             value = position,
             onValueChange = { position = it },
             onValueChangeFinished = { onChoose(position.roundToInt()) },
             valueRange = steps.first.toFloat()..steps.last.toFloat(),
             steps = steps.last - steps.first - 1,
-            modifier = Modifier.testTag("contrast"),
+            modifier = Modifier.testTag(tag),
         )
     }
 }
