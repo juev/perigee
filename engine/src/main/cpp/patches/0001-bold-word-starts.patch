@@ -174,22 +174,77 @@ index caea9b6b..8eead45a 100644
                  txform->AddSourceLine( txt.c_str(), txt.length(), cl, bgcl, font.get(), lang_cfg, baseflags | tflags,
                      line_h, valign_dy, indent, enode, textOffset, letter_spacing );
                  baseflags &= ~LTEXT_FLAG_NEWLINE & ~LTEXT_SRC_IS_CLEAR_BOTH; // clear newline flag
+diff --git a/crengine/src/lvtextfm.cpp b/crengine/src/lvtextfm.cpp
+index 07bb6352..ead0bc08 100644
+--- a/crengine/src/lvtextfm.cpp
++++ b/crengine/src/lvtextfm.cpp
+@@ -5619,11 +5619,14 @@ public:
+                     // So, get the node (a cloneNode) and offset at which we stopped on,
+                     // get its source node, and try to find it in the normal sequence:
+                     // we can then restart on it at the same offset/charindex.
+-                    lUInt16 orig_offset = 0;
++                    // Perigee: offsets are compared in the node's text (index in the source plus the
++                    // source's offset), as a node may come as several sources (bold word starts) whose
++                    // indexes each start from 0. With one source per node this is the comparison as before.
++                    int orig_offset = 0;
+                     ldomNode * orig_node = (ldomNode *) m_srcs[wrapPos]->object;
+                     if ( orig_node ) {
+                         orig_node = orig_node->getCloneNodeSource();
+-                        orig_offset = m_charindex[wrapPos];
++                        orig_offset = m_charindex[wrapPos] + m_srcs[wrapPos]->t.offset;
+                     }
+                     // First, skip from here until non-first-line-clone
+                     int i = wrapPos;
+@@ -5635,7 +5638,7 @@ public:
+                         while (i < m_length) {
+                             ldomNode * node = (ldomNode *) m_srcs[i]->object;
+                             if ( node == orig_node ) {
+-                                if ( m_charindex[i] == orig_offset ) {
++                                if ( m_charindex[i] + m_srcs[i]->t.offset == orig_offset ) {
+                                     found = true;
+                                     break;
+                                 }
 diff --git a/crengine/src/lvtinydom.cpp b/crengine/src/lvtinydom.cpp
-index edce35e9..5072be41 100644
+index edce35e9..d8070cc7 100644
 --- a/crengine/src/lvtinydom.cpp
 +++ b/crengine/src/lvtinydom.cpp
-@@ -10843,6 +10843,14 @@ bool ldomXPointer::getRect(lvRect & rect, bool extended, bool adjusted, int * ct
+@@ -10798,8 +10798,11 @@ bool ldomXPointer::getRect(lvRect & rect, bool extended, bool adjusted, int * ct
+                 printf(" if (%x==%x || %x==%x)\n", src->object, node , ((ldomNode*)(src->object))->getEffectiveNode(), node);
+                 printf(" %d %s %s vs. %d\n", i, LCSTR(ldomXPointer((ldomNode*)(src->object),src->t.offset).toStringV1()),
+                                     LCSTR(ldomXPointer(((ldomNode*)(src->object))->getEffectiveNode() ,src->t.offset).toStringV1()), offset); */
++                // Perigee: a later part of a node in parts starts past 0 too; that is no ::first-letter.
++                bool laterPart = !isObject && i > 0 && txtform->GetSrcInfo(i - 1)->object == src->object
++                              && !(txtform->GetSrcInfo(i - 1)->flags & LTEXT_SRC_IS_OBJECT);
+                 // Check and handle the case of ::first-letter
+-                if ( src->t.offset > 0 && offset < src->t.offset) {
++                if ( src->t.offset > 0 && offset < src->t.offset && !laterPart) {
+                     // Currently, we can only get a non-0 src->t.offset if that text
+                     // node gets its first char(s) rendered as ::first-letter and
+                     // only the remainig chars are to be rendered normally.
+@@ -10836,13 +10839,25 @@ bool ldomXPointer::getRect(lvRect & rect, bool extended, bool adjusted, int * ct
+                         break;
+                     }
+                 }
++                // Perigee: a text node may come as several sources, each a part of its text (bold word
++                // starts): the one taken, among the first-line clones as among the others, is the part
++                // holding offset, not the first or the last.
++                bool beyond = false;
++                if ( !isObject && offset >= (int)src->t.len && i + 1 < txtform->GetSrcCount() ) {
++                    const src_text_fragment_t * next = txtform->GetSrcInfo(i + 1);
++                    beyond = next->object == src->object && !(next->flags & LTEXT_SRC_IS_OBJECT)
++                          && (int)next->t.offset <= offset && (int)next->t.offset >= (int)src->t.len;
++                }
+                 // Generic text node case: we found the src that came from our node
+                 if ( is_first_line_clone ) {
+-                    firstLineSrcIndex = i;
++                    if ( !beyond && (firstLineSrcIndex < 0 || isObject || (int)src->t.offset <= offset) )
++                        firstLineSrcIndex = i;
+                     // srcLen should be valid for both srcIndex
                      // Don't break, we want to find the non-first-line srcIndex
                  }
                  else {
-+                    // Perigee: a text node may come as several sources, each a part of its text (bold word
-+                    // starts): the one taken is the part holding offset, not the first.
-+                    if ( !isObject && offset >= (int)src->t.len && i + 1 < txtform->GetSrcCount() ) {
-+                        const src_text_fragment_t * next = txtform->GetSrcInfo(i + 1);
-+                        if ( next->object == src->object && !(next->flags & LTEXT_SRC_IS_OBJECT)
-+                                && (int)next->t.offset <= offset && (int)next->t.offset >= (int)src->t.len )
-+                            continue;
-+                    }
++                    if ( beyond )
++                        continue;
                      srcIndex = i;
                      if ( firstLineSrcIndex >= 0)
                          laterLineSrcIndex = i;

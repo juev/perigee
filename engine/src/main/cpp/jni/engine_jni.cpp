@@ -358,9 +358,10 @@ Java_org_evsyukov_perigee_engine_NativeEngine_applySettings(
     LVDocView* view = viewOf(handle);
     // A new layout moves page boundaries; the reader stays where they were.
     const bool loaded = view->getDocument() != nullptr;
+    ldomXPointer position = loaded ? view->getBookmark() : ldomXPointer();
+    // After the place is taken: a paragraph formatted again to find it must be laid out as the pages were.
     gBoldWordStarts[view] = boldWordStarts;
     if (loaded) perigeeSetBoldWordStarts(view->getDocument(), boldWordStarts);
-    ldomXPointer position = loaded ? view->getBookmark() : ldomXPointer();
 
     CRPropRef props = LVCreatePropsContainer();
     props->setString(PROP_FONT_FACE, toStd(env, fontFace).c_str());

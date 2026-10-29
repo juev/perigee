@@ -416,6 +416,32 @@ class EngineFeaturesTest {
     }
 
     @Test
+    fun aParagraphWithAStyledFirstLineKeepsItsLines() {
+        // A first line styled by the book, as chapters often open: the engine lays that line out from a copy
+        // of the text and then goes on in the text itself. A colour leaves the metrics as they are, so every
+        // word must stand where it stands in the same paragraph with no first-line style.
+        val text = (1..12).joinToString(" ") { "Lorem ipsum dolor sit amet, consectetur adipiscing elit number $it." }
+        fun book(name: String, css: String) = File(dir, name).apply {
+            writeText("""<!DOCTYPE html><html><head><meta charset="utf-8"/><style>$css</style></head><body><p>$text</p></body></html>""")
+        }
+        val styled = book("first-line.html", "p::first-line { color: #880000 }")
+        val plain = book("no-first-line.html", "")
+        // With a drop letter as well, the text node starts after it.
+        val dropped = book("first-letter-line.html", "p::first-letter { color: #000088 } p::first-line { color: #880000 }")
+        val droppedPlain = book("first-letter.html", "p::first-letter { color: #000088 }")
+        val words = listOf("Lorem", "dolor", "number 1.", "number 2.", "number 3.", "number 7.", "number 12.")
+        fun places(file: File) = open(file, base.copy(boldWordStarts = true)).use { doc ->
+            words.map { doc.locate(it).second }
+        }
+        val reddish = open(styled, base.copy(boldWordStarts = true)).use { doc ->
+            pixels(doc.render(), Rect(0, 0, WIDTH, HEIGHT)).count { red(it) > 100 && red(it) > 2 * blue(it) }
+        }
+        assertTrue("the first line is styled: $reddish reddish pixels", reddish > 100)
+        assertEquals(places(plain), places(styled))
+        assertEquals(places(droppedPlain), places(dropped))
+    }
+
+    @Test
     fun boldWordStartsGoAwayWhenSwitchedOff() = open(TestBooks.epub(dir)).use { doc ->
         val plain = doc.render()
         doc.apply(base.copy(boldWordStarts = true))
