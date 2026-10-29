@@ -26,6 +26,7 @@ Result of the run: 8 tests, 0 failures.
 | `spine-nonxhtml.epub` | an SVG item in the spine before the chapters |
 | `media-css.epub` | `@media` rules that change `display` |
 | `contract.fb2` | a format the server cannot convert positions for |
+| `contract.pdf` | a format the app does not read, left out of the server's list |
 
 The corpus is synthetic. No real-world book was tested; publisher EPUBs with deep nesting, tables, ruby or embedded fonts remain unverified.
 

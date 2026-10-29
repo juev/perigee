@@ -20,7 +20,7 @@ HERE = Path(__file__).resolve().parent
 BASE = "http://127.0.0.1:3070/api/v1"
 SETUP_TOKEN = "contract-test-setup-token"
 USER = {"username": "reader", "name": "Reader", "email": "reader@example.invalid", "password": "Contract-Test-1"}
-BOOKS = 4
+BOOKS = 5
 
 
 def call(method, path, body=None, headers=None):

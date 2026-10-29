@@ -217,13 +217,18 @@ class BookOrbit(
         }
     }
 
-    override suspend fun books(query: String, page: Int): RemotePage = books(query, page, PAGE_SIZE)
+    override suspend fun books(query: String, page: Int): RemotePage = books(query, page, PAGE_SIZE, readableOnly = true)
 
-    private suspend fun books(query: String, page: Int, size: Int): RemotePage {
+    /**
+     * With [readableOnly], the server leaves out the books with no file the app reads, so that
+     * a page and the total count only what can be downloaded.
+     */
+    private suspend fun books(query: String, page: Int, size: Int, readableOnly: Boolean = false): RemotePage {
         val body = JSONObject()
             .put("pagination", JSONObject().put("page", page).put("size", size))
             .put("sort", JSONArray().put(JSONObject().put("field", "title").put("dir", "asc")))
         if (query.isNotBlank()) body.put("q", query.trim().take(MAX_QUERY))
+        if (readableOnly) body.put("filter", JSONObject(READABLE_FILTER))
         val reply = jwt("POST", "/books/query", body)
         if (!reply.ok) throw failure(reply)
         val json = reply.json() ?: throw ServerResponseException(reply.code, "no list of books")
@@ -1094,6 +1099,15 @@ class BookOrbit(
         const val DEVICE_MODEL = "Perigee"
         private const val PAGE_SIZE = 50
         private const val MAX_QUERY = 200
+
+        /**
+         * The books with a file, any of theirs, in a format the engine reads. The server takes up to
+         * twenty formats in one rule and leaves the ones it does not know unmatched.
+         */
+        private val READABLE_FILTER: String = JSONObject()
+            .put("type", "group").put("join", "AND")
+            .put("rules", JSONArray().put(JSONObject().put("type", "rule").put("field", "format").put("operator", "includesAny").put("value", JSONArray(Library.FORMATS))))
+            .toString()
         private const val MATCH_BATCH = 500
         private const val MAX_COVER = 4 * 1024 * 1024
 

@@ -9,6 +9,7 @@ position converter may disagree:
   spine-nonxhtml  an SVG spine item before the chapters (DocFragment numbering)
   media-css       @media rules that change `display` (whitespace text nodes)
   fb2             a format the server stores positions for but cannot convert
+  pdf             a format the app does not read, left out of the server's list
 
 Usage: make_corpus.py <output-dir>
 """
@@ -139,6 +140,30 @@ def write_fb2(path: Path, title: str) -> None:
     )
 
 
+def write_pdf(path: Path, title: str) -> None:
+    objects = [
+        "<< /Type /Catalog /Pages 2 0 R >>",
+        "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+        "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>",
+        None,
+        "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+        f"<< /Title ({title}) /Author (Perigee Contract) >>",
+    ]
+    text = f"BT /F1 24 Tf 72 760 Td ({title}) Tj ET"
+    objects[3] = f"<< /Length {len(text)} >>\nstream\n{text}\nendstream"
+    out = bytearray(b"%PDF-1.4\n")
+    offsets = []
+    for n, body in enumerate(objects, start=1):
+        offsets.append(len(out))
+        out += f"{n} 0 obj\n{body}\nendobj\n".encode("latin-1")
+    xref = len(out)
+    out += f"xref\n0 {len(objects) + 1}\n0000000000 65535 f \n".encode("latin-1")
+    out += "".join(f"{offset:010d} 00000 n \n" for offset in offsets).encode("latin-1")
+    out += f"trailer\n<< /Size {len(objects) + 1} /Root 1 0 R /Info 6 0 R >>\nstartxref\n{xref}\n%%EOF\n".encode("latin-1")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(bytes(out))
+
+
 def main() -> None:
     if len(sys.argv) != 2:
         sys.exit(__doc__)
@@ -147,6 +172,7 @@ def main() -> None:
     write_epub(out / "spine-nonxhtml" / "spine-nonxhtml.epub", "Contract Spine NonXhtml", svg_first=True)
     write_epub(out / "media-css" / "media-css.epub", "Contract Media Css", media_css=True)
     write_fb2(out / "fb2" / "contract.fb2", "Contract Fb2")
+    write_pdf(out / "pdf" / "contract.pdf", "Contract Pdf")
     print(f"corpus written to {out}")
 
 
