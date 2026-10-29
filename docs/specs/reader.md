@@ -68,7 +68,7 @@ Not done yet: fonts of the reader's own, from a folder.
 
 | Setting | Field | Notes |
 |---|---|---|
-| Colour scheme | `colors` | Text and page colour. Presets: `Day`, `Night`, `Sepia`. Sepia is `#644D32` on `#F0DEC7`, measured from ReadEra. |
+| Colour scheme | `colors` | Text and page colour. Presets: `Day`, `Night`, `Sepia`. Night is `#C8C8C8` on dark grey `#1E1E1E`, not on black. Sepia is `#644D32` on `#F0DEC7`, measured from ReadEra. |
 | Font | `fontFace` | A face from `Engine.fontFaces`. |
 | Font size | `fontSize` | |
 | Font boldness | `fontWeight` | CSS weight of regular text, 400 by default. Values the engine accepts are in `EngineSettings.FONT_WEIGHTS`. Bold text gets heavier with it. |
