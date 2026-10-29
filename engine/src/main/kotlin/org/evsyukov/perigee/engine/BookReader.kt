@@ -230,8 +230,11 @@ class BookReader private constructor(
     }
 
     private fun show(): Page {
-        val index = document.currentPage
-        val page = cache[index] ?: draw().also { cache[index] = it }
+        // After a new page size the engine lays the book out when it draws, so
+        // until then the page number is the one of the old layout. The cache is
+        // empty at that point; the drawn page tells the number to file it under.
+        val page = cache[document.currentPage] ?: draw().also { cache[it.index] = it }
+        val index = page.index
         // Keep what is next to the reader; pages further off are cheap to redraw.
         cache.keys.retainAll { it in index - step..index + step }
         drawAhead(index + step)
