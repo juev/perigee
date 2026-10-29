@@ -14,6 +14,18 @@ class FakeOrbit : AutoCloseable {
     var password = "right-password"
     var loginAnswer: Answer? = null
 
+    /** The providers readers are signed in through, as the list of ways in names them. */
+    var oidcProviders = JSONArray()
+
+    /** Where the server says the provider's sign-in page is; empty as when it cannot reach the provider. */
+    var authorizationEndpoint = "https://id.example/authorize"
+
+    /** States handed out and not used yet; a state is good for one callback. */
+    val oidcStates = HashSet<String>()
+
+    /** What the callback is answered with instead, while not null. */
+    var oidcCallbackAnswer: Answer? = null
+
     /** When the tokens given out from now on run out. */
     var accessExpiresAt = "2030-01-01T00:15:00.000Z"
 
@@ -493,7 +505,19 @@ class FakeOrbit : AutoCloseable {
         val form = request.headers["content-type"].orEmpty().startsWith("multipart/")
         val body = if (form || request.body.isBlank()) JSONObject() else JSONObject(request.body)
         if (path == "/auth/login-options") {
-            return Answer(200, JSONObject().put("passwordLoginEnabled", passwordLogin).put("oidcProviders", JSONArray()).toString())
+            return Answer(200, JSONObject().put("passwordLoginEnabled", passwordLogin).put("oidcProviders", oidcProviders).toString())
+        }
+        if (path.startsWith("/auth/oidc/") && path.endsWith("/state")) {
+            val state = "state-" + issued.incrementAndGet()
+            oidcStates += state
+            return Answer(200, JSONObject().put("state", state).put("authorizationEndpoint", authorizationEndpoint).toString())
+        }
+        if (path == "/auth/oidc/callback") {
+            oidcCallbackAnswer?.let { return it }
+            if (!oidcStates.remove(body.getString("state"))) {
+                return Answer(401, """{"statusCode":401,"message":"Your login session expired. Please try signing in again.","errorCode":"oidc_state_expired"}""")
+            }
+            return Answer(200, tokens().put("mode", "login").put("user", JSONObject().put("id", 2).put("username", "sso-reader").put("name", "Reader Name")).toString())
         }
         if (path == "/auth/login") {
             loginAnswer?.let { return it }

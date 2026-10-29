@@ -140,6 +140,12 @@ enum class UploadRefusal {
 /** The server did not take a file; [message] is its own word on it, when it gave one. */
 class UploadRefusedException(val why: UploadRefusal, message: String) : IOException(message.ifEmpty { "the server did not take the file: $why" })
 
+/** How a server lets readers in. */
+data class SignInOptions(val password: Boolean, val providers: List<SignInProvider>)
+
+/** A service the server signs readers in through (OIDC), under the name the server shows it by. */
+data class SignInProvider(val slug: String, val name: String, val clientId: String, val scopes: String)
+
 /** There is something at the address, but not a server the app knows. */
 class NotAServerException(url: String) : IOException("no server at $url")
 
@@ -151,6 +157,15 @@ class TooManyAttemptsException(val seconds: Int) : IOException("the server asks 
 
 /** The server lets nobody in by password. */
 class PasswordLoginDisabledException : IOException("signing in by password is switched off on the server")
+
+/** The way in through a provider took too long, or the app was closed meanwhile: it has to be started again. */
+class SignInExpiredException : IOException("the sign-in through the provider is not waited for any more")
+
+/** The reader turned back at the provider's page. */
+class SignInCancelledException : IOException("the reader did not sign in at the provider")
+
+/** The server or the provider did not let the reader in; [message] is their own word on it. */
+class SignInRefusedException(message: String) : IOException(message)
 
 /** The session is over and cannot be renewed: the reader has to sign in again. */
 class SignedOutException : IOException("the session with the server is over")

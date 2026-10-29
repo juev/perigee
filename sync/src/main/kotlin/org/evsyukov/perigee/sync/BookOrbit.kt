@@ -10,6 +10,7 @@ import java.net.URLEncoder
 import java.security.MessageDigest
 import java.security.SecureRandom
 import java.time.Instant
+import java.util.Base64
 import java.time.format.DateTimeParseException
 import kotlin.math.abs
 import kotlin.math.roundToInt
@@ -79,14 +80,8 @@ class BookOrbit(
     suspend fun signIn(address: String, user: String, password: String): DeviceChannel {
         val url = serverAddress(address)
         val http = Http(url)
-        val (tokens, name, version) = io {
-            val options = try {
-                http.call("GET", "/auth/login-options").takeIf { it.ok }?.json()
-            } catch (e: IOException) {
-                // Something answers there, in a language of its own.
-                if (e.cause is JSONException) null else throw e
-            }
-            if (options == null || !options.has("passwordLoginEnabled")) throw NotAServerException(url)
+        val session = io {
+            val options = loginOptions(http, url)
             if (!options.optBoolean("passwordLoginEnabled")) throw PasswordLoginDisabledException()
 
             val login = http.call(
@@ -100,12 +95,132 @@ class BookOrbit(
                 login.code == 401 || login.code == 400 -> throw WrongPasswordException()
                 else -> throw failure(login)
             }
-            val session = login.json() ?: throw NotAServerException(url)
-            val tokens = tokensOf(session) ?: throw NotAServerException(url)
-            val info = http.call("GET", "/app-info", headers = bearer(tokens.access))
-            Triple(tokens, session.optJSONObject("user")?.optString("name").orEmpty(), info.json()?.optString("version").orEmpty())
+            sessionOf(http, url, login, user)
         }
-        accounts.signIn(url, user, name.ifBlank { user }, tokens, version)
+        return signedIn(url, session)
+    }
+
+    /**
+     * How the server at [address] lets readers in: by password or not, and
+     * through which providers.
+     *
+     * @throws IllegalArgumentException when [address] is not one a server can be at
+     * @throws NotAServerException when there is no bookOrbit server there
+     * @throws IOException when the server cannot be reached
+     */
+    suspend fun signInOptions(address: String): SignInOptions {
+        val url = serverAddress(address)
+        val options = io { loginOptions(Http(url), url) }
+        val providers = buildList {
+            options.optJSONArray("oidcProviders").each { provider ->
+                val slug = provider.optString("slug")
+                if (slug.isNotEmpty() && provider.optBoolean("enabled", true)) {
+                    add(SignInProvider(slug, provider.optString("displayName").ifBlank { slug }, provider.optString("clientId"), provider.optString("scopes")))
+                }
+            }
+        }
+        return SignInOptions(options.optBoolean("passwordLoginEnabled"), providers)
+    }
+
+    /**
+     * Starts signing in through [provider] and returns the address of the
+     * provider's page the reader signs in on. The provider sends the reader
+     * back to [REDIRECT_URI], which goes to [finishSignIn]. What the way in
+     * needs to be finished is kept in memory only: the server waits for it
+     * five minutes, and an app closed meanwhile starts again.
+     *
+     * @throws SignInRefusedException when the server cannot reach the provider
+     * @throws IOException when the server cannot be reached
+     */
+    suspend fun startSignIn(address: String, provider: SignInProvider): String {
+        val url = serverAddress(address)
+        val reply = io { Http(url).call("POST", "/auth/oidc/${URLEncoder.encode(provider.slug, "UTF-8")}/state") }
+        if (!reply.ok) throw failure(reply)
+        val json = reply.json() ?: throw NotAServerException(url)
+        val state = json.optString("state").ifEmpty { throw NotAServerException(url) }
+        val endpoint = json.optString("authorizationEndpoint").ifEmpty { throw SignInRefusedException("the server cannot reach ${provider.name}") }
+        val verifier = randomBase64(32)
+        val nonce = randomBase64(16)
+        pending = PendingSignIn(url, state, verifier, nonce)
+        val challenge = base64(MessageDigest.getInstance("SHA-256").digest(verifier.toByteArray()))
+        val query = listOf(
+            "response_type" to "code", "client_id" to provider.clientId, "redirect_uri" to REDIRECT_URI, "scope" to provider.scopes,
+            "code_challenge" to challenge, "code_challenge_method" to "S256", "state" to state, "nonce" to nonce,
+        ).joinToString("&") { (name, value) -> name + "=" + URLEncoder.encode(value, "UTF-8") }
+        return endpoint + (if ('?' in endpoint) "&" else "?") + query
+    }
+
+    /**
+     * Finishes signing in with the address the provider sent the reader back
+     * to, in place of whoever was signed in before, and sets up the devices'
+     * channel as [signIn] does.
+     *
+     * @throws SignInExpiredException when no way in waits for this answer, or the server stopped waiting for it
+     * @throws SignInCancelledException when the reader turned back at the provider
+     * @throws SignInRefusedException when the provider or the server did not let the reader in
+     * @throws IOException when the server cannot be reached
+     */
+    suspend fun finishSignIn(redirect: String): DeviceChannel {
+        val answer = queryOf(redirect)
+        val waiting = pending
+        // An answer to a way in the app did not start, or started anew since, is not taken.
+        if (waiting == null || answer["state"] != waiting.state) throw SignInExpiredException()
+        pending = null
+        answer["error"]?.let { error ->
+            if (error == "access_denied") throw SignInCancelledException()
+            throw SignInRefusedException(answer["error_description"] ?: error)
+        }
+        val code = answer["code"].orEmpty().ifEmpty { throw SignInRefusedException("the provider sent no code") }
+        val http = Http(waiting.url)
+        val session = io {
+            val reply = http.call(
+                "POST", "/auth/oidc/callback",
+                JSONObject().put("code", code).put("codeVerifier", waiting.verifier).put("redirectUri", REDIRECT_URI)
+                    .put("nonce", waiting.nonce).put("state", waiting.state).put("clientKind", "native").put("deviceLabel", DEVICE_MODEL),
+            )
+            when {
+                reply.ok -> Unit
+                reply.errorCode == "oidc_state_expired" -> throw SignInExpiredException()
+                reply.code == 400 || reply.code == 401 || reply.code == 403 -> throw SignInRefusedException(reply.message)
+                else -> throw failure(reply)
+            }
+            sessionOf(http, waiting.url, reply, user = "")
+        }
+        return signedIn(waiting.url, session)
+    }
+
+    /** A way in through a provider that waits for the provider's answer. */
+    private class PendingSignIn(val url: String, val state: String, val verifier: String, val nonce: String)
+
+    @Volatile
+    private var pending: PendingSignIn? = null
+
+    private class Session(val tokens: Tokens, val user: String, val name: String, val version: String)
+
+    /** What the server says of how it lets readers in; asked first, so that nothing is sent where there is no server. */
+    private fun loginOptions(http: Http, url: String): JSONObject {
+        val options = try {
+            http.call("GET", "/auth/login-options").takeIf { it.ok }?.json()
+        } catch (e: IOException) {
+            // Something answers there, in a language of its own.
+            if (e.cause is JSONException) null else throw e
+        }
+        if (options == null || !options.has("passwordLoginEnabled")) throw NotAServerException(url)
+        return options
+    }
+
+    /** The session the server opened, with the reader's names and the server's version; [user] is the user name typed, empty when the server is to name it. */
+    private fun sessionOf(http: Http, url: String, reply: Reply, user: String): Session {
+        val session = reply.json() ?: throw NotAServerException(url)
+        val tokens = tokensOf(session) ?: throw NotAServerException(url)
+        val named = session.optJSONObject("user")
+        val name = user.ifEmpty { named?.optString("username").orEmpty() }.ifEmpty { throw NotAServerException(url) }
+        val info = http.call("GET", "/app-info", headers = bearer(tokens.access))
+        return Session(tokens, name, named?.optString("name").orEmpty(), info.json()?.optString("version").orEmpty())
+    }
+
+    private suspend fun signedIn(url: String, session: Session): DeviceChannel {
+        accounts.signIn(url, session.user, session.name.ifBlank { session.user }, session.tokens, session.version)
         return deviceChannel()
     }
 
@@ -1212,6 +1327,28 @@ class BookOrbit(
         /** The key of the devices' channel is the MD5 of its password, as the devices it was made for send it. */
         private fun md5(text: String): String =
             MessageDigest.getInstance("MD5").digest(text.toByteArray()).joinToString("") { "%02x".format(it) }
+
+        /** Where the provider sends the reader back: the one address of the server's own apps, which it takes from every native client. */
+        const val REDIRECT_URI = "bookorbit://oauth2-callback"
+
+        private fun base64(bytes: ByteArray): String = Base64.getUrlEncoder().withoutPadding().encodeToString(bytes)
+
+        private fun randomBase64(bytes: Int): String = base64(ByteArray(bytes).also(SecureRandom()::nextBytes))
+
+        /** The parameters of an address's query, decoded; empty for an address that is not one. */
+        private fun queryOf(address: String): Map<String, String> {
+            val query = try {
+                URI(address).rawQuery
+            } catch (e: URISyntaxException) {
+                null
+            } ?: return emptyMap()
+            return query.split('&').filter { it.isNotEmpty() }.associate { part ->
+                val name = part.substringBefore('=')
+                val value = part.substringAfter('=', "")
+                fun decode(text: String) = runCatching { URLDecoder.decode(text, "UTF-8") }.getOrDefault(text)
+                decode(name) to decode(value)
+            }
+        }
 
         private fun randomHex(bytes: Int): String =
             ByteArray(bytes).also(SecureRandom()::nextBytes).joinToString("") { "%02x".format(it) }
