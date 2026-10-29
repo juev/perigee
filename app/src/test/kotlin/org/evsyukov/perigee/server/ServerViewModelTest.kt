@@ -31,6 +31,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -137,13 +138,10 @@ class ServerViewModelTest {
 
     @Test
     fun bookIsDownloadedIntoTheLibrary() {
-        serverHas(book(7, "Listed Title", 70), book(8, "A Comic", 80, format = "cbz"))
+        serverHas(book(7, "Listed Title", 70))
         server.downloads[70] = Answer(200, bookFile.readBytes(), "application/x-fictionbook+xml", mapOf("Content-Disposition" to "attachment; filename=\"listed.fb2\""))
         signIn()
-        val books = listed("Listed Title").books
-        assertTrue("a comic is not something the app reads, and is not offered", readableFiles(books.single { it.title == "A Comic" }).isEmpty())
-
-        val listedBook = books.single { it.title == "Listed Title" }
+        val listedBook = listed("Listed Title").books.single()
         model.download(listedBook, readableFiles(listedBook).single())
         until("the book is in the library") { 70L in it.onDevice && it.downloads.isEmpty() }
 
@@ -153,6 +151,26 @@ class ServerViewModelTest {
         assertEquals("known to be the server's without asking it", 70L, book.serverFileId)
         assertEquals(7L, book.serverBookId)
         assertEquals(book.path, runBlocking { model.fileOf(book.id) }?.path)
+    }
+
+    @Test
+    fun booksWithNoFileTheAppReadsAreNotListed() {
+        server.paged = true
+        serverHas(
+            book(7, "A Comic", 70, format = "cbz"),
+            book(8, "A Pdf", 80, format = "pdf"),
+            """{"id":9,"title":"Pdf And Epub","authors":[],"seriesName":null,"seriesIndex":null,"hasCover":false,
+                "files":[{"id":90,"format":"pdf","role":"primary","sizeBytes":100},{"id":91,"format":"epub","role":"alternative","sizeBytes":100}]}""",
+            book(10, "Listed Title", 100),
+        )
+        signIn()
+
+        val state = until("the books the app reads are listed") { state -> state.books.map { it.title } == listOf("Pdf And Epub", "Listed Title") }
+        assertFalse("the server counts only those, and nothing is left to load", state.more)
+        assertEquals("a book is offered in the format the app reads", listOf(91L), readableFiles(state.books.first()).map { it.id })
+        val filter = JSONObject(server.asked("/books/query").last().body).getJSONObject("filter").getJSONArray("rules").getJSONObject(0)
+        assertEquals("format", filter.getString("field"))
+        assertEquals(Library.FORMATS, filter.getJSONArray("value").let { formats -> (0 until formats.length()).map(formats::getString) })
     }
 
     @Test

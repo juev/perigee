@@ -177,8 +177,9 @@ class ServerScreenTest {
         show()
         signIn()
         waitForText("Listed Title")
-        // A comic is not something the app reads, and is not offered.
-        rule.onNodeWithText(string(R.string.catalog_no_readable_file)).assertIsDisplayed()
+        // A comic is not something the app reads, and is not listed.
+        rule.onNodeWithText("A Comic").assertDoesNotExist()
+        rule.onNodeWithText(string(R.string.catalog_no_readable_file)).assertDoesNotExist()
 
         rule.onNodeWithText(string(R.string.catalog_download, "FB2")).performClick()
         waitForText(string(R.string.catalog_downloaded))

@@ -39,13 +39,32 @@ class FakeOrbit : AutoCloseable {
     /** While set, the list of books is handed out a page at a time, as the real server does; otherwise whole to every asking. */
     var paged = false
 
-    private fun page(body: JSONObject): JSONArray {
+    private fun page(body: JSONObject, books: JSONArray): JSONArray {
         if (!paged) return books
         val pagination = body.getJSONObject("pagination")
         val from = pagination.getInt("page") * pagination.getInt("size")
         val part = JSONArray()
         for (i in from until minOf(books.length(), from + pagination.getInt("size"))) part.put(books.get(i))
         return part
+    }
+
+    /**
+     * The books the query's filter lets through. Of its rules only "has a file in one of these
+     * formats" is understood, matched on any of the book's files as the server does.
+     */
+    private fun matching(body: JSONObject): JSONArray {
+        val rules = body.optJSONObject("filter")?.optJSONArray("rules") ?: return books
+        val wanted = (0 until rules.length()).map { rules.getJSONObject(it) }
+            .filter { it.optString("field") == "format" && it.optString("operator") == "includesAny" }
+            .map { rule -> rule.getJSONArray("value").let { formats -> (0 until formats.length()).map(formats::getString).toSet() } }
+        val found = JSONArray()
+        for (i in 0 until books.length()) {
+            val book = books.getJSONObject(i)
+            val files = book.optJSONArray("files") ?: JSONArray()
+            val formats = (0 until files.length()).map { files.getJSONObject(it).optString("format") }
+            if (wanted.all { formats.any(it::contains) }) found.put(book)
+        }
+        return found
     }
 
     /** What the list of books is answered with instead, while not null. */
@@ -597,7 +616,9 @@ class FakeOrbit : AutoCloseable {
                 if (note.isEmpty()) reviews.remove(id) else reviews[id] = note
                 Answer(200, JSONObject().put("id", id).put("personalNote", reviews[id] ?: JSONObject.NULL).toString())
             }
-            path == "/books/query" -> queryAnswer ?: Answer(201, JSONObject().put("items", page(body)).put("total", total ?: books.length()).put("page", body.getJSONObject("pagination").getInt("page")).toString())
+            path == "/books/query" -> queryAnswer ?: matching(body).let { found ->
+                Answer(201, JSONObject().put("items", page(body, found)).put("total", total ?: found.length()).put("page", body.getJSONObject("pagination").getInt("page")).toString())
+            }
             Regex("/books/\\d+/(annotations|bookmarks)(/\\d+)?").matches(path) -> marksOfBook(request, path)
             path.startsWith("/books/files/") -> downloads[path.removePrefix("/books/files/").removeSuffix("/download").toLong()] ?: error(404, "No file")
             path.endsWith("/thumbnail") -> Answer(200, byteArrayOf(1, 2, 3), "image/jpeg")

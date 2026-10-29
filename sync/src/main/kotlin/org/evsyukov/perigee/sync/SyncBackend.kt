@@ -36,7 +36,8 @@ data class RemotePage(val books: List<RemoteBook>, val total: Int, val page: Int
  */
 interface SyncBackend {
     /**
-     * A page of the server's books, by title; with [query], of those it finds by it.
+     * A page of the server's books, by title; with [query], of those it finds by it. Books with
+     * no file in a format the app reads are left out, of the page and of its total alike.
      * @param page counted from zero
      */
     suspend fun books(query: String, page: Int): RemotePage

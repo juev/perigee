@@ -287,16 +287,21 @@ class BookOrbitTest {
     @Test
     fun booksAreListedAsTheServerHasThem() = runBlocking<Unit> {
         signIn()
-        server.books = JSONArray(
+        // Answered as given: what is read of the server's answer is checked here, not what it lets through.
+        val items = JSONArray(
             """[{"id":7,"title":"War and Peace","authors":["Leo Tolstoy"],"seriesName":"Classics","seriesIndex":"2.5","hasCover":true,
                  "files":[{"id":70,"format":"EPUB","role":"primary","sizeBytes":1234},{"id":71,"format":null,"role":"content","sizeBytes":null}]},
                 {"id":8,"title":null,"authors":[],"seriesName":null,"seriesIndex":null,"hasCover":false,"files":[]}]""",
         )
+        server.queryAnswer = Answer(201, JSONObject().put("items", items).put("total", 2).put("page", 2).toString())
         val page = orbit.books(" peace ", 2)
 
         val asked = JSONObject(server.asked("/books/query").single().body)
         assertEquals("peace", asked.getString("q"))
         assertEquals(2, asked.getJSONObject("pagination").getInt("page"))
+        val rule = asked.getJSONObject("filter").getJSONArray("rules").getJSONObject(0)
+        assertEquals("only the books with a file the app reads are asked for", "format", rule.getString("field"))
+        assertEquals("includesAny", rule.getString("operator"))
         assertEquals(2, page.total)
         val book = page.books[0]
         assertEquals(RemoteBook(7, "War and Peace", listOf("Leo Tolstoy"), "Classics", "2.5", book.files, true), book)

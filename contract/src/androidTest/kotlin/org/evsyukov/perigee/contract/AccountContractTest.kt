@@ -81,6 +81,12 @@ class AccountContractTest {
 
         assertEquals(listOf("Contract Plain"), orbit.books("Plain", 0).books.map { it.title })
         assertTrue(orbit.books("", 50).books.isEmpty())
+
+        // The server has a book in PDF only, and leaves it out of the app's list and its count.
+        val pdf = server.jwt("POST", "/books/query", JSONObject().put("q", "Contract Pdf")).json()
+        assertEquals("the server has it", 1, pdf.getInt("total"))
+        assertTrue("got $titles", "Contract Pdf" !in titles)
+        assertEquals(0, orbit.books("Contract Pdf", 0).total)
     }
 
     @Test
