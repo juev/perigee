@@ -315,6 +315,27 @@ class ReaderScreenTest {
     }
 
     @Test
+    fun fontTrialShowsEachFontAndTakesTheFastest() {
+        show()
+        waitForBook()
+        openMenu()
+        rule.onNodeWithContentDescription(string(R.string.action_settings)).performClick()
+        rule.onNodeWithTag("font-trial-open").performScrollTo().performClick()
+        rule.waitUntil(TIMEOUT) { model().state.value.fontTrial?.page != null }
+        val faces = model().state.value.fontTrial!!.faces
+        assertTrue("fonts to compare: $faces", faces.size >= 2)
+        for (step in faces.indices) {
+            rule.waitUntil(TIMEOUT) { model().state.value.fontTrial?.let { it.step == step && it.page != null } == true }
+            rule.onNodeWithTag("font-trial-next").performClick()
+        }
+        rule.waitUntil(TIMEOUT) { model().state.value.fontTrial?.done == true }
+        val trial = model().state.value.fontTrial!!
+        assertEquals(faces, trial.results.map { it.first })
+        rule.onNodeWithTag("font-trial-use").performClick()
+        rule.waitUntil(TIMEOUT) { model().prefs.value.fontFace == trial.fastest && model().state.value.fontTrial == null }
+    }
+
+    @Test
     fun topLeftCornerSwitchesDayAndNight() {
         show()
         waitForBook()

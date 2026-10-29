@@ -351,10 +351,28 @@ fun ReaderScreen(file: File, onClose: () -> Unit, viewModel: ReaderViewModel = v
             Offer(offer, viewModel::acceptOffer, viewModel::declineOffer, Modifier.align(Alignment.BottomCenter))
         }
         RotationOnRequest(Modifier.align(Alignment.BottomEnd).navigationBarsPadding().padding(24.dp))
+        state.fontTrial?.let { trial ->
+            FontTrialPanel(
+                trial, paper,
+                onNext = viewModel::nextFontTrial,
+                onUse = { face ->
+                    viewModel.updatePrefs { it.copy(fontFace = face) }
+                    viewModel.closeFontTrial()
+                },
+                onClose = viewModel::closeFontTrial,
+            )
+        }
     }
 
     when (panel) {
-        Panel.Settings -> SettingsSheet(prefs, state.fontFaces, state.charsPerLine, viewModel::updatePrefs) { panel = Panel.None }
+        Panel.Settings -> SettingsSheet(
+            prefs, state.fontFaces, state.charsPerLine,
+            onFontTrial = {
+                panel = Panel.None
+                viewModel.startFontTrial()
+            },
+            onChange = viewModel::updatePrefs,
+        ) { panel = Panel.None }
         Panel.Contents -> ContentsSheet(
             state = state,
             onGoTo = { xpointer ->

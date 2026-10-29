@@ -41,6 +41,7 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -92,6 +93,7 @@ internal fun SettingsSheet(
     prefs: ReaderPrefs,
     fontFaces: List<String>,
     charsPerLine: Int?,
+    onFontTrial: () -> Unit,
     onChange: ((ReaderPrefs) -> ReaderPrefs) -> Unit,
     onDismiss: () -> Unit,
 ) {
@@ -143,6 +145,9 @@ internal fun SettingsSheet(
                 ) { chosen -> onChange { it.withScheme(chosen) } }
                 Choice(R.string.setting_font, prefs.fontFace, fontFaces, label = { it }) { chosen ->
                     onChange { it.copy(fontFace = chosen) }
+                }
+                TextButton(onClick = onFontTrial, modifier = Modifier.testTag("font-trial-open")) {
+                    Text(stringResource(R.string.font_trial_open))
                 }
                 Stepper(
                     R.string.setting_font_size, prefs.fontSize.toString(), "font-size",

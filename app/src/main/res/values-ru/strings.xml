@@ -45,6 +45,15 @@
     <string name="scheme_oled">OLED</string>
     <string name="scheme_sepia">Сепия</string>
     <string name="setting_font">Шрифт</string>
+    <string name="font_trial_open">Какой шрифт я читаю быстрее?</string>
+    <string name="font_trial_step">%1$d из %2$d</string>
+    <string name="font_trial_hint">Читайте как обычно, затем нажмите «Дальше».</string>
+    <string name="font_trial_next">Дальше</string>
+    <string name="font_trial_close">Закрыть</string>
+    <string name="font_trial_result_title">Слов в минуту</string>
+    <string name="font_trial_rough">Примерно: по одному отрывку на шрифт и без проверки понимания.</string>
+    <string name="font_trial_use">Выбрать %1$s</string>
+    <string name="font_trial_too_short">Здесь слишком мало текста для теста.</string>
     <string name="setting_font_size">Размер шрифта</string>
     <string name="setting_font_weight">Жирность шрифта</string>
     <string name="setting_contrast">Контрастность</string>
