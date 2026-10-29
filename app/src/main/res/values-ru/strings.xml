@@ -65,6 +65,10 @@
     <string name="setting_brightness_gesture">Яркость движением по левому краю</string>
     <string name="setting_day_night_corner">День и ночь касанием левого верхнего угла</string>
     <string name="setting_bookmark_corner">Закладка касанием правого верхнего угла</string>
+    <string name="setting_warm_filter">Тёплая страница по часам</string>
+    <string name="setting_warm_from">С</string>
+    <string name="setting_warm_to">До</string>
+    <string name="setting_warm_strength">Теплота</string>
     <string name="setting_screen_on">Не гасить экран</string>
     <string name="screen_on_system">Как в системе</string>
     <string name="screen_on_always">Пока открыта книга</string>

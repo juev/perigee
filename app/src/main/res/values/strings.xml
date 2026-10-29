@@ -66,6 +66,10 @@
     <string name="setting_brightness_gesture">Brightness by sliding along the left edge</string>
     <string name="setting_day_night_corner">Day and night by touching the top left corner</string>
     <string name="setting_bookmark_corner">Bookmark by touching the top right corner</string>
+    <string name="setting_warm_filter">Warm page by the clock</string>
+    <string name="setting_warm_from">From</string>
+    <string name="setting_warm_to">Until</string>
+    <string name="setting_warm_strength">Warmth</string>
     <string name="setting_screen_on">Keep the screen on</string>
     <string name="screen_on_system">As the system sets</string>
     <string name="screen_on_always">While the book is open</string>
