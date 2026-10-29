@@ -42,6 +42,7 @@
     <string name="setting_color_scheme">Цветовая схема</string>
     <string name="scheme_day">День</string>
     <string name="scheme_night">Ночь</string>
+    <string name="scheme_oled">OLED</string>
     <string name="scheme_sepia">Сепия</string>
     <string name="setting_font">Шрифт</string>
     <string name="setting_font_size">Размер шрифта</string>

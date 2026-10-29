@@ -43,6 +43,7 @@
     <string name="setting_color_scheme">Colour scheme</string>
     <string name="scheme_day">Day</string>
     <string name="scheme_night">Night</string>
+    <string name="scheme_oled">OLED</string>
     <string name="scheme_sepia">Sepia</string>
     <string name="setting_font">Font</string>
     <string name="setting_font_size">Font size</string>

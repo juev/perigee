@@ -135,6 +135,7 @@ internal fun SettingsSheet(
                             when (it) {
                                 ColorScheme.Day -> R.string.scheme_day
                                 ColorScheme.Night -> R.string.scheme_night
+                                ColorScheme.Oled -> R.string.scheme_oled
                                 ColorScheme.Sepia -> R.string.scheme_sepia
                             },
                         )

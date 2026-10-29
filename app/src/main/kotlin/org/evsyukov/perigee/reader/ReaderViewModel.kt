@@ -695,6 +695,7 @@ class ReaderViewModel(
         fun colorsOf(scheme: ColorScheme): PageColors = when (scheme) {
             ColorScheme.Day -> PageColors.Day
             ColorScheme.Night -> PageColors.Night
+            ColorScheme.Oled -> PageColors.Oled
             ColorScheme.Sepia -> PageColors.Sepia
         }
     }

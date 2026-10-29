@@ -29,7 +29,14 @@ enum class TapScheme {
     Off,
 }
 
-enum class ColorScheme { Day, Night, Sepia }
+/** Page colour schemes, in the order the settings list them. */
+enum class ColorScheme(val dark: Boolean) {
+    Day(false),
+    Night(true),
+    /** Light text on pure black, for OLED screens: black pixels stay off. */
+    Oled(true),
+    Sepia(false),
+}
 
 enum class Alignment { Justify, Left, Center, Right }
 
@@ -38,8 +45,10 @@ data class ReaderPrefs(
     val pageTurn: PageTurn = PageTurn.Horizontal,
     val tapScheme: TapScheme = TapScheme.LeftRight,
     val colorScheme: ColorScheme = ColorScheme.Day,
-    /** The scheme the day/night switch returns to from night. */
+    /** The light scheme the day/night switch returns to from a dark one. */
     val dayScheme: ColorScheme = ColorScheme.Day,
+    /** The dark scheme the day/night switch goes to from a light one. */
+    val nightScheme: ColorScheme = ColorScheme.Night,
     val fontFace: String = "Roboto",
     val fontSize: Int = 18,
     val fontWeight: Int = 400,
@@ -60,13 +69,13 @@ data class ReaderPrefs(
     /** How long the screen stays on after the last touch or turn: [SCREEN_ON_SYSTEM], [SCREEN_ON_ALWAYS] or minutes. */
     val screenOnMinutes: Int = 10,
 ) {
-    /** Choosing a scheme by hand; a light one becomes what night switches back to. */
+    /** Choosing a scheme by hand; it becomes the one the day/night switch goes to on its side, light or dark. */
     fun withScheme(scheme: ColorScheme): ReaderPrefs =
-        copy(colorScheme = scheme, dayScheme = if (scheme == ColorScheme.Night) dayScheme else scheme)
+        if (scheme.dark) copy(colorScheme = scheme, nightScheme = scheme) else copy(colorScheme = scheme, dayScheme = scheme)
 
-    /** The day/night switch. */
+    /** The day/night switch: from a dark scheme to the last light one, and from a light one to the last dark one. */
     fun toggledNight(): ReaderPrefs =
-        copy(colorScheme = if (colorScheme == ColorScheme.Night) dayScheme else ColorScheme.Night)
+        copy(colorScheme = if (colorScheme.dark) dayScheme else nightScheme)
 
     companion object {
         val FONT_SIZES = 10..40
@@ -98,6 +107,7 @@ class ReaderPreferences private constructor(private val store: DataStore<Prefere
             tapScheme = p[TAP_SCHEME].enumOr(d.tapScheme),
             colorScheme = p[COLOR_SCHEME].enumOr(d.colorScheme),
             dayScheme = p[DAY_SCHEME].enumOr(d.dayScheme),
+            nightScheme = p[NIGHT_SCHEME].enumOr(d.nightScheme),
             fontFace = p[FONT_FACE] ?: d.fontFace,
             fontSize = p[FONT_SIZE] ?: d.fontSize,
             fontWeight = p[FONT_WEIGHT] ?: d.fontWeight,
@@ -122,6 +132,7 @@ class ReaderPreferences private constructor(private val store: DataStore<Prefere
         p[TAP_SCHEME] = v.tapScheme.name
         p[COLOR_SCHEME] = v.colorScheme.name
         p[DAY_SCHEME] = v.dayScheme.name
+        p[NIGHT_SCHEME] = v.nightScheme.name
         p[FONT_FACE] = v.fontFace
         p[FONT_SIZE] = v.fontSize
         p[FONT_WEIGHT] = v.fontWeight
@@ -149,6 +160,7 @@ class ReaderPreferences private constructor(private val store: DataStore<Prefere
         private val TAP_SCHEME = stringPreferencesKey("tap_scheme")
         private val COLOR_SCHEME = stringPreferencesKey("color_scheme")
         private val DAY_SCHEME = stringPreferencesKey("day_scheme")
+        private val NIGHT_SCHEME = stringPreferencesKey("night_scheme")
         private val FONT_FACE = stringPreferencesKey("font_face")
         private val FONT_SIZE = intPreferencesKey("font_size")
         private val FONT_WEIGHT = intPreferencesKey("font_weight")
