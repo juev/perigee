@@ -13,7 +13,7 @@ data class PageColors(val text: Int, val background: Int) {
 
     companion object {
         val Day = PageColors(text = 0x000000, background = 0xFFFFFF)
-        val Night = PageColors(text = 0xC8C8C8, background = 0x000000)
+        val Night = PageColors(text = 0xC8C8C8, background = 0x1E1E1E)
         val Sepia = PageColors(text = 0x644D32, background = 0xF0DEC7)
     }
 }
