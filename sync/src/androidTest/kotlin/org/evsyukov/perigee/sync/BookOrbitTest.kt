@@ -4,6 +4,11 @@ import android.content.Context
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import java.io.File
+import java.net.URI
+import java.net.URLDecoder
+import java.net.URLEncoder
+import java.security.MessageDigest
+import java.util.Base64
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
@@ -18,6 +23,7 @@ import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
@@ -124,6 +130,107 @@ class BookOrbitTest {
 
         server.loginAnswer = Answer(403, """{"statusCode":403,"message":"Password authentication is disabled","errorCode":"password_auth_disabled"}""")
         failing<PasswordLoginDisabledException> { signIn() }
+    }
+
+    private val provider = SignInProvider("authelia", "Authelia", "bookorbit", "openid profile email")
+
+    private fun withProviders() {
+        server.oidcProviders = JSONArray()
+            .put(JSONObject().put("slug", "authelia").put("displayName", "Authelia").put("enabled", true).put("clientId", "bookorbit").put("scopes", "openid profile email"))
+            .put(JSONObject().put("slug", "off").put("displayName", "Off").put("enabled", false).put("clientId", "x").put("scopes", "openid"))
+    }
+
+    private fun queryOf(address: String): Map<String, String> =
+        URI(address).rawQuery.split('&').associate { it.substringBefore('=') to URLDecoder.decode(it.substringAfter('='), "UTF-8") }
+
+    @Test
+    fun waysInNameThePasswordAndTheProvidersSwitchedOn() = runBlocking<Unit> {
+        withProviders()
+        assertEquals(SignInOptions(password = true, providers = listOf(provider)), orbit.signInOptions("${server.url}/api/v1/"))
+        server.passwordLogin = false
+        assertFalse(orbit.signInOptions(server.url).password)
+        TestServer { Answer(404, "{\"message\":\"Not Found\"}") }.use { other ->
+            failing<NotAServerException> { orbit.signInOptions(other.url) }
+        }
+    }
+
+    @Test
+    fun signingInThroughAProviderKeepsTheSessionAndSetsUpTheDevicesChannel() = runBlocking<Unit> {
+        val page = orbit.startSignIn(server.url, provider)
+
+        assertTrue(page, page.startsWith("https://id.example/authorize?"))
+        val asked = queryOf(page)
+        assertEquals("code", asked["response_type"])
+        assertEquals("bookorbit", asked["client_id"])
+        assertEquals("the address the server takes from native clients", "bookorbit://oauth2-callback", asked["redirect_uri"])
+        assertEquals("openid profile email", asked["scope"])
+        assertEquals("S256", asked["code_challenge_method"])
+        val state = checkNotNull(asked["state"])
+        assertTrue("the state is the server's", state in server.oidcStates)
+
+        assertEquals(DeviceChannel.Ready, orbit.finishSignIn("bookorbit://oauth2-callback?code=the%2Fcode&state=${URLEncoder.encode(state, "UTF-8")}"))
+
+        val callback = JSONObject(server.asked("/auth/oidc/callback").single().body)
+        assertEquals("the/code", callback.getString("code"))
+        assertEquals(state, callback.getString("state"))
+        assertEquals(asked["nonce"], callback.getString("nonce"))
+        assertEquals("bookorbit://oauth2-callback", callback.getString("redirectUri"))
+        assertEquals("native", callback.getString("clientKind"))
+        val verifier = callback.getString("codeVerifier")
+        val challenge = Base64.getUrlEncoder().withoutPadding().encodeToString(MessageDigest.getInstance("SHA-256").digest(verifier.toByteArray()))
+        assertEquals("the verifier answers the challenge", asked["code_challenge"], challenge)
+
+        val account = checkNotNull(accounts.current())
+        assertEquals(server.url, account.url)
+        assertEquals("the user name is the server's", "sso-reader", account.user)
+        assertEquals("Reader Name", account.name)
+        assertTrue(accounts.tokens()!!.access in server.access)
+        assertEquals("sso-reader", server.deviceUser)
+    }
+
+    @Test
+    fun answerToAWayInTheAppDidNotStartIsNotTaken() = runBlocking<Unit> {
+        failing<SignInExpiredException> { orbit.finishSignIn("bookorbit://oauth2-callback?code=c&state=state-1") }
+        val state = queryOf(orbit.startSignIn(server.url, provider)).getValue("state")
+        failing<SignInExpiredException> { orbit.finishSignIn("bookorbit://oauth2-callback?code=c&state=forged") }
+        assertTrue(server.asked("/auth/oidc/callback").isEmpty())
+        assertNull(accounts.current())
+
+        // The answer that was waited for still finishes the way in, and only once.
+        orbit.finishSignIn("bookorbit://oauth2-callback?code=c&state=$state")
+        assertNotNull(accounts.current())
+        failing<SignInExpiredException> { orbit.finishSignIn("bookorbit://oauth2-callback?code=c&state=$state") }
+    }
+
+    @Test
+    fun turningBackAtTheProviderIsToldFromItsRefusal() = runBlocking<Unit> {
+        var state = queryOf(orbit.startSignIn(server.url, provider)).getValue("state")
+        failing<SignInCancelledException> { orbit.finishSignIn("bookorbit://oauth2-callback?error=access_denied&state=$state") }
+
+        state = queryOf(orbit.startSignIn(server.url, provider)).getValue("state")
+        val refused = failing<SignInRefusedException> {
+            orbit.finishSignIn("bookorbit://oauth2-callback?error=server_error&error_description=Provider+is+down&state=$state")
+        }
+        assertEquals("Provider is down", refused.message)
+        assertTrue(server.asked("/auth/oidc/callback").isEmpty())
+        assertNull(accounts.current())
+    }
+
+    @Test
+    fun refusalsOfTheServerAreToldApart() = runBlocking<Unit> {
+        var state = queryOf(orbit.startSignIn(server.url, provider)).getValue("state")
+        server.oidcStates.clear()
+        failing<SignInExpiredException> { orbit.finishSignIn("bookorbit://oauth2-callback?code=c&state=$state") }
+
+        state = queryOf(orbit.startSignIn(server.url, provider)).getValue("state")
+        server.oidcCallbackAnswer = Answer(
+            401, """{"statusCode":401,"message":"No account exists for this user.","errorCode":"oidc_user_not_provisioned"}""",
+        )
+        assertEquals("No account exists for this user.", failing<SignInRefusedException> { orbit.finishSignIn("bookorbit://oauth2-callback?code=c&state=$state") }.message)
+        assertNull(accounts.current())
+
+        server.authorizationEndpoint = ""
+        failing<SignInRefusedException> { orbit.startSignIn(server.url, provider) }
     }
 
     @Test
