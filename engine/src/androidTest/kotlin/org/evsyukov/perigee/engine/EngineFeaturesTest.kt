@@ -338,6 +338,20 @@ class EngineFeaturesTest {
     }
 
     @Test
+    fun contrastDarkensTheLettersAndMovesNoLine() {
+        val file = TestBooks.epub(dir)
+        fun page(contrast: Int) = open(file, base.copy(contrast = contrast)).use { doc ->
+            val hit = doc.search("quick brown fox").first().range
+            Triple(doc.render(), doc.pageCount, doc.rects(hit.start, hit.end))
+        }
+        val (plain, plainPages, plainWord) = page(0)
+        val (dark, darkPages, darkWord) = page(EngineSettings.CONTRASTS.last)
+        assertTrue("darker strokes cover more of the page", ink(dark) > ink(plain) * 11 / 10)
+        assertEquals("the same pages", plainPages, darkPages)
+        assertEquals("a word stays where it was", plainWord, darkWord)
+    }
+
+    @Test
     fun coloursOfThePageFollowTheSettings() = open(TestBooks.epub(dir), base.copy(colors = PageColors.Sepia)).use { doc ->
         val page = pixels(doc.render(), Rect(0, 0, WIDTH, HEIGHT))
         assertEquals("the margin has the page colour", PageColors.Sepia.background, page[0] and 0xFFFFFF)

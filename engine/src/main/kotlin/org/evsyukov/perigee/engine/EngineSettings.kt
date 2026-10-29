@@ -43,11 +43,19 @@ data class EngineSettings(
     /** First-line indent on or off; null leaves it to the book. */
     val paragraphIndent: Boolean? = null,
     val colors: PageColors = PageColors.Day,
+    /**
+     * How dark the strokes of the letters are drawn, 0 as the font has them up to [CONTRASTS].last: the
+     * engine's gamma on the glyphs' coverage. Letters keep their widths, so no line moves.
+     */
+    val contrast: Int = 0,
     /** Footnotes at the bottom of the page that refers to them. */
     val footnotes: Boolean = true,
     /** Two pages side by side; meant for landscape tablets. */
     val twoPages: Boolean = false,
 ) {
+    /** The engine's gamma for [contrast]. */
+    internal val gamma: Double get() = GAMMAS[contrast.coerceIn(CONTRASTS)]
+
     /** Overrides appended to the format stylesheet, in the manner of KOReader style tweaks. */
     internal val extraCss: String
         get() = buildString {
@@ -66,6 +74,12 @@ data class EngineSettings(
 
         /** Weights the engine can synthesize when the font file has no such cut. */
         val FONT_WEIGHTS = listOf(100, 200, 300, 400, 425, 450, 475, 500, 525, 550, 600, 650, 700, 800, 900, 950)
+
+        /** Contrast steps; each is a gamma in [GAMMAS]. */
+        val CONTRASTS = 0..4
+
+        /** Gamma per contrast step. Above 1 the engine raises the coverage of glyph pixels, so strokes darken and thicken. */
+        internal val GAMMAS = listOf(1.0, 1.2, 1.4, 1.6, 1.8)
 
         private const val PARAGRAPH_INDENT = "1.2em"
 

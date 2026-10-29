@@ -671,6 +671,7 @@ class ReaderViewModel(
                 fontFace = prefs.fontFace,
                 fontSize = px(prefs.fontSize),
                 fontWeight = prefs.fontWeight,
+                contrast = prefs.contrast.coerceIn(EngineSettings.CONTRASTS),
                 lineSpacingPercent = prefs.lineSpacingPercent,
                 marginHorizontal = side + overdraw,
                 // A strip left clear above the page, as under a camera cutout, is margin already: only what

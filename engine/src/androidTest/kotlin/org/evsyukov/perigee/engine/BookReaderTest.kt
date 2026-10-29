@@ -180,6 +180,26 @@ class BookReaderTest {
     }
 
     @Test
+    fun higherContrastPaintsTheSamePageDarker() = reading { reader ->
+        val before = reader.goToPage(5)
+        fun ink(page: Page): Int {
+            val pixels = IntArray(WIDTH * HEIGHT).also { page.bitmap.getPixels(it, 0, WIDTH, 0, 0, WIDTH, HEIGHT) }
+            // The darkness of all pixels together: thicker strokes and darker edges both add to it.
+            return pixels.sumOf { 255 - (it and 0xFF) }
+        }
+        val inkBefore = ink(before)
+
+        val after = reader.apply(EngineSettings(contrast = EngineSettings.CONTRASTS.last))
+
+        assertEquals(before.index, after.index)
+        assertEquals(before.pageCount, after.pageCount)
+        assertEquals(before.xpointer, after.xpointer)
+        assertTrue("darker letters: ${ink(after)} against $inkBefore", ink(after) > inkBefore * 11 / 10)
+        val back = reader.apply(EngineSettings())
+        assertEquals("and as before once the contrast is back", inkBefore, ink(back))
+    }
+
+    @Test
     fun copyForTheOtherOrientationTakesNewColoursWithoutBeingLaidOutAgain() = reading { reader ->
         val wide = Layout(EngineSettings(twoPages = true), HEIGHT, WIDTH)
         reader.prepareSpare(wide)

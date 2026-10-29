@@ -150,6 +150,7 @@ internal fun SettingsSheet(
                     onMore = { onChange { it.copy(fontSize = (it.fontSize + 1).coerceIn(ReaderPrefs.FONT_SIZES)) } },
                 )
                 WeightSlider(prefs.fontWeight) { chosen -> onChange { it.copy(fontWeight = chosen) } }
+                ContrastSlider(prefs.contrast) { chosen -> onChange { it.copy(contrast = chosen) } }
                 Stepper(
                     R.string.setting_line_spacing, stringResource(R.string.percent, prefs.lineSpacingPercent), "line-spacing",
                     onLess = { onChange { it.copy(lineSpacingPercent = stepped(it.lineSpacingPercent, -1, ReaderPrefs.LINE_SPACINGS)) } },
@@ -300,6 +301,24 @@ private fun Stepper(label: Int, value: String, tag: String, onLess: () -> Unit, 
             )
             OutlinedButton(onClick = onMore, Modifier.testTag("$tag-more").semantics { contentDescription = more }) { Text("+") }
         }
+    }
+}
+
+/** Contrast: darker strokes step by step, with no line moved; the page is painted again as the thumb is let go. */
+@Composable
+private fun ContrastSlider(contrast: Int, onChoose: (Int) -> Unit) {
+    val steps = EngineSettings.CONTRASTS
+    var position by remember(contrast) { mutableFloatStateOf(contrast.coerceIn(steps).toFloat()) }
+    Column(Modifier.fillMaxWidth()) {
+        SettingLabel(R.string.setting_contrast)
+        Slider(
+            value = position,
+            onValueChange = { position = it },
+            onValueChangeFinished = { onChoose(position.roundToInt()) },
+            valueRange = steps.first.toFloat()..steps.last.toFloat(),
+            steps = steps.last - steps.first - 1,
+            modifier = Modifier.testTag("contrast"),
+        )
     }
 }
 

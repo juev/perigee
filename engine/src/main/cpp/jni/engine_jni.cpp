@@ -396,6 +396,12 @@ Java_org_evsyukov_perigee_engine_NativeEngine_setColors(JNIEnv*, jobject, jlong 
     gPalettes[viewOf(handle)] = Palette{static_cast<lUInt32>(textColor) & 0xFFFFFF, static_cast<lUInt32>(backgroundColor) & 0xFFFFFF};
 }
 
+JNIEXPORT void JNICALL
+Java_org_evsyukov_perigee_engine_NativeEngine_setGamma(JNIEnv*, jobject, jdouble gamma) {
+    // The font manager keeps one gamma for all books; a new one empties the glyph cache, and nothing is laid out again.
+    if (fontMan->GetGamma() != gamma) fontMan->SetGamma(gamma);
+}
+
 JNIEXPORT jboolean JNICALL
 Java_org_evsyukov_perigee_engine_NativeEngine_load(JNIEnv* env, jobject, jlong handle, jstring path) {
     LVDocView* view = viewOf(handle);

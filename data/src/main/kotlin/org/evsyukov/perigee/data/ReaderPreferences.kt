@@ -52,6 +52,8 @@ data class ReaderPrefs(
     val fontFace: String = "Roboto",
     val fontSize: Int = 18,
     val fontWeight: Int = 400,
+    /** How dark letters are drawn, 0 as the font has them; the steps are `EngineSettings.CONTRASTS`. */
+    val contrast: Int = 0,
     val lineSpacingPercent: Int = 120,
     val alignment: Alignment = Alignment.Justify,
     val hyphenation: Boolean = true,
@@ -111,6 +113,7 @@ class ReaderPreferences private constructor(private val store: DataStore<Prefere
             fontFace = p[FONT_FACE] ?: d.fontFace,
             fontSize = p[FONT_SIZE] ?: d.fontSize,
             fontWeight = p[FONT_WEIGHT] ?: d.fontWeight,
+            contrast = p[CONTRAST] ?: d.contrast,
             lineSpacingPercent = p[LINE_SPACING] ?: d.lineSpacingPercent,
             alignment = p[ALIGNMENT].enumOr(d.alignment),
             hyphenation = p[HYPHENATION] ?: d.hyphenation,
@@ -136,6 +139,7 @@ class ReaderPreferences private constructor(private val store: DataStore<Prefere
         p[FONT_FACE] = v.fontFace
         p[FONT_SIZE] = v.fontSize
         p[FONT_WEIGHT] = v.fontWeight
+        p[CONTRAST] = v.contrast
         p[LINE_SPACING] = v.lineSpacingPercent
         p[ALIGNMENT] = v.alignment.name
         p[HYPHENATION] = v.hyphenation
@@ -164,6 +168,7 @@ class ReaderPreferences private constructor(private val store: DataStore<Prefere
         private val FONT_FACE = stringPreferencesKey("font_face")
         private val FONT_SIZE = intPreferencesKey("font_size")
         private val FONT_WEIGHT = intPreferencesKey("font_weight")
+        private val CONTRAST = intPreferencesKey("contrast")
         private val LINE_SPACING = intPreferencesKey("line_spacing")
         private val ALIGNMENT = stringPreferencesKey("alignment")
         private val HYPHENATION = booleanPreferencesKey("hyphenation")
