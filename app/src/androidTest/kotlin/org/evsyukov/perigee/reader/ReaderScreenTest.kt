@@ -1,6 +1,5 @@
 package org.evsyukov.perigee.reader
 
-import android.graphics.Color
 import androidx.activity.ComponentActivity
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.Box
@@ -293,7 +292,8 @@ class ReaderScreenTest {
         tapPage(0.05f, 0.03f)
         waitFor("the scheme is Night") { model().prefs.value.colorScheme == ColorScheme.Night }
         // The page is redrawn in the new colours; touches made meanwhile are dropped.
-        waitFor("the page is drawn at night") { model().state.value.page?.bitmap?.getPixel(2, 2) == Color.BLACK }
+        val night = 0xFF000000.toInt() or ReaderViewModel.colorsOf(ColorScheme.Night).background
+        waitFor("the page is drawn at night") { model().state.value.page?.bitmap?.getPixel(2, 2) == night }
         waitForBook()
         tapPage(0.05f, 0.03f)
         waitFor("the scheme is Day again") { model().prefs.value.colorScheme == ColorScheme.Day }
