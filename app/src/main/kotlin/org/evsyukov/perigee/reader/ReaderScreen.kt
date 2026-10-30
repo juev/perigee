@@ -162,7 +162,7 @@ fun ReaderScreen(file: File, onClose: () -> Unit, viewModel: ReaderViewModel = v
             else -> close()
         }
     }
-    HideSystemBars(navigation = panel != Panel.None)
+    HideSystemBars(navigation = panel == Panel.Menu)
     LifecycleEventEffect(Lifecycle.Event.ON_STOP) { viewModel.paused() }
     LifecycleEventEffect(Lifecycle.Event.ON_START) { viewModel.resumed() }
     val (windowBrightness, dim) = Dimming.split(prefs.brightness, prefs.dimBelowFlicker, MIN_BRIGHTNESS)
@@ -566,7 +566,8 @@ private fun ProgressLine(progress: Float, chapters: List<Float>, color: Color, m
 
 /**
  * Hides the status and navigation bars while a book is on screen; a swipe from the edge shows them briefly.
- * With [navigation] the navigation bar stays, on systems that have one.
+ * With [navigation] the navigation bar stays, on systems that have one, without the system's scrim:
+ * the buttons lie on the menu, in its colour.
  */
 @Composable
 private fun HideSystemBars(navigation: Boolean) {
@@ -575,7 +576,12 @@ private fun HideSystemBars(navigation: Boolean) {
         val controller = window?.let { WindowCompat.getInsetsController(it, it.decorView) }
         controller?.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
         controller?.hide(WindowInsetsCompat.Type.systemBars())
-        onDispose { controller?.show(WindowInsetsCompat.Type.systemBars()) }
+        val scrim = window?.isNavigationBarContrastEnforced
+        window?.isNavigationBarContrastEnforced = false
+        onDispose {
+            controller?.show(WindowInsetsCompat.Type.systemBars())
+            scrim?.let { window.isNavigationBarContrastEnforced = it }
+        }
     }
     DisposableEffect(window, navigation) {
         val controller = window?.let { WindowCompat.getInsetsController(it, it.decorView) }

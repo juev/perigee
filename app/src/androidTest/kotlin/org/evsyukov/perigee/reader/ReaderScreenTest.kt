@@ -52,6 +52,7 @@ import org.evsyukov.perigee.server.Server
 import org.evsyukov.perigee.sync.BookOrbit
 import org.evsyukov.perigee.sync.FakeOrbit
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -206,6 +207,7 @@ class ReaderScreenTest {
         rule.waitUntil(TIMEOUT) { !barShown() }
         openMenu()
         rule.waitUntil(TIMEOUT) { barShown() }
+        assertFalse("no scrim of the system under the buttons", activity.window.isNavigationBarContrastEnforced)
         tapPage(0.5f, 0.5f)
         rule.waitUntil(TIMEOUT) { !barShown() }
         assertEquals("the page is the same", before?.pageCount, model().state.value.page?.pageCount)
