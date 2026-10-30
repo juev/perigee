@@ -21,6 +21,8 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -33,6 +35,7 @@ import androidx.compose.foundation.layout.displayCutout
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.systemGestures
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.requiredWidth
@@ -133,6 +136,9 @@ internal fun zoneOf(x: Float, y: Float, size: IntSize, prefs: ReaderPrefs): Zone
     }
 }
 
+/** A finger that starts this close to the bottom of the page is going for the system's navigation, not the book. */
+internal fun startsOnBottomEdge(y: Float, height: Int, edge: Float): Boolean = y >= height - edge
+
 /** A book on the whole screen. */
 @Composable
 fun ReaderScreen(file: File, onClose: () -> Unit, viewModel: ReaderViewModel = viewModel()) {
@@ -156,7 +162,7 @@ fun ReaderScreen(file: File, onClose: () -> Unit, viewModel: ReaderViewModel = v
             else -> close()
         }
     }
-    HideSystemBars()
+    HideSystemBars(navigation = panel != Panel.None)
     LifecycleEventEffect(Lifecycle.Event.ON_STOP) { viewModel.paused() }
     LifecycleEventEffect(Lifecycle.Event.ON_START) { viewModel.resumed() }
     val (windowBrightness, dim) = Dimming.split(prefs.brightness, prefs.dimBelowFlicker, MIN_BRIGHTNESS)
@@ -183,6 +189,7 @@ fun ReaderScreen(file: File, onClose: () -> Unit, viewModel: ReaderViewModel = v
     val cutout = WindowInsets.displayCutout.asPaddingValues()
     val direction = LocalLayoutDirection.current
     val sideInset = maxOf(cutout.calculateLeftPadding(direction), cutout.calculateRightPadding(direction))
+    val bottomEdge = maxOf(WindowInsets.systemGestures.getBottom(density).toFloat(), with(density) { BOTTOM_EDGE.toPx() })
     Box(
         Modifier
             .fillMaxSize()
@@ -236,6 +243,8 @@ fun ReaderScreen(file: File, onClose: () -> Unit, viewModel: ReaderViewModel = v
                     // With two pages the bitmap is wider than the screen and shown centred.
                     val offsetX = (shown.bitmap.width - width) / 2
                     val currentPrefs by rememberUpdatedState(prefs)
+                    val currentBottomEdge by rememberUpdatedState(bottomEdge)
+                    var fromBottomEdge by remember { mutableStateOf(false) }
                     val menuOpen by rememberUpdatedState(panel == Panel.Menu)
                     val pageLabel = stringResource(R.string.page_description, shown.index + 1, shown.pageCount)
                     PageView(
@@ -273,6 +282,13 @@ fun ReaderScreen(file: File, onClose: () -> Unit, viewModel: ReaderViewModel = v
                                 }
                             }
                             .pointerInput(Unit) {
+                                // Where the finger came down: once it counts as a drag it has moved on, far on a quick swipe.
+                                awaitEachGesture {
+                                    val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+                                    fromBottomEdge = startsOnBottomEdge(down.position.y, size.height, currentBottomEdge)
+                                }
+                            }
+                            .pointerInput(Unit) {
                                 var moved = Offset.Zero
                                 var gesture = Drag.Undecided
                                 var startedOnEdge = false
@@ -280,7 +296,8 @@ fun ReaderScreen(file: File, onClose: () -> Unit, viewModel: ReaderViewModel = v
                                 detectDragGestures(
                                     onDragStart = { at ->
                                         moved = Offset.Zero
-                                        gesture = Drag.Undecided
+                                        // The system shows its bars by a swipe from there: the place in the book stays.
+                                        gesture = if (fromBottomEdge) Drag.Done else Drag.Undecided
                                         startedOnEdge = at.x < size.width * EDGE_SHARE
                                         startBrightness = currentPrefs.brightness ?: 0.5f
                                     },
@@ -547,15 +564,23 @@ private fun ProgressLine(progress: Float, chapters: List<Float>, color: Color, m
     }
 }
 
-/** Hides the status and navigation bars while a book is on screen; a swipe from the edge shows them briefly. */
+/**
+ * Hides the status and navigation bars while a book is on screen; a swipe from the edge shows them briefly.
+ * With [navigation] the navigation bar stays, on systems that have one.
+ */
 @Composable
-private fun HideSystemBars() {
+private fun HideSystemBars(navigation: Boolean) {
     val window = LocalActivity.current?.window
     DisposableEffect(window) {
         val controller = window?.let { WindowCompat.getInsetsController(it, it.decorView) }
         controller?.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
         controller?.hide(WindowInsetsCompat.Type.systemBars())
         onDispose { controller?.show(WindowInsetsCompat.Type.systemBars()) }
+    }
+    DisposableEffect(window, navigation) {
+        val controller = window?.let { WindowCompat.getInsetsController(it, it.decorView) }
+        if (navigation) controller?.show(WindowInsetsCompat.Type.navigationBars()) else controller?.hide(WindowInsetsCompat.Type.navigationBars())
+        onDispose { }
     }
 }
 
@@ -595,6 +620,7 @@ private fun openLink(activity: Activity?, url: String) {
 }
 
 private val SWIPE = 48.dp
+private val BOTTOM_EDGE = 32.dp
 private const val VIEWPORT_SETTLE_MILLIS = 100L
 private const val EDGE_SHARE = 0.15f
 private const val MIN_BRIGHTNESS = 0.01f
