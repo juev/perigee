@@ -148,3 +148,10 @@ jobs:
           path: |
             */build/reports/androidTests
             */build/outputs/androidTest-results
+      # A test that passes on a later attempt leaves the job green, and the attempt it failed on is cleared.
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: failed-attempts-${{ strategy.job-index }}
+          path: failed-attempts
+          if-no-files-found: ignore
