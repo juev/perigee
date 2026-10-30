@@ -343,6 +343,10 @@ class ReaderScreenTest {
         rule.waitUntil(TIMEOUT) { model().prefs.value.schemeByLight }
         model().onLight(2f)
         waitFor("the room is dark: the page goes dark after the level holds") { model().prefs.value.colorScheme == ColorScheme.Night }
+        // The page is redrawn in the new colours; touches made meanwhile are dropped.
+        val night = 0xFF000000.toInt() or ReaderViewModel.colorsOf(ColorScheme.Night).background
+        waitFor("the page is drawn at night") { model().state.value.page?.bitmap?.getPixel(2, 2) == night }
+        waitForBook()
         // The reader takes the light scheme back by the corner: the light around decides nothing more for this book.
         tapPage(0.05f, 0.03f)
         waitFor("the scheme is Day by hand") { model().prefs.value.colorScheme == ColorScheme.Day }
