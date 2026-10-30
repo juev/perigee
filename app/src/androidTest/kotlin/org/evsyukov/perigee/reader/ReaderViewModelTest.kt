@@ -8,11 +8,17 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import java.io.File
+import java.util.concurrent.atomic.AtomicInteger
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import org.evsyukov.perigee.data.Library
 import org.evsyukov.perigee.data.ReaderPreferences
 import org.evsyukov.perigee.data.ReaderPrefs
 import org.evsyukov.perigee.data.RemotePosition
+import org.evsyukov.perigee.server.Server
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -37,6 +43,7 @@ class ReaderViewModelTest {
     private val context = instrumentation.targetContext.applicationContext as Application
     private val library get() = Library.get(context)
     private val stores = mutableListOf<ViewModelStore>()
+    private val held = mutableListOf<HeldLibrary>()
     private lateinit var book: File
 
     @Before
@@ -50,6 +57,8 @@ class ReaderViewModelTest {
     @After
     fun clearModels() {
         instrumentation.runOnMainSync { stores.forEach(ViewModelStore::clear) }
+        held.forEach(HeldLibrary::letThrough)
+        untilTrue("the writes held are made") { held.all { it.running.get() == 0 } }
         ReaderViewModel.clock = System::currentTimeMillis
     }
 
@@ -59,15 +68,22 @@ class ReaderViewModelTest {
     /**
      * A model of its own, as a new start of the app, with the book open at the size of a phone's page.
      * With [asked], the server is not there, and the books it would be asked about are put into it.
+     * With [writes], the place and the pages read are written there instead of straight to the library.
      */
-    private fun opened(asked: MutableList<String>? = null): ReaderViewModel {
+    private fun opened(asked: MutableList<String>? = null, writes: ReadingStore? = null): ReaderViewModel {
         lateinit var model: ReaderViewModel
         onMain {
             val store = ViewModelStore().also(stores::add)
-            val factory = if (asked == null) {
+            val factory = if (asked == null && writes == null) {
                 ViewModelProvider.AndroidViewModelFactory.getInstance(context)
             } else {
-                viewModelFactory { initializer { ReaderViewModel(context, library) { id -> synchronized(asked) { asked += id } } } }
+                viewModelFactory {
+                    initializer {
+                        ReaderViewModel(context, library, writes ?: ReadingStore.of(library)) { id ->
+                            if (asked == null) Server.bookOpened(context, id) else synchronized(asked) { asked += id }
+                        }
+                    }
+                }
             }
             model = ViewModelProvider(store, factory)[ReaderViewModel::class.java]
             model.open(book)
@@ -237,7 +253,7 @@ class ReaderViewModelTest {
         val id = model.state.value.book!!.id
         val pages = model.state.value.page!!.pageCount
         runBlocking { library.onServer(id, 7, 70) }
-        fun reads() = runBlocking { library.pageReadsToSend(100) }.filter { it.bookId == id }
+        fun reads() = runBlocking { library.pageReadsToSend(Int.MAX_VALUE) }.filter { it.bookId == id }
 
         now += 42_000
         model.forward(1)
@@ -265,6 +281,119 @@ class ReaderViewModelTest {
         model.forward(1)
         untilTrue("the page after the return is counted") { reads().size == 4 }
         assertEquals("the time away is not time read", listOf(4, 10), reads().last().let { listOf(it.page, it.seconds) })
+    }
+
+    /**
+     * The library as storage slow to write: while held, writes wait. They are made one at a time in
+     * the order they were asked for, as the library's own writes are; [running] counts those under way.
+     */
+    private inner class HeldLibrary : ReadingStore {
+        private val open = MutableStateFlow(true)
+        private val inTurn = Mutex()
+        val running = AtomicInteger()
+
+        fun hold() {
+            open.value = false
+        }
+
+        fun letThrough() {
+            open.value = true
+        }
+
+        override suspend fun savePosition(bookId: String, xpointer: String, progress: Float) =
+            write { library.savePosition(bookId, xpointer, progress) }
+
+        override suspend fun addPageRead(bookId: String, page: Int, totalPages: Int, startedAt: Long, seconds: Int) =
+            write { library.addPageRead(bookId, page, totalPages, startedAt, seconds) }
+
+        private suspend fun write(write: suspend () -> Unit) {
+            running.incrementAndGet()
+            try {
+                inTurn.withLock {
+                    open.first { it }
+                    write()
+                }
+            } finally {
+                running.decrementAndGet()
+            }
+        }
+    }
+
+    /**
+     * The pages of book [id] read and not sent yet, as page and seconds, in the order they were begun. All
+     * of them: the library keeps pages of other books from run to run. Not in the order written: the page
+     * the app is put away on may be written before the page left, whose place is written first.
+     */
+    private fun readsOf(id: String) = runBlocking { library.pageReadsToSend(Int.MAX_VALUE) }
+        .filter { it.bookId == id }.sortedBy { it.startedAt }.map { listOf(it.page, it.seconds) }
+
+    @Test
+    fun appPutAwayWhileThePageBeforeIsWrittenDownEndsThePageShown() {
+        var now = 1_700_000_000_000L
+        ReaderViewModel.clock = { now }
+        val writes = HeldLibrary().also(held::add)
+        val model = opened(writes = writes)
+        val id = model.state.value.book!!.id
+        runBlocking { library.onServer(id, 7, 70) }
+
+        now += 42_000
+        model.forward(1)
+        untilTrue("the first page is counted") { readsOf(id) == listOf(listOf(1, 42)) }
+
+        // The next page is shown, and the app is put away before its place and the page before are written down.
+        writes.hold()
+        now += 20_000
+        model.forward(1)
+        now += 30_000
+        onMain { model.paused() }
+        writes.letThrough()
+        val counted = listOf(listOf(1, 42), listOf(2, 20), listOf(3, 30))
+        untilTrue("the page left and the page put away are counted") { readsOf(id) == counted }
+
+        now += 600_000
+        onMain { model.resumed() }
+        now += 10_000
+        model.forward(1)
+        untilTrue("the page after the return is counted") { readsOf(id).size == 4 }
+        assertEquals("the time away is not time read", counted + listOf(listOf(3, 10)), readsOf(id))
+    }
+
+    @Test
+    fun pagesTurnWhileThePlacesAreStillBeingWrittenDown() {
+        val writes = HeldLibrary().also(held::add)
+        val model = opened(writes = writes)
+        val id = model.state.value.book!!.id
+
+        writes.hold()
+        model.forward(3)
+        val last = model.state.value.page!!
+        writes.letThrough()
+
+        assertEquals(3, model.shown())
+        untilTrue("the place of the page shown last is kept") { runBlocking { library.book(id) }!!.xpointer == last.xpointer }
+    }
+
+    @Test
+    fun whatWasReadIsWrittenDownThoughTheModelIsGoneMeanwhile() {
+        var now = 1_700_000_000_000L
+        ReaderViewModel.clock = { now }
+        val writes = HeldLibrary().also(held::add)
+        val model = opened(writes = writes)
+        val id = model.state.value.book!!.id
+        runBlocking { library.onServer(id, 7, 70) }
+
+        writes.hold()
+        now += 42_000
+        model.forward(1)
+        now += 30_000
+        onMain { model.paused() }
+        // The screen goes away, and its model with it, before anything is written.
+        onMain { stores.forEach(ViewModelStore::clear) }
+        writes.letThrough()
+
+        untilTrue("both pages read are counted") { readsOf(id) == listOf(listOf(1, 42), listOf(2, 30)) }
+        val turnedTo = model.state.value.page!!.xpointer
+        untilTrue("the place turned to is kept") { runBlocking { library.book(id) }!!.xpointer == turnedTo }
     }
 
     private companion object {
