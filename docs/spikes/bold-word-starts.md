@@ -155,7 +155,7 @@ Reading the sheets:
 - **Candidate** is the calmest: short words stay plain, the bold part is a 600 semibold, the tail fades. On PT Serif the 600 is synthesised from bold and still reads as an emphasis; the thin tail is synthesised too.
 - **Every other** and **three zones** showed no advantage over the simpler looks; every-other looks arbitrary, three-zones is close to current.
 
-Shortlist for the owner ([pages A–F](bold-word-starts-shortlist.png), [first lines A–F](bold-word-starts-shortlist-crops.png)):
+Shortlist for the owner ([pages A–F](bold-word-starts-shortlist.png), [first lines A–F](bold-word-starts-shortlist-crops.png), [one page with all six](bold-word-starts-choose.png)):
 
 | Letter | Variant | Look | Pages Roboto / Literata / PT Serif |
 | --- | --- | --- | --- |
