@@ -1,6 +1,6 @@
 --- a/crengine/src/lvrend.cpp
 +++ b/crengine/src/lvrend.cpp
-@@ -21,6 +21,112 @@
+@@ -21,6 +21,119 @@
  #include "../include/lvrend.h"
  #include "../include/renderutil.h"
  #include "../include/drawutil.h"
@@ -59,7 +59,8 @@
 +
 +// Perigee: how the opening letters look. A test sets it through the JNI; the default is the rule the
 +// app ships. Values are process-wide because a text source keeps no settings pointer; the test opens one
-+// document at a time. tailWeight and middleWeight 0 mean the weight of the node's own text.
++// document at a time. tailWeight and middleWeight 0 mean the weight of the node's own text; size
++// percent 100 means its size.
 +struct PerigeeBoldLook {
 +    int mode;          // 0: one letter of a word of up to three, half of a longer one; 1: one letter;
 +                       // 2: a third; 3: two thirds
@@ -69,11 +70,14 @@
 +    int middleWeight;
 +    int everyNth;      // 1: every word; 2: every second; and so on
 +    int minWordLength; // 0: every word; N: only words of at least N letters
++    int boldSize;      // percent of the node's font size
++    int middleSize;
++    int tailSize;
 +};
-+static PerigeeBoldLook perigeeBoldLook = { 0, 700, 0, 0, 0, 1, 0 };
++static PerigeeBoldLook perigeeBoldLook = { 0, 700, 0, 0, 0, 1, 0, 100, 100, 100 };
 +
 +void perigeeSetBoldWordStartsLook( int mode, int boldWeight, int tailWeight, int middlePercent,
-+        int middleWeight, int everyNth, int minWordLength )
++        int middleWeight, int everyNth, int minWordLength, int boldSize, int middleSize, int tailSize )
 +{
 +    perigeeBoldLook.mode = mode;
 +    perigeeBoldLook.boldWeight = boldWeight;
@@ -82,6 +86,9 @@
 +    perigeeBoldLook.middleWeight = middleWeight;
 +    perigeeBoldLook.everyNth = everyNth < 1 ? 1 : everyNth;
 +    perigeeBoldLook.minWordLength = minWordLength < 0 ? 0 : minWordLength;
++    perigeeBoldLook.boldSize = boldSize < 1 ? 100 : boldSize;
++    perigeeBoldLook.middleSize = middleSize < 1 ? 100 : middleSize;
++    perigeeBoldLook.tailSize = tailSize < 1 ? 100 : tailSize;
 +}
 +
 +// How many letters of a word of 'letters' letters are bold.
@@ -113,7 +120,7 @@
  
  // Note about box model/sizing in crengine:
  // https://quirksmode.org/css/user-interface/boxsizing.html says:
-@@ -4739,7 +4845,144 @@
+@@ -4739,7 +4852,154 @@
              // to cause no harm to text rendering, and it helps getRect() not
              // ignoring this single letter.
  
@@ -190,7 +197,7 @@
 +                        if ( middleEnd > boldEnd )
 +                            perigeeParts.push_back({boldEnd, middleEnd, 1});
 +                    }
-+                    if ( perigeeBoldLook.tailWeight > 0 ) {
++                    if ( perigeeBoldLook.tailWeight > 0 || perigeeBoldLook.tailSize != 100 ) {
 +                        if ( i > middleEnd )
 +                            perigeeParts.push_back({middleEnd, i, 2});
 +                        partStart = i;
@@ -204,22 +211,32 @@
 +                if ( txform->GetSrcCount() + (int)perigeeParts.size() > 60000 )
 +                    perigeeParts.clear();
 +                if ( !perigeeParts.empty() ) {
-+                    css_style_rec_t lookStyle = *style.get();
-+                    lookStyle.font_weight = perigeeBoldLook.boldWeight;
-+                    perigeeBold = getFont(parent, &lookStyle, enode->getDocument()->getFontContextDocIndex());
++                    auto fontFor = [&]( int weight, int sizePercent ) {
++                        css_style_rec_t lookStyle = *style.get();
++                        if ( weight > 0 )
++                            lookStyle.font_weight = weight;
++                        if ( sizePercent > 0 && sizePercent != 100 ) {
++                            int base = font->getSize();
++                            int size = (base * sizePercent + 50) / 100;
++                            if ( size < 8 )
++                                size = 8;
++                            lookStyle.font_size.type = css_val_screen_px;
++                            lookStyle.font_size.value = size;
++                        }
++                        return getFont(parent, &lookStyle, enode->getDocument()->getFontContextDocIndex());
++                    };
++                    perigeeBold = fontFor(perigeeBoldLook.boldWeight, perigeeBoldLook.boldSize);
 +                    if ( perigeeBold.isNull() ) {
 +                        perigeeParts.clear();
 +                    } else {
-+                        if ( perigeeBoldLook.middlePercent > 0 && perigeeBoldLook.middleWeight > 0 ) {
-+                            lookStyle.font_weight = perigeeBoldLook.middleWeight;
-+                            perigeeMiddle = getFont(parent, &lookStyle, enode->getDocument()->getFontContextDocIndex());
-+                        }
-+                        if ( perigeeBoldLook.tailWeight > 0 ) {
-+                            lookStyle.font_weight = perigeeBoldLook.tailWeight;
-+                            perigeeTail = getFont(parent, &lookStyle, enode->getDocument()->getFontContextDocIndex());
-+                        }
-+                        if ( (perigeeBoldLook.middlePercent > 0 && perigeeBoldLook.middleWeight > 0 && perigeeMiddle.isNull())
-+                                || (perigeeBoldLook.tailWeight > 0 && perigeeTail.isNull()) )
++                        bool hasMiddle = perigeeBoldLook.middlePercent > 0
++                            && (perigeeBoldLook.middleWeight > 0 || perigeeBoldLook.middleSize != 100);
++                        bool hasTail = perigeeBoldLook.tailWeight > 0 || perigeeBoldLook.tailSize != 100;
++                        if ( hasMiddle )
++                            perigeeMiddle = fontFor(perigeeBoldLook.middleWeight, perigeeBoldLook.middleSize);
++                        if ( hasTail )
++                            perigeeTail = fontFor(perigeeBoldLook.tailWeight, perigeeBoldLook.tailSize);
++                        if ( (hasMiddle && perigeeMiddle.isNull()) || (hasTail && perigeeTail.isNull()) )
 +                            perigeeParts.clear();
 +                    }
 +                }

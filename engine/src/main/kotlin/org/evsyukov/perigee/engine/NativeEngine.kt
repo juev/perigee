@@ -54,6 +54,9 @@ internal object NativeEngine {
         middleWeight: Int,
         everyNth: Int,
         minWordLength: Int,
+        boldSize: Int,
+        middleSize: Int,
+        tailSize: Int,
     )
 
     /** Returns false when the file cannot be opened. */

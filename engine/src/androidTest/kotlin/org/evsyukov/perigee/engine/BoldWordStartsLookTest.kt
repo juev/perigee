@@ -34,7 +34,7 @@ class BoldWordStartsLookTest {
     @Before
     @After
     fun resetLook() {
-        NativeEngine.setBoldWordStartsLook(0, 700, 0, 0, 0, 1, 0)
+        NativeEngine.setBoldWordStartsLook(0, 700, 0, 0, 0, 1, 0, 100, 100, 100)
     }
 
     /** A word long enough for the bold and the regular parts to be told apart. */
@@ -50,7 +50,7 @@ class BoldWordStartsLookTest {
         for (look in LOOKS) {
             NativeEngine.setBoldWordStartsLook(
                 look.mode, look.boldWeight, look.tailWeight, look.middlePercent,
-                look.middleWeight, look.everyNth, look.minWordLength,
+                look.middleWeight, look.everyNth, look.minWordLength, look.boldSize, look.middleSize, look.tailSize,
             )
             EngineDocument.open(
                 context, book, WIDTH, HEIGHT, settings.copy(boldWordStarts = look.boldWordStarts), DENSITY,
@@ -91,7 +91,7 @@ class BoldWordStartsLookTest {
             for (look in COUNT_LOOKS) {
                 NativeEngine.setBoldWordStartsLook(
                     look.mode, look.boldWeight, look.tailWeight, look.middlePercent,
-                    look.middleWeight, look.everyNth, look.minWordLength,
+                    look.middleWeight, look.everyNth, look.minWordLength, look.boldSize, look.middleSize, look.tailSize,
                 )
                 val lookSettings = settings.copy(fontFace = font, boldWordStarts = look.boldWordStarts)
                 EngineDocument.open(context, book, WIDTH, HEIGHT, lookSettings, DENSITY, cacheable = false).use { doc ->
@@ -116,11 +116,12 @@ class BoldWordStartsLookTest {
         val names = setOf(
             "0-plain", "1-current", "2-one-letter", "3-one-third", "7-thin-tail",
             "12-one-third-600-thin-long", "15-one-letter-long", "16-one-third-600-long",
+            "19-three-zone-medium", "20-size-gradient", "21-size-and-weights",
         )
         for (look in LOOKS.filter { it.name in names }) {
             NativeEngine.setBoldWordStartsLook(
                 look.mode, look.boldWeight, look.tailWeight, look.middlePercent,
-                look.middleWeight, look.everyNth, look.minWordLength,
+                look.middleWeight, look.everyNth, look.minWordLength, look.boldSize, look.middleSize, look.tailSize,
             )
             val lookSettings = settings.copy(fontFace = "PT Serif", boldWordStarts = look.boldWordStarts)
             EngineDocument.open(context, book, WIDTH, HEIGHT, lookSettings, DENSITY, cacheable = false).use { doc ->
@@ -207,6 +208,9 @@ $body
         val middleWeight: Int = 0,
         val everyNth: Int = 1,
         val minWordLength: Int = 0,
+        val boldSize: Int = 100,
+        val middleSize: Int = 100,
+        val tailSize: Int = 100,
     )
 
     private companion object {
@@ -236,6 +240,12 @@ $body
             Look("16-one-third-600-long", mode = 2, boldWeight = 600, minWordLength = 5),
             Look("17-one-third-600", mode = 2, boldWeight = 600),
             Look("18-one-letter-600-long", mode = 1, boldWeight = 600, minWordLength = 5),
+            Look("19-three-zone-medium", mode = 2, middlePercent = 33, middleWeight = 500, tailWeight = 300),
+            Look("20-size-gradient", mode = 2, boldWeight = 400, middlePercent = 33, boldSize = 115, tailSize = 85),
+            Look(
+                "21-size-and-weights", mode = 2, middlePercent = 33, middleWeight = 500, tailWeight = 300,
+                boldSize = 115, tailSize = 85,
+            ),
         )
 
         val COUNT_LOOKS = LOOKS.filter {
@@ -243,6 +253,7 @@ $body
                 "0-plain", "1-current", "2-one-letter", "3-one-third", "5-semibold",
                 "7-thin-tail", "10-long-words", "12-one-third-600-thin-long", "14-one-third-long",
                 "15-one-letter-long", "16-one-third-600-long",
+                "19-three-zone-medium", "20-size-gradient", "21-size-and-weights",
             )
         }
     }

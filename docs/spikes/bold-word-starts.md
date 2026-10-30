@@ -155,6 +155,20 @@ Reading the sheets:
 - **Candidate** is the calmest: short words stay plain, the bold part is a 600 semibold, the tail fades. On PT Serif the 600 is synthesised from bold and still reads as an emphasis; the thin tail is synthesised too.
 - **Every other** and **three zones** showed no advantage over the simpler looks; every-other looks arbitrary, three-zones is close to current.
 
+## Follow-up: weight and size gradients (2026-10-30)
+
+The owner asked for a three-zone weight gradient (1/3 bold, 1/3 medium, 1/3 thin) and for a size gradient (large at the start, smaller towards the tail). These were added as variants 19–21; [A–D](bold-word-starts-choose-2.png) shows them next to 12:
+
+| Look | Roboto | Literata | PT Serif |
+| --- | --- | --- | --- |
+| 19: 1/3, 700 / 500 / 300 | 334 (0%) | 448 (0%) | 381 (+6.4%) |
+| 20: size 115 / 100 / 85, weight 400 | 364 (+9.0%) | 500 (+11.6%) | 400 (+11.7%) |
+| 21: size 115 / 100 / 85 + 700 / 500 / 300 | 364 (+9.0%) | 530 (+18.3%) | 400 (+11.7%) |
+
+- **19** is a smoother weight gradient than 12: the middle is a 500 medium instead of 400, the first part a 700 bold. It is page-neutral on Roboto and Literata and +6.4% on PT Serif; it looks closer to current than to 12, with the tail fading.
+- **20 and 21** make the first part larger. The size gradient is visible as a "trumpet" word shape; the larger first part raises the line height and costs 9–18% more pages. It is a display effect, not a body-text look in this form; a milder 110/100/90 could be tried if the owner likes the idea, but the page cost will stay above the target.
+- **A (12)** remains the only look within ±3% on all three fonts. **B (19)** is the closest alternative if the medium middle is preferred.
+
 Shortlist for the owner ([pages A–F](bold-word-starts-shortlist.png), [first lines A–F](bold-word-starts-shortlist-crops.png), [one page with all six](bold-word-starts-choose.png)):
 
 | Letter | Variant | Look | Pages Roboto / Literata / PT Serif |
