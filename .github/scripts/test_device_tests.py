@@ -7,6 +7,7 @@ import sys
 import tempfile
 import textwrap
 import unittest
+import xml.etree.ElementTree as ElementTree
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -52,6 +53,10 @@ class DeviceTestsTest(unittest.TestCase):
         runs = int((self.root / "runs").read_text())
         return code, runs, out.getvalue()
 
+    def failed_in(self, report):
+        fails = ElementTree.parse(report).iter("testcase")
+        return {f"{c.get('classname').rsplit('.', 1)[-1]}.{c.get('name')}" for c in fails if c.find("failure") is not None}
+
     def test_passing_run_is_run_once_and_says_nothing(self):
         code, runs, out = self.run_with([[]])
         self.assertEqual((0, 1, ""), (code, runs, out))
@@ -66,6 +71,18 @@ class DeviceTestsTest(unittest.TestCase):
         self.assertIn("failed and then passed", text)
         self.assertIn("`ReaderScreenTest.menu`", text)
         self.assertIn("`OpdsScreenTest.password`", text)
+
+    def test_each_attempt_with_failed_tests_is_kept_and_a_passing_one_is_not(self):
+        self.run_with([["ReaderScreenTest.menu"], ["OpdsScreenTest.password"], []])
+        kept = self.root / device_tests.KEPT
+        self.assertEqual(["attempt-1", "attempt-2"], sorted(p.name for p in kept.iterdir()))
+        results = "app/build/outputs/androidTest-results/connected/TEST-device.xml"
+        self.assertEqual({"ReaderScreenTest.menu"}, self.failed_in(kept / "attempt-1" / results))
+        self.assertEqual({"OpdsScreenTest.password"}, self.failed_in(kept / "attempt-2" / results))
+
+    def test_passing_run_keeps_nothing(self):
+        self.run_with([[]])
+        self.assertFalse((self.root / device_tests.KEPT).exists())
 
     def test_test_that_fails_every_time_fails_the_run_after_the_last_attempt(self):
         code, runs, out = self.run_with([["ReaderScreenTest.menu", "ReaderScreenTest.pages"], ["ReaderScreenTest.menu"]])

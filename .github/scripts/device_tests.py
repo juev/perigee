@@ -8,7 +8,9 @@ whole command is run again, up to --attempts times, as long as tests failed in
 it; a failure with no failed test, as a build that does not compile, is not
 run again. A test that failed on one attempt and the run passed on a later one
 is not hidden: it is listed in the job summary and as a warning on the run, so
-that such tests are counted and fixed.
+that such tests are counted and fixed. The results of each attempt with failed
+tests are kept in failed-attempts/attempt-<n>: the next attempt clears them, and
+a job that ends green uploads no reports.
 """
 
 import argparse
@@ -21,6 +23,8 @@ from pathlib import Path
 
 # Where the Android Gradle plugin leaves the results of connected tests, by module.
 RESULTS = "*/build/outputs/androidTest-results"
+# Where the results of attempts with failed tests stay.
+KEPT = "failed-attempts"
 
 
 def failed_tests(root):
@@ -37,6 +41,11 @@ def clear_results(root):
     # Results of an earlier attempt must not be read as this one's.
     for results in root.glob(RESULTS):
         shutil.rmtree(results)
+
+
+def keep_results(root, attempt):
+    for results in root.glob(RESULTS):
+        shutil.copytree(results, root / KEPT / f"attempt-{attempt}" / results.relative_to(root))
 
 
 def summary(passed, attempts, failed_by_attempt):
@@ -67,6 +76,7 @@ def run(command, attempts, root, out=sys.stdout):
         if not failed:
             break
         failed_by_attempt.append(failed)
+        keep_results(root, attempt)
         print(f"Attempt {attempt} of {attempts}: {len(failed)} tests failed", file=out, flush=True)
     passed = code == 0
     flaky = set().union(*failed_by_attempt) if passed and failed_by_attempt else set()
