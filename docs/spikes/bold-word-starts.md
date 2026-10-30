@@ -155,12 +155,18 @@ Reading the sheets:
 - **Candidate** is the calmest: short words stay plain, the bold part is a 600 semibold, the tail fades. On PT Serif the 600 is synthesised from bold and still reads as an emphasis; the thin tail is synthesised too.
 - **Every other** and **three zones** showed no advantage over the simpler looks; every-other looks arbitrary, three-zones is close to current.
 
-Shortlist for the owner:
+Shortlist for the owner ([pages A–F](bold-word-starts-shortlist.png), [first lines A–F](bold-word-starts-shortlist-crops.png)):
 
-1. **Candidate** — the only look meeting the page target on all tested fonts; accepts a synthesised thin tail on static fonts. Recommended if that is acceptable.
-2. **Semibold** — the simplest softer current; page-neutral on Roboto and Literata, +6.4% on PT Serif.
-3. **One third, 600, words 5+** — the best look without a thin tail; +6.4% on PT Serif.
-4. **One letter** — the subtlest; +6.4% on PT Serif.
+| Letter | Variant | Look | Pages Roboto / Literata / PT Serif |
+| --- | --- | --- | --- |
+| A | 12 | candidate: 1/3, 600, thin tail, words 5+ | 334 / 422 / 358 |
+| B | 5 | semibold: 1/2, 600 | 334 / 448 / 381 |
+| C | 16 | one third: 1/3, 600, words 5+, regular tail | 334 / 448 / 381 |
+| D | 2 | one letter, 700 | 334 / 448 / 381 |
+| E | 1 | current: 1/2, 700 | 334 / 474 / 381 |
+| F | 0 | plain, no emphasis | 334 / 448 / 358 |
+
+A is the only look meeting the page target on all tested fonts; it accepts a synthesised thin tail on static fonts. B is the simplest softer current. C is the best look without a thin tail. D is the subtlest. E is today. F is the control.
 
 The decision on the synthesised thin tail is reopened: if it is not acceptable, no tested look meets the page target on PT Serif, and the owner has to accept about 6.4% there.
 
