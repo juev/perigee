@@ -11,6 +11,7 @@ import kotlin.math.roundToInt
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -108,19 +109,36 @@ data class ReaderState(
     val chapter: TocEntry? get() = page?.let { shown -> toc.lastOrNull { it.page <= shown.index } }
 }
 
+/** Where the reader's place and the pages they read are written: the library, unless a test holds the writes back. */
+internal interface ReadingStore {
+    suspend fun savePosition(bookId: String, xpointer: String, progress: Float)
+    suspend fun addPageRead(bookId: String, page: Int, totalPages: Int, startedAt: Long, seconds: Int)
+
+    companion object {
+        fun of(library: Library) = object : ReadingStore {
+            override suspend fun savePosition(bookId: String, xpointer: String, progress: Float) =
+                library.savePosition(bookId, xpointer, progress)
+
+            override suspend fun addPageRead(bookId: String, page: Int, totalPages: Int, startedAt: Long, seconds: Int) =
+                library.addPageRead(bookId, page, totalPages, startedAt, seconds)
+        }
+    }
+}
+
 /**
  * One book on the screen. Outlives rotations: the screen comes back to the
  * same open book and only tells its new size.
  */
-class ReaderViewModel(
+class ReaderViewModel internal constructor(
     application: Application,
     private val library: Library,
+    private val store: ReadingStore = ReadingStore.of(library),
     /** Asks the server about a book just opened, or come back to, see [Server.bookOpened]. */
     private val bookOpened: suspend (bookId: String) -> Unit,
 ) : AndroidViewModel(application) {
 
     @Suppress("unused") // The constructor the system makes the model with.
-    constructor(application: Application) : this(application, Library.get(application), { Server.bookOpened(application, it) })
+    constructor(application: Application) : this(application, Library.get(application), bookOpened = { Server.bookOpened(application, it) })
 
     private val preferences = ReaderPreferences.get(application)
 
@@ -239,17 +257,25 @@ class ReaderViewModel(
         if (looking == null) looking = Looking(book.id, page.index, page.pageCount, clock())
     }
 
-    /**
-     * Counts the time spent on the page that is left. A page glanced at on the
-     * way to another is not read, and one left open for long was not read all
-     * that time; the bounds are those KOReader counts by.
-     */
+    /** The page is looked at no more: the time spent on it is counted. */
     private suspend fun stopLooking(now: Long = clock()) {
         val was = looking ?: return
         looking = null
+        count(was, now)
+    }
+
+    /**
+     * Counts the time spent on a page that is left. A page glanced at on the
+     * way to another is not read, and one left open for long was not read all
+     * that time; the bounds are those KOReader counts by.
+     */
+    private suspend fun count(was: Looking, now: Long) {
         val seconds = ((now - was.since) / 1000).toInt()
         if (seconds < MIN_PAGE_SECONDS) return
-        library.addPageRead(was.bookId, was.page + 1, was.pageCount, was.since / 1000, seconds.coerceAtMost(MAX_PAGE_SECONDS))
+        // Counted once the page is left, it is written though the task or the model is dropped meanwhile.
+        withContext(NonCancellable) {
+            store.addPageRead(was.bookId, was.page + 1, was.pageCount, was.since / 1000, seconds.coerceAtMost(MAX_PAGE_SECONDS))
+        }
     }
 
     private suspend fun closeBook() = layout.withLock {
@@ -318,11 +344,13 @@ class ReaderViewModel(
         // The reader is reading: the second copy waits for the next pause.
         prepareSpareLater(SPARE_AFTER_TURN_MILLIS)
         viewModelScope.launch {
-            try {
-                show(open.turn(screens), turned = screens.coerceIn(-1, 1))
+            // A turn waits for its page, not for the place and the time on the page before to be written down.
+            val page = try {
+                open.turn(screens)
             } finally {
                 turnsWaiting--
             }
+            show(page, turned = screens.coerceIn(-1, 1))
         }
     }
 
@@ -683,11 +711,20 @@ class ReaderViewModel(
         }
         val open = reader ?: return
         val book = _state.value.book ?: return
-        library.savePosition(book.id, open.position, page.progress)
+        // The page shown is looked at from here, before anything is written: the app put away while
+        // the place or the page before is being written ends this page, not the one before.
         val was = looking
-        if (was == null || was.page != page.index || was.pageCount != page.pageCount) {
-            stopLooking(now)
+        val left = if (was == null || was.page != page.index || was.pageCount != page.pageCount) {
             looking = Looking(book.id, page.index, page.pageCount, now)
+            was
+        } else {
+            null
+        }
+        val position = open.position
+        // Both are written though the task that showed the page is dropped meanwhile.
+        withContext(NonCancellable) {
+            store.savePosition(book.id, position, page.progress)
+            left?.let { count(it, now) }
         }
     }
 
