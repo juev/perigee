@@ -31,6 +31,8 @@ import androidx.compose.ui.test.swipe
 import androidx.compose.ui.test.swipeLeft
 import androidx.compose.ui.test.swipeRight
 import androidx.compose.ui.test.swipeUp
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModelProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -176,11 +178,37 @@ class ReaderScreenTest {
         runBlocking { preferences.update { it.copy(pageTurn = PageTurn.Vertical) } }
         show()
         waitForBook()
-        rule.onNodeWithTag("page").performTouchInput { swipeUp() }
+        rule.onNodeWithTag("page").performTouchInput { swipeUp(startY = height * 0.8f, endY = height * 0.2f) }
         waitForPage(1)
         rule.onNodeWithTag("page").performTouchInput { swipeLeft() }
         rule.waitForIdle()
         assertEquals("a sideways swipe does nothing then", 1, shownPage())
+    }
+
+    @Test
+    fun aSwipeFromTheBottomEdgeLeavesThePlaceAndTheBrightness() {
+        runBlocking { preferences.update { it.copy(pageTurn = PageTurn.Vertical, brightnessGesture = true) } }
+        show()
+        waitForBook()
+        rule.onNodeWithTag("page").performTouchInput { swipeUp() }
+        rule.onNodeWithTag("page").performTouchInput { swipe(Offset(width * 0.05f, bottom), Offset(width * 0.05f, height * 0.5f), 200) }
+        rule.waitForIdle()
+        assertEquals("the place stays", 0, shownPage())
+        assertNull("the brightness stays", model().prefs.value.brightness)
+    }
+
+    @Test
+    fun theMenuShowsTheNavigationBarWithoutLayingTheBookOutAgain() {
+        show()
+        waitForBook()
+        fun barShown() = ViewCompat.getRootWindowInsets(activity.window.decorView)?.isVisible(WindowInsetsCompat.Type.navigationBars()) == true
+        val before = model().state.value.page
+        rule.waitUntil(TIMEOUT) { !barShown() }
+        openMenu()
+        rule.waitUntil(TIMEOUT) { barShown() }
+        tapPage(0.5f, 0.5f)
+        rule.waitUntil(TIMEOUT) { !barShown() }
+        assertEquals("the page is the same", before?.pageCount, model().state.value.page?.pageCount)
     }
 
     @Test

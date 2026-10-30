@@ -4,6 +4,8 @@ import androidx.compose.ui.unit.IntSize
 import org.evsyukov.perigee.data.ReaderPrefs
 import org.evsyukov.perigee.data.TapScheme
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ZoneTest {
@@ -55,5 +57,12 @@ class ZoneTest {
         val plain = ReaderPrefs(dayNightByCorner = false, bookmarkByCorner = false)
         assertEquals(Zone.Back, zone(50, 50, plain))
         assertEquals(Zone.Forward, zone(850, 50, plain))
+    }
+
+    @Test
+    fun theBottomEdgeBeginsWhereTheSystemGesturesDo() {
+        assertTrue(startsOnBottomEdge(1799f, 1800, 84f))
+        assertTrue(startsOnBottomEdge(1716f, 1800, 84f))
+        assertFalse(startsOnBottomEdge(1715f, 1800, 84f))
     }
 }
