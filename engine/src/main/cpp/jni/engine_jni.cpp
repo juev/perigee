@@ -285,6 +285,9 @@ static std::unordered_map<LVDocView*, lString8> gStylesheets;
 // Bold word starts, kept per document by the engine (patches/0001-bold-word-starts.patch); per view
 // here, as the settings come before the book is loaded.
 extern "C++" void perigeeSetBoldWordStarts(const ldomDocument* doc, bool on);
+// How the opening letters look; set only by the look test, the default is the shipped rule.
+extern "C++" void perigeeSetBoldWordStartsLook(int mode, int boldWeight, int tailWeight, int middlePercent,
+        int middleWeight, int everyNth, int minWordLength);
 static std::unordered_map<LVDocView*, bool> gBoldWordStarts;
 
 /// The colours a book's pages are painted in. The engine always draws black on
@@ -396,6 +399,13 @@ Java_org_evsyukov_perigee_engine_NativeEngine_applySettings(
         view->Render();
         if (!position.isNull()) view->goToBookmark(position);
     }
+}
+
+JNIEXPORT void JNICALL
+Java_org_evsyukov_perigee_engine_NativeEngine_setBoldWordStartsLook(
+        JNIEnv*, jobject, jint mode, jint boldWeight, jint tailWeight, jint middlePercent,
+        jint middleWeight, jint everyNth, jint minWordLength) {
+    perigeeSetBoldWordStartsLook(mode, boldWeight, tailWeight, middlePercent, middleWeight, everyNth, minWordLength);
 }
 
 JNIEXPORT void JNICALL
