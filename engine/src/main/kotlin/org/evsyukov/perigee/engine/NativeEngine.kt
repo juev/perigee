@@ -42,23 +42,6 @@ internal object NativeEngine {
         boldWordStarts: Boolean,
     )
 
-    /**
-     * Test-only shape of bold word starts: how much of a word is bold, the bold and tail weights, a normal
-     * middle, which words are emphasised. The app ships the default rule; see [EngineSettings.boldWordStarts].
-     */
-    external fun setBoldWordStartsLook(
-        mode: Int,
-        boldWeight: Int,
-        tailWeight: Int,
-        middlePercent: Int,
-        middleWeight: Int,
-        everyNth: Int,
-        minWordLength: Int,
-        boldSize: Int,
-        middleSize: Int,
-        tailSize: Int,
-    )
-
     /** Returns false when the file cannot be opened. */
     external fun load(handle: Long, path: String): Boolean
 

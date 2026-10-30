@@ -52,7 +52,7 @@ data class EngineSettings(
     val footnotes: Boolean = true,
     /** Two pages side by side; meant for landscape tablets. */
     val twoPages: Boolean = false,
-    /** The opening letters of each word in bold, in the font's own bold face; the book is laid out again. */
+    /** The opening third of words of five or more letters in the 600 weight, the rest in 300; the book is laid out again. */
     val boldWordStarts: Boolean = false,
 ) {
     /** The engine's gamma for [contrast]. */

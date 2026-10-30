@@ -1,6 +1,6 @@
 --- a/crengine/src/lvrend.cpp
 +++ b/crengine/src/lvrend.cpp
-@@ -21,6 +21,119 @@
+@@ -21,6 +21,86 @@
  #include "../include/lvrend.h"
  #include "../include/renderutil.h"
  #include "../include/drawutil.h"
@@ -57,50 +57,17 @@
 +    return 0;
 +}
 +
-+// Perigee: how the opening letters look. A test sets it through the JNI; the default is the rule the
-+// app ships. Values are process-wide because a text source keeps no settings pointer; the test opens one
-+// document at a time. tailWeight and middleWeight 0 mean the weight of the node's own text; size
-+// percent 100 means its size.
-+struct PerigeeBoldLook {
-+    int mode;          // 0: one letter of a word of up to three, half of a longer one; 1: one letter;
-+                       // 2: a third; 3: two thirds
-+    int boldWeight;
-+    int tailWeight;
-+    int middlePercent; // share of the word's letters after the bold part, 0 for none
-+    int middleWeight;
-+    int everyNth;      // 1: every word; 2: every second; and so on
-+    int minWordLength; // 0: every word; N: only words of at least N letters
-+    int boldSize;      // percent of the node's font size
-+    int middleSize;
-+    int tailSize;
-+};
-+static PerigeeBoldLook perigeeBoldLook = { 0, 700, 0, 0, 0, 1, 0, 100, 100, 100 };
++// Perigee: bold word starts. The first third of a word of five or more letters is set in the 600
++// weight of its font, the rest in the 300; shorter words are left alone. A word of 5 or 6 letters
++// therefore has 2 bold letters, 7 to 9 have 3, and so on.
++static const int perigeeMinWordLetters = 5;
++static const int perigeeBoldWeight = 600;
++static const int perigeeTailWeight = 300;
 +
-+void perigeeSetBoldWordStartsLook( int mode, int boldWeight, int tailWeight, int middlePercent,
-+        int middleWeight, int everyNth, int minWordLength, int boldSize, int middleSize, int tailSize )
-+{
-+    perigeeBoldLook.mode = mode;
-+    perigeeBoldLook.boldWeight = boldWeight;
-+    perigeeBoldLook.tailWeight = tailWeight;
-+    perigeeBoldLook.middlePercent = middlePercent < 0 ? 0 : middlePercent;
-+    perigeeBoldLook.middleWeight = middleWeight;
-+    perigeeBoldLook.everyNth = everyNth < 1 ? 1 : everyNth;
-+    perigeeBoldLook.minWordLength = minWordLength < 0 ? 0 : minWordLength;
-+    perigeeBoldLook.boldSize = boldSize < 1 ? 100 : boldSize;
-+    perigeeBoldLook.middleSize = middleSize < 1 ? 100 : middleSize;
-+    perigeeBoldLook.tailSize = tailSize < 1 ? 100 : tailSize;
-+}
-+
-+// How many letters of a word of 'letters' letters are bold.
++// How many letters of a word are bold: a third, rounded up.
 +static int perigeeBoldLetters( int letters )
 +{
-+    if ( perigeeBoldLook.mode == 1 )
-+        return 1;
-+    if ( perigeeBoldLook.mode == 2 )
-+        return (letters + 2) / 3;
-+    if ( perigeeBoldLook.mode == 3 )
-+        return (letters * 2 + 2) / 3;
-+    return letters <= 3 ? 1 : (letters + 1) / 2;
++    return (letters + 2) / 3;
 +}
 +
 +// Whether the text of 'parent' gets bold word starts: not text already bold, not headings, not code.
@@ -120,23 +87,21 @@
  
  // Note about box model/sizing in crengine:
  // https://quirksmode.org/css/user-interface/boxsizing.html says:
-@@ -4739,7 +4852,154 @@
+@@ -4739,7 +4819,102 @@
              // to cause no harm to text rendering, and it helps getRect() not
              // ignoring this single letter.
  
 -            if ( txt.length() > 0 ) {
 +            // Perigee: bold word starts, as parts of the text: [start, end) of each, and which font it takes.
-+            struct PerigeePart { int start; int end; int kind; }; // 0 bold, 1 middle, 2 tail, 3 regular
++            struct PerigeePart { int start; int end; int kind; }; // 0 bold, 2 tail, 3 regular
 +            std::vector<PerigeePart> perigeeParts;
 +            LVFontRef perigeeBold;
-+            LVFontRef perigeeMiddle;
 +            LVFontRef perigeeTail;
 +            if ( txt.length() > textOffset && txt.length() < 0xFFFF
 +                    && perigeeBoldWordStartsIn(enode->getDocument())
 +                    && perigeeBoldWordStartsFor(parent, style.get()) ) {
 +                int i = textOffset;
 +                int partStart = textOffset;
-+                int wordOrdinal = 0;
 +                while ( i < txt.length() ) {
 +                    if ( perigeeWordCharKind(txt[i]) == 0 ) {
 +                        i++;
@@ -159,12 +124,7 @@
 +                            letters++;
 +                        i++;
 +                    }
-+                    if ( leftAlone || letters == 0 )
-+                        continue;
-+                    int ordinal = wordOrdinal++;
-+                    if ( perigeeBoldLook.minWordLength > 0 && letters < perigeeBoldLook.minWordLength )
-+                        continue;
-+                    if ( perigeeBoldLook.everyNth > 1 && ordinal % perigeeBoldLook.everyNth != 0 )
++                    if ( leftAlone || letters < perigeeMinWordLetters )
 +                        continue;
 +                    // The bold part ends after its last letter, with the marks that belong to that letter.
 +                    int wanted = perigeeBoldLetters(letters);
@@ -180,30 +140,9 @@
 +                    if ( wordStart > partStart )
 +                        perigeeParts.push_back({partStart, wordStart, 3});
 +                    perigeeParts.push_back({wordStart, boldEnd, 0});
-+                    int middleEnd = boldEnd;
-+                    if ( perigeeBoldLook.middlePercent > 0 && boldEnd < i ) {
-+                        int middleLetters = (letters * perigeeBoldLook.middlePercent + 99) / 100;
-+                        int room = letters - wanted;
-+                        if ( middleLetters > room )
-+                            middleLetters = room;
-+                        for ( int seen = 0; middleEnd < i; middleEnd++ ) {
-+                            int kind = perigeeWordCharKind(txt[middleEnd]);
-+                            if ( kind == 1 ) {
-+                                if ( seen == middleLetters )
-+                                    break;
-+                                seen++;
-+                            }
-+                        }
-+                        if ( middleEnd > boldEnd )
-+                            perigeeParts.push_back({boldEnd, middleEnd, 1});
-+                    }
-+                    if ( perigeeBoldLook.tailWeight > 0 || perigeeBoldLook.tailSize != 100 ) {
-+                        if ( i > middleEnd )
-+                            perigeeParts.push_back({middleEnd, i, 2});
-+                        partStart = i;
-+                    } else {
-+                        partStart = middleEnd;
-+                    }
++                    if ( i > boldEnd )
++                        perigeeParts.push_back({boldEnd, i, 2});
++                    partStart = i;
 +                }
 +                if ( partStart < txt.length() )
 +                    perigeeParts.push_back({partStart, (int)txt.length(), 3});
@@ -211,34 +150,13 @@
 +                if ( txform->GetSrcCount() + (int)perigeeParts.size() > 60000 )
 +                    perigeeParts.clear();
 +                if ( !perigeeParts.empty() ) {
-+                    auto fontFor = [&]( int weight, int sizePercent ) {
-+                        css_style_rec_t lookStyle = *style.get();
-+                        if ( weight > 0 )
-+                            lookStyle.font_weight = weight;
-+                        if ( sizePercent > 0 && sizePercent != 100 ) {
-+                            int base = font->getSize();
-+                            int size = (base * sizePercent + 50) / 100;
-+                            if ( size < 8 )
-+                                size = 8;
-+                            lookStyle.font_size.type = css_val_screen_px;
-+                            lookStyle.font_size.value = size;
-+                        }
-+                        return getFont(parent, &lookStyle, enode->getDocument()->getFontContextDocIndex());
-+                    };
-+                    perigeeBold = fontFor(perigeeBoldLook.boldWeight, perigeeBoldLook.boldSize);
-+                    if ( perigeeBold.isNull() ) {
++                    css_style_rec_t lookStyle = *style.get();
++                    lookStyle.font_weight = perigeeBoldWeight;
++                    perigeeBold = getFont(parent, &lookStyle, enode->getDocument()->getFontContextDocIndex());
++                    lookStyle.font_weight = perigeeTailWeight;
++                    perigeeTail = getFont(parent, &lookStyle, enode->getDocument()->getFontContextDocIndex());
++                    if ( perigeeBold.isNull() || perigeeTail.isNull() )
 +                        perigeeParts.clear();
-+                    } else {
-+                        bool hasMiddle = perigeeBoldLook.middlePercent > 0
-+                            && (perigeeBoldLook.middleWeight > 0 || perigeeBoldLook.middleSize != 100);
-+                        bool hasTail = perigeeBoldLook.tailWeight > 0 || perigeeBoldLook.tailSize != 100;
-+                        if ( hasMiddle )
-+                            perigeeMiddle = fontFor(perigeeBoldLook.middleWeight, perigeeBoldLook.middleSize);
-+                        if ( hasTail )
-+                            perigeeTail = fontFor(perigeeBoldLook.tailWeight, perigeeBoldLook.tailSize);
-+                        if ( (hasMiddle && perigeeMiddle.isNull()) || (hasTail && perigeeTail.isNull()) )
-+                            perigeeParts.clear();
-+                    }
 +                }
 +            }
 +            if ( perigeeParts.size() > 1 ) {
@@ -253,9 +171,6 @@
 +                    if ( part.kind == 0 ) {
 +                        partFont = perigeeBold.get();
 +                        partRef = perigeeBold;
-+                    } else if ( part.kind == 1 && !perigeeMiddle.isNull() ) {
-+                        partFont = perigeeMiddle.get();
-+                        partRef = perigeeMiddle;
 +                    } else if ( part.kind == 2 && !perigeeTail.isNull() ) {
 +                        partFont = perigeeTail.get();
 +                        partRef = perigeeTail;

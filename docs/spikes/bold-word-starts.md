@@ -4,7 +4,11 @@ Date: 2026-10-30. Status: research; no code change yet. Task: [issue #95](https:
 
 The owner wants to choose the look of "Bold word starts" (the opening letters of each word in the bold face), comparing the current rule with variants that make the rest of the word thin, split it into bold/normal/thin zones, or lower its brightness. The question is which look is best on a book page, not whether it makes reading faster.
 
-## Today's look
+## Chosen look (2026-10-30)
+
+**Variant 12, chosen by the owner:** the first third of each word of five or more letters (rounded up) in the 600 weight, the rest of the word in the 300 weight; words of up to four letters, text already bold, headings, code and scripts without word spaces are left alone. One toggle, no presets. This is what `ReaderPrefs.boldWordStarts` now switches on. The owner chose it from [A–D](bold-word-starts-choose-2.png) after the first shortlist; it is the only tested look within ±3% pages on all three fonts. The research harness and its test-only setter were removed from the shipped patch; they remain in commits `21d4188`/`156df85` for reference.
+
+## The look before the research
 
 - One letter of a word of up to three letters; half of a longer one, rounded up (`perigeeBoldLetters` in the engine patch).
 - The bold part is the font's own bold face, weight 700; the rest is the reader's regular weight (400 by default, moved by the Font boldness setting).
@@ -85,13 +89,15 @@ Stage 1: all variants on one page, Roboto at 18 dp, Day. Stage 2: the best three
 
 ## Testing without a phone
 
-The emulator is enough. The engine renders pages to `Bitmap`s in instrumented tests, and `ControlPagesTest` already saves them as PNGs for the accepted pictures. A cold run took 26 s; an incremental one 3 s:
+The emulator is enough. The engine renders pages to `Bitmap`s in instrumented tests, and `ControlPagesTest` saves them as PNGs for the accepted pictures. A cold run took 26 s; an incremental one 3 s:
 
 ```
 JAVA_HOME=/opt/homebrew/opt/openjdk@21 ANDROID_SERIAL=emulator-5554 \
   ./gradlew :engine:connectedDebugAndroidTest \
-  -Pandroid.testInstrumentationRunnerArguments.class=org.evsyukov.perigee.engine.EngineFeaturesTest#boldWordStartsDarkenTheStartOfAWordOnly
+  -Pandroid.testInstrumentationRunnerArguments.class=org.evsyukov.perigee.engine.EngineFeaturesTest#boldWordStartsDarkenTheStartAndLightenTheTail
 ```
+
+The look harness (`BoldWordStartsLookTest`, with the test-only setter) lived on the research branch; it was removed from the shipped patch after the choice. Its command is in commit `21d4188`.
 
 The AVD is `shareding_api36` (Pixel 6, API 36); start it with:
 
@@ -180,18 +186,19 @@ Shortlist for the owner ([pages A–F](bold-word-starts-shortlist.png), [first l
 | E | 1 | current: 1/2, 700 | 334 / 474 / 381 |
 | F | 0 | plain, no emphasis | 334 / 448 / 358 |
 
-A is the only look meeting the page target on all tested fonts; it accepts a synthesised thin tail on static fonts. B is the simplest softer current. C is the best look without a thin tail. D is the subtlest. E is today. F is the control.
+A is the only look meeting the page target on all tested fonts; it accepts a synthesised thin tail on static fonts. B is the simplest softer current. C is the best look without a thin tail. D is the subtlest. E is the old look. F is the control. **The owner chose A (variant 12) on 2026-10-30.**
 
-The decision on the synthesised thin tail is reopened: if it is not acceptable, no tested look meets the page target on PT Serif, and the owner has to accept about 6.4% there.
+The synthesised thin tail on static fonts is accepted with that choice; it remains a font-dependent effect.
 
 ## Decisions (2026-10-30)
 
 1. One fixed look and the existing single toggle; no presets.
 2. No dimmed tail. The contrast floor and Zhang et al. 2026 rule it out; variants 10–12 stay only as documented controls.
-3. Thin tail: the run showed the engine synthesises a lighter static face, so the tail is not limited to variable fonts. Whether the synthesised face is acceptable is open; if it is not, no tested look meets the page target on PT Serif.
+3. Thin tail: the run showed the engine synthesises a lighter static face, so the tail is not limited to variable fonts. The owner accepted the synthesised face by choosing variant 12.
 4. Page growth target: no more than about 3% more pages than plain text; if no candidate meets it, the owner decides.
+5. **Chosen: variant 12** — the first third of words of five or more letters in 600, the rest in 300. Implemented in the patch and `docs/specs/reader.md`.
 
-Still open: the owner's choice from the shortlist, the synthesised thin tail on static fonts, the text for the final contact sheet, and the final phone check.
+Still open: the final phone check. The chosen look is implemented and tested on the emulator; the research harness is not part of the shipped patch.
 
 Done when the contact sheets and measurements exist, the owner has chosen, `docs/specs/reader.md` describes the chosen rule, tests cover it, and neither the app nor the store texts claim faster reading.
 

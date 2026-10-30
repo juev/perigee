@@ -352,19 +352,33 @@ class EngineFeaturesTest {
     }
 
     @Test
-    fun boldWordStartsDarkenTheStartOfAWordOnly() {
+    fun boldWordStartsDarkenTheStartAndLightenTheTail() {
         val file = TestBooks.epub(dir)
-        // Ink in the left and the right half of the word "brown" ("bro" is bold, "wn" is not).
+        // "paragraph" has nine letters: the first three are 600, the other six 300.
         fun halves(bold: Boolean) = open(file, base.copy(boldWordStarts = bold)).use { doc ->
-            val (_, rect) = doc.locate("brown")
+            val (_, rect) = doc.locate("paragraph")
             val page = doc.render()
             val middle = rect.left + rect.width() / 2
             inkIn(page, Rect(rect.left, rect.top, middle, rect.bottom)) to inkIn(page, Rect(middle, rect.top, rect.right, rect.bottom))
         }
         val (plainStart, plainEnd) = halves(false)
         val (boldStart, boldEnd) = halves(true)
-        assertTrue("the start of the word is darker: $boldStart against $plainStart", boldStart > plainStart * 13 / 10)
-        assertTrue("its end hardly changes: $boldEnd against $plainEnd", boldEnd < plainEnd * 12 / 10)
+        assertTrue("the start of the word is darker: $boldStart against $plainStart", boldStart > plainStart * 105 / 100)
+        assertTrue("its tail is lighter: $boldEnd against $plainEnd", boldEnd < plainEnd * 9 / 10)
+    }
+
+    @Test
+    fun wordsShorterThanFiveLettersAreLeftAsTheyAre() {
+        val file = File(dir, "short-words.html").apply {
+            writeText(
+                """<!DOCTYPE html><html><head><meta charset="utf-8"/></head><body><p>""" +
+                    "cat dog fox sun run big red cup map kit ore den. ".repeat(12) +
+                    "</p></body></html>",
+            )
+        }
+        val plain = open(file).use { it.render() }
+        val bold = open(file, base.copy(boldWordStarts = true)).use { it.render() }
+        assertTrue("short words are the same to the pixel", bold.sameAs(plain))
     }
 
     @Test

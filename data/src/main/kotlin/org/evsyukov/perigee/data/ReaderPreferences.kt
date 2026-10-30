@@ -56,7 +56,7 @@ data class ReaderPrefs(
     val fontWeight: Int = 400,
     /** How dark letters are drawn, 0 as the font has them; the steps are `EngineSettings.CONTRASTS`. */
     val contrast: Int = 0,
-    /** The opening letters of each word in bold. */
+    /** The opening third of words of five or more letters in 600, the rest in 300. */
     val boldWordStarts: Boolean = false,
     val lineSpacingPercent: Int = 120,
     val alignment: Alignment = Alignment.Justify,
