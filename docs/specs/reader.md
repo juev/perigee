@@ -92,7 +92,7 @@ Not done yet: fonts of the reader's own, from a folder.
 | Footnotes | `footnotes` | Notes at the bottom of the page that cites them. |
 | Two pages | `twoPages` | Side by side; the screen decides when to use it. |
 
-Always on, without a setting: hanging punctuation, kerning and shaping through HarfBuzz, and a floor of 75 % on how far a justified line may shrink its spaces. Below that floor the engine hyphenates or stretches instead; its own default of 50 % lets words run together.
+Always on, without a setting: hanging punctuation, kerning and shaping through HarfBuzz, and a floor of 75 % on how far a justified line may shrink its spaces. Below that floor the engine hyphenates or stretches instead; its own default of 50 % lets words run together. A justified line with a gap wider than 0.75 em is repaired: the lines around it, four before and two after, are broken again together, with hyphenation, so that the leftover spreads over them, and the rest of the paragraph stays as the engine broke it. A gap up to 0.5 em counts as fine. Paragraphs without such a line are not touched, and neither the document nor the positions change; only pages move. This is `engine/src/main/cpp/patches/0002-repair-loose-lines.patch`; a gap with no way out, as before a long URL, stays. A Russian book uses the dictionary with Latin patterns, so Latin words in it are hyphenated, names too. The measurements are in `docs/spikes/word-gaps-preview.md`.
 
 ### Footnotes
 

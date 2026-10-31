@@ -266,6 +266,13 @@ static const int KERNING_FULL = 3;
 // Scripts whose letters change shape or order with their neighbours: light shaping draws them wrong.
 // Arabic, Persian, Urdu, Pashto, Sindhi, Kurdish (Sorani), Uyghur, Hebrew, Yiddish, Syriac, Thaana, the
 // scripts of India and Sri Lanka, Thai, Lao, Khmer, Burmese, Tibetan, Dzongkha.
+// The hyphenation dictionary of a book's language. The plain Russian one has no Latin patterns, so a
+// Latin word in a Russian book could not be hyphenated and left a wide gap before it. Russian_EnUS has both.
+static std::string hyphenationLanguage(const std::string& language) {
+    if (language == "ru" || language.rfind("ru-", 0) == 0 || language.rfind("ru_", 0) == 0) return "ru-US";
+    return language;
+}
+
 static bool needsFullShaping(const std::string& language) {
     static const char* const complex[] = {
         "ar", "fa", "ur", "ps", "sd", "ckb", "ug", "he", "iw", "yi", "syr", "dv",
@@ -423,7 +430,7 @@ Java_org_evsyukov_perigee_engine_NativeEngine_load(JNIEnv* env, jobject, jlong h
     // fragment declares its own.
     lString32 language = view->getLanguage();
     CRPropRef props = LVCreatePropsContainer();
-    if (!language.empty()) props->setString(PROP_TEXTLANG_MAIN_LANG, UnicodeToUtf8(language).c_str());
+    if (!language.empty()) props->setString(PROP_TEXTLANG_MAIN_LANG, hyphenationLanguage(UnicodeToUtf8(language).c_str()).c_str());
     props->setInt(PROP_FONT_KERNING, needsFullShaping(UnicodeToUtf8(language).c_str()) ? KERNING_FULL : KERNING_LIGHT);
     view->propsApply(props);
     view->Render();
