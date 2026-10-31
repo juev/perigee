@@ -60,6 +60,15 @@
     <string name="setting_font_weight">Жирность шрифта</string>
     <string name="setting_contrast">Контрастность</string>
     <string name="setting_bold_word_starts">Выделять начало слов</string>
+    <string name="setting_antialiasing">Сглаживание</string>
+    <string name="setting_hinting">Хинтинг</string>
+    <string name="hinting_auto">Авто</string>
+    <string name="hinting_native">Инструкции шрифта</string>
+    <string name="hinting_off">Выкл.</string>
+    <string name="setting_ligatures">Лигатуры</string>
+    <string name="hint_ligatures">Книга будет свёрстана заново, а длинная верстается заметно дольше.</string>
+    <string name="setting_fractional">Субпиксельная посадка</string>
+    <string name="hint_fractional">Буквы ставятся между пикселями только с лигатурами, без них этот шаг ничего не меняет.</string>
     <string name="setting_line_spacing">Междустрочный интервал</string>
     <string name="setting_alignment">Выравнивать текст по</string>
     <string name="align_justify">Ширине</string>
@@ -73,6 +82,8 @@
     <string name="setting_page_margins">Поля страниц</string>
     <string name="chars_per_line">≈%1$d знаков в строке</string>
     <string name="setting_two_pages">Две страницы в альбомной ориентации</string>
+    <string name="setting_code_size">Размер кода</string>
+    <string name="setting_embedded_fonts">Шрифты книги</string>
     <string name="setting_volume_keys">Листать кнопками громкости</string>
     <string name="setting_brightness_gesture">Яркость движением по левому краю</string>
     <string name="setting_dim_below_flicker">Темнее без мерцания</string>

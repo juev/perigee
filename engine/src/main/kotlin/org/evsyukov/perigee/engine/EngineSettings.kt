@@ -23,6 +23,18 @@ enum class TextAlign(internal val css: String) {
     Justify("justify"), Left("left"), Center("center"), Right("right")
 }
 
+/** The engine's hinting modes, each with the number the engine knows it by. */
+enum class HintingMode(val engine: Int) {
+    /** FreeType's autohinter. */
+    Auto(2),
+
+    /** The font's own bytecode instructions. */
+    Native(1),
+
+    /** No hinting. */
+    Off(0),
+}
+
 /**
  * How a book is laid out; the set of knobs follows ReadEra's reading settings.
  * Sizes are in device pixels.
@@ -50,6 +62,18 @@ data class EngineSettings(
      * engine's gamma on the glyphs' coverage. Letters keep their widths, so no line moves.
      */
     val contrast: Int = 0,
+    /** Grey edges on the strokes, the engine's antialiasing mode 2; off is mode 0, black or white pixels only. On is what the app has always done. */
+    val antialiasing: Boolean = true,
+    /** How stems are snapped to the pixel grid; [HintingMode.Auto] is what the app has always done. */
+    val hinting: HintingMode = HintingMode.Auto,
+    /** Full shaping, kerning mode 3, for every book; off gives it only to the scripts that need it, as the app has always done. */
+    val ligatures: Boolean = false,
+    /** Glyphs placed on 1/2, 1/4 or 1/8 of a pixel by strength 1..3, read by the engine in full shaping only; 0, whole pixels, is what the app has always done. */
+    val fractionalPositioning: Int = 0,
+    /** Size of code and preformatted text in percent of the size the engine gives it; 100 is what the app has always done. */
+    val monospaceSizePercent: Int = 100,
+    /** Fonts a book carries may be drawn with, the engine's embedded fonts 1; on is what the app has always done. */
+    val embeddedFonts: Boolean = true,
     /** Footnotes at the bottom of the page that refers to them. */
     val footnotes: Boolean = true,
     /** Two pages side by side; meant for landscape tablets. */
@@ -92,6 +116,11 @@ data class EngineSettings(
             // A rule that matches nothing: it makes the stylesheet, and so the layout kept in the engine's
             // cache, differ with bold word starts on and off.
             if (boldWordStarts) append(".perigee-bold-word-starts { font-style: normal }\n")
+            // The same for smoothing and hinting: they change the widths of the letters, but the engine leaves
+            // both out of the hash it keeps a layout by, so a book laid out with other ones would be read back
+            // from its cache, or kept on a change, with lines that no longer fit. The defaults add nothing.
+            if (!antialiasing) append(".perigee-monochrome { font-style: normal }\n")
+            if (hinting != HintingMode.Auto) append(".perigee-hinting-${hinting.engine} { font-style: normal }\n")
             // Last of all: an `!important` rule of the owner's beats one of the app's of the same specificity
             // only by coming later. A change in it changes the stylesheet, and the engine restyles the book.
             if (userCss.isNotBlank()) append(userCss).append('\n')

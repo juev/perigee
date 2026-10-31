@@ -74,6 +74,7 @@ import org.evsyukov.perigee.R
 import org.evsyukov.perigee.data.Alignment as TextAlignment
 import org.evsyukov.perigee.data.Bookmark
 import org.evsyukov.perigee.data.ColorScheme
+import org.evsyukov.perigee.data.Hinting
 import org.evsyukov.perigee.data.PageTurn
 import org.evsyukov.perigee.data.Quote
 import org.evsyukov.perigee.data.ReaderPrefs
@@ -169,6 +170,43 @@ internal fun SettingsSheet(
                     onChange { it.copy(contrast = chosen) }
                 }
                 Toggle(R.string.setting_bold_word_starts, prefs.boldWordStarts) { on -> onChange { it.copy(boldWordStarts = on) } }
+                // How the letters are drawn; each of these lays the book out again, keeping the place.
+                Toggle(R.string.setting_antialiasing, prefs.antialiasing, "antialiasing") { on -> onChange { it.copy(antialiasing = on) } }
+                Choice(
+                    R.string.setting_hinting, prefs.hinting, Hinting.entries, tag = "hinting",
+                    label = {
+                        stringResource(
+                            when (it) {
+                                Hinting.Auto -> R.string.hinting_auto
+                                Hinting.Native -> R.string.hinting_native
+                                Hinting.Off -> R.string.hinting_off
+                            },
+                        )
+                    },
+                ) { chosen -> onChange { it.copy(hinting = chosen) } }
+                Toggle(R.string.setting_ligatures, prefs.ligatures, "ligatures") { on -> onChange { it.copy(ligatures = on) } }
+                if (prefs.ligatures) {
+                    Text(
+                        stringResource(R.string.hint_ligatures),
+                        Modifier.testTag("ligatures-hint"),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Stepper(
+                    R.string.setting_fractional, prefs.fractionalPositioning.toString(), "fractional",
+                    onLess = { onChange { it.copy(fractionalPositioning = stepped(it.fractionalPositioning, -1, ReaderPrefs.FRACTIONAL_STEPS)) } },
+                    onMore = { onChange { it.copy(fractionalPositioning = stepped(it.fractionalPositioning, 1, ReaderPrefs.FRACTIONAL_STEPS)) } },
+                )
+                // The step does nothing while the book is shaped lightly; with ligatures on it does, so the note goes.
+                if (!prefs.ligatures) {
+                    Text(
+                        stringResource(R.string.hint_fractional),
+                        Modifier.testTag("fractional-hint"),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
                 Stepper(
                     R.string.setting_line_spacing, stringResource(R.string.percent, prefs.lineSpacingPercent), "line-spacing",
                     onLess = { onChange { it.copy(lineSpacingPercent = stepped(it.lineSpacingPercent, -1, ReaderPrefs.LINE_SPACINGS)) } },
@@ -212,6 +250,12 @@ internal fun SettingsSheet(
                     )
                 }
                 Toggle(R.string.setting_two_pages, prefs.twoPagesInLandscape) { on -> onChange { it.copy(twoPagesInLandscape = on) } }
+                Stepper(
+                    R.string.setting_code_size, stringResource(R.string.percent, prefs.monospaceSizePercent), "code-size",
+                    onLess = { onChange { it.copy(monospaceSizePercent = stepped(it.monospaceSizePercent, -1, ReaderPrefs.MONOSPACE_SIZES)) } },
+                    onMore = { onChange { it.copy(monospaceSizePercent = stepped(it.monospaceSizePercent, 1, ReaderPrefs.MONOSPACE_SIZES)) } },
+                )
+                Toggle(R.string.setting_embedded_fonts, prefs.embeddedFonts, "embedded-fonts") { on -> onChange { it.copy(embeddedFonts = on) } }
 
                 Choice(
                     R.string.setting_tap_scheme, prefs.tapScheme, TapScheme.entries,
@@ -299,10 +343,11 @@ private fun <T> Choice(
     value: T,
     options: List<T>,
     label: @Composable (T) -> String,
+    tag: String? = null,
     onChoose: (T) -> Unit,
 ) {
     var open by remember { mutableStateOf(false) }
-    Column(Modifier.fillMaxWidth().clickable { open = true }.padding(vertical = 6.dp)) {
+    Column(Modifier.fillMaxWidth().clickable { open = true }.padding(vertical = 6.dp).tagged(tag)) {
         SettingLabel(title)
         Box {
             Text(label(value), style = MaterialTheme.typography.bodyLarge)
@@ -386,12 +431,15 @@ private fun WeightSlider(weight: Int, onChoose: (Int) -> Unit) {
 }
 
 @Composable
-private fun Toggle(label: Int, checked: Boolean, onChange: (Boolean) -> Unit) {
+private fun Toggle(label: Int, checked: Boolean, tag: String? = null, onChange: (Boolean) -> Unit) {
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
         Text(stringResource(label), Modifier.weight(1f).padding(end = 12.dp))
-        Switch(checked = checked, onCheckedChange = onChange)
+        Switch(checked = checked, onCheckedChange = onChange, modifier = Modifier.tagged(tag))
     }
 }
+
+/** A test tag, for the rows that have one. */
+private fun Modifier.tagged(tag: String?): Modifier = if (tag == null) this else testTag(tag)
 
 // ---------------------------------------------------------------- contents
 

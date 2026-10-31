@@ -41,6 +41,18 @@ enum class ColorScheme(val dark: Boolean) {
 
 enum class Alignment { Justify, Left, Center, Right }
 
+/** How the strokes of the letters are snapped to the pixel grid. */
+enum class Hinting {
+    /** The engine's own autohinter, as the app has always drawn. */
+    Auto,
+
+    /** The instructions the font carries. */
+    Native,
+
+    /** No snapping: the outlines as drawn, the softest edges. */
+    Off,
+}
+
 /** How the reader likes books shown. One set for all books, as in ReadEra. Sizes are in dp. */
 data class ReaderPrefs(
     val pageTurn: PageTurn = PageTurn.Horizontal,
@@ -61,6 +73,17 @@ data class ReaderPrefs(
     val contrast: Int = 0,
     /** The opening third of words of five or more letters in 600, the rest in 300. */
     val boldWordStarts: Boolean = false,
+    /** Grey edges on the strokes; off draws every pixel of a letter black or white. */
+    val antialiasing: Boolean = true,
+    val hinting: Hinting = Hinting.Auto,
+    /** Full shaping with the face's ligatures for every book, not only for the scripts that need it. */
+    val ligatures: Boolean = false,
+    /** Letters placed between pixels, 0 (whole pixels) up to the last of [FRACTIONAL_STEPS]. */
+    val fractionalPositioning: Int = 0,
+    /** Code and preformatted text in percent of the size the engine gives it, one of [MONOSPACE_SIZES]. */
+    val monospaceSizePercent: Int = 100,
+    /** Fonts a book carries may be drawn with. */
+    val embeddedFonts: Boolean = true,
     val lineSpacingPercent: Int = 120,
     val alignment: Alignment = Alignment.Justify,
     val hyphenation: Boolean = true,
@@ -100,6 +123,8 @@ data class ReaderPrefs(
         val FONT_SIZES = 10..40
         val LINE_SPACINGS = 80..200 step 10
         val PARAGRAPH_SPACINGS = 0..100 step 10
+        val FRACTIONAL_STEPS = 0..3
+        val MONOSPACE_SIZES = 60..140 step 10
 
         /** The screen goes off when the system says. */
         const val SCREEN_ON_SYSTEM = 0
@@ -154,6 +179,12 @@ class ReaderPreferences private constructor(private val store: DataStore<Prefere
             fontWeight = p[FONT_WEIGHT] ?: d.fontWeight,
             contrast = p[CONTRAST] ?: d.contrast,
             boldWordStarts = p[BOLD_WORD_STARTS] ?: d.boldWordStarts,
+            antialiasing = p[ANTIALIASING] ?: d.antialiasing,
+            hinting = p[HINTING].enumOr(d.hinting),
+            ligatures = p[LIGATURES] ?: d.ligatures,
+            fractionalPositioning = p[FRACTIONAL_POSITIONING] ?: d.fractionalPositioning,
+            monospaceSizePercent = p[MONOSPACE_SIZE] ?: d.monospaceSizePercent,
+            embeddedFonts = p[EMBEDDED_FONTS] ?: d.embeddedFonts,
             lineSpacingPercent = p[LINE_SPACING] ?: d.lineSpacingPercent,
             alignment = p[ALIGNMENT].enumOr(d.alignment),
             hyphenation = p[HYPHENATION] ?: d.hyphenation,
@@ -189,6 +220,12 @@ class ReaderPreferences private constructor(private val store: DataStore<Prefere
         p[FONT_WEIGHT] = v.fontWeight
         p[CONTRAST] = v.contrast
         p[BOLD_WORD_STARTS] = v.boldWordStarts
+        p[ANTIALIASING] = v.antialiasing
+        p[HINTING] = v.hinting.name
+        p[LIGATURES] = v.ligatures
+        p[FRACTIONAL_POSITIONING] = v.fractionalPositioning
+        p[MONOSPACE_SIZE] = v.monospaceSizePercent
+        p[EMBEDDED_FONTS] = v.embeddedFonts
         p[LINE_SPACING] = v.lineSpacingPercent
         p[ALIGNMENT] = v.alignment.name
         p[HYPHENATION] = v.hyphenation
@@ -227,6 +264,12 @@ class ReaderPreferences private constructor(private val store: DataStore<Prefere
         private val FONT_WEIGHT = intPreferencesKey("font_weight")
         private val CONTRAST = intPreferencesKey("contrast")
         private val BOLD_WORD_STARTS = booleanPreferencesKey("bold_word_starts")
+        private val ANTIALIASING = booleanPreferencesKey("antialiasing")
+        private val HINTING = stringPreferencesKey("hinting")
+        private val LIGATURES = booleanPreferencesKey("ligatures")
+        private val FRACTIONAL_POSITIONING = intPreferencesKey("fractional_positioning")
+        private val MONOSPACE_SIZE = intPreferencesKey("monospace_size_percent")
+        private val EMBEDDED_FONTS = booleanPreferencesKey("embedded_fonts")
         private val LINE_SPACING = intPreferencesKey("line_spacing")
         private val ALIGNMENT = stringPreferencesKey("alignment")
         private val HYPHENATION = booleanPreferencesKey("hyphenation")

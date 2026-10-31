@@ -288,6 +288,12 @@ static bool needsFullShaping(const std::string& language) {
     return false;
 }
 
+// Full shaping when the script needs it, whatever the reader chose: without it those letters are drawn wrong.
+// Otherwise the reader's ligatures switch decides; off is light shaping, as before the switch existed.
+static int kerningFor(const std::string& language, bool ligatures) {
+    return needsFullShaping(language) || ligatures ? KERNING_FULL : KERNING_LIGHT;
+}
+
 // The stylesheet each view was last given, to tell a change of it.
 static std::unordered_map<LVDocView*, lString8> gStylesheets;
 
@@ -295,6 +301,9 @@ static std::unordered_map<LVDocView*, lString8> gStylesheets;
 // here, as the settings come before the book is loaded.
 extern "C++" void perigeeSetBoldWordStarts(const ldomDocument* doc, bool on);
 static std::unordered_map<LVDocView*, bool> gBoldWordStarts;
+
+// The ligatures switch, per view: load picks the kerning mode by the book's language and needs it then.
+static std::unordered_map<LVDocView*, bool> gLigatures;
 
 /// The colours a book's pages are painted in. The engine always draws black on
 /// white: in crengine the text colour is part of the styles, and a new one has
@@ -342,6 +351,8 @@ Java_org_evsyukov_perigee_engine_NativeEngine_create(JNIEnv*, jobject, jint widt
     // xpointers exchanged with bookOrbit are only comparable under the same pair.
     props->setInt(PROP_REQUESTED_DOM_VERSION, gDOMVersionCurrent);
     props->setInt(PROP_RENDER_BLOCK_RENDERING_FLAGS, BLOCK_RENDERING_FULL_FEATURED);
+    // Hinting and kerning are written again by applySettings, which comes after create in the app's flow
+    // and overrides both; these stay for a view used without it.
     props->setInt(PROP_FONT_HINTING, 2);
     // Light HarfBuzz shaping: kerning as with full shaping, no ligatures. Full shaping lays a long
     // book out five times slower (4 s against 0.8 s for a 2.8 MB FB2 on a 2025 phone), and a rotation
@@ -364,7 +375,9 @@ Java_org_evsyukov_perigee_engine_NativeEngine_applySettings(
         JNIEnv* env, jobject, jlong handle, jstring cssFile, jstring extraCss, jstring fontFace,
         jint fontSize, jint fontWeight, jint lineSpacingPercent, jint marginHorizontal, jint marginTop, jint marginBottom,
         jboolean hyphenation, jboolean footnotes, jboolean twoPages, jint textColor, jint backgroundColor,
-        jint renderDpi, jint width, jint height, jboolean boldWordStarts) {
+        jint renderDpi, jint width, jint height, jboolean boldWordStarts,
+        jboolean antialiasing, jint hinting, jboolean ligatures, jint fractionalPositioning,
+        jint monospaceSizePercent, jboolean embeddedFonts) {
     LVDocView* view = viewOf(handle);
     // A new layout moves page boundaries; the reader stays where they were.
     const bool loaded = view->getDocument() != nullptr;
@@ -382,6 +395,20 @@ Java_org_evsyukov_perigee_engine_NativeEngine_applySettings(
     props->setInt(PROP_FLOATING_PUNCTUATION, 1);
     props->setInt(PROP_LANDSCAPE_PAGES, twoPages ? 2 : 1);
     props->setInt(PROP_RENDER_DPI, renderDpi);
+    // How the glyphs are drawn. Smoothing, hinting, kerning, sub-pixel placement and the monospace scale are
+    // kept by the font manager, one for every book, as the gamma of setGamma is; the book's own fonts are a
+    // flag of the document. They come here rather than in a call of their own because most of them re-break
+    // lines, and this is the path that lays the book out again and returns to the place.
+    const int antialiasMode = antialiasing ? 2 : 0;
+    // Setting the mode empties the glyph cache even when it is the one in use.
+    if (fontMan->GetAntialiasMode() != antialiasMode) props->setInt(PROP_FONT_ANTIALIASING, antialiasMode);
+    props->setInt(PROP_FONT_HINTING, hinting);
+    gLigatures[view] = ligatures;
+    const std::string language = loaded ? std::string(UnicodeToUtf8(view->getLanguage()).c_str()) : std::string();
+    props->setInt(PROP_FONT_KERNING, kerningFor(language, ligatures));
+    props->setInt(PROP_FONT_FRACTIONAL_POSITIONING, fractionalPositioning);
+    props->setInt(PROP_FONT_MONOSPACE_SCALE, monospaceSizePercent);
+    props->setInt(PROP_EMBEDDED_FONTS, embeddedFonts ? 1 : 0);
     view->propsApply(props);
     const perigee::FaceSize size = perigee::sizeOfFace(lString8(toStd(env, fontFace).c_str()), fontSize, fontWeight);
     view->setFontSize(size.em);
@@ -431,7 +458,7 @@ Java_org_evsyukov_perigee_engine_NativeEngine_load(JNIEnv* env, jobject, jlong h
     lString32 language = view->getLanguage();
     CRPropRef props = LVCreatePropsContainer();
     if (!language.empty()) props->setString(PROP_TEXTLANG_MAIN_LANG, hyphenationLanguage(UnicodeToUtf8(language).c_str()).c_str());
-    props->setInt(PROP_FONT_KERNING, needsFullShaping(UnicodeToUtf8(language).c_str()) ? KERNING_FULL : KERNING_LIGHT);
+    props->setInt(PROP_FONT_KERNING, kerningFor(UnicodeToUtf8(language).c_str(), gLigatures[view]));
     view->propsApply(props);
     view->Render();
     return JNI_TRUE;
@@ -440,6 +467,12 @@ Java_org_evsyukov_perigee_engine_NativeEngine_load(JNIEnv* env, jobject, jlong h
 JNIEXPORT jint JNICALL
 Java_org_evsyukov_perigee_engine_NativeEngine_kerningMode(JNIEnv*, jobject, jlong handle) {
     return viewOf(handle)->propsGetCurrent()->getIntDef(PROP_FONT_KERNING, -1);
+}
+
+JNIEXPORT jint JNICALL
+Java_org_evsyukov_perigee_engine_NativeEngine_hintingMode(JNIEnv*, jobject) {
+    // The font manager's, not a view's: the mode the glyphs are drawn with.
+    return static_cast<jint>(fontMan->GetHintingMode());
 }
 
 JNIEXPORT void JNICALL
@@ -458,6 +491,7 @@ Java_org_evsyukov_perigee_engine_NativeEngine_close(JNIEnv*, jobject, jlong hand
     gStylesheets.erase(view);
     gPalettes.erase(view);
     gBoldWordStarts.erase(view);
+    gLigatures.erase(view);
     delete view;
 }
 
