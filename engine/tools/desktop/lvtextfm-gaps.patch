@@ -1,0 +1,58 @@
+--- a/crengine/src/lvtextfm.cpp
++++ b/crengine/src/lvtextfm.cpp
+@@ -2751,6 +2751,45 @@
+ #define MIN_WORD_LEN_TO_HYPHENATE 4
+ #define MAX_WORD_SIZE 64
+ 
++    /// Perigee measurement hook (engine/tools/desktop): with PERIGEE_GAPS_CSV naming a file,
++    /// one row per justified line, taken before the line's extra width is spread over its gaps
++    /// (or, when negative, taken out of them). The variable is read once; unset, nothing is done.
++    void perigeeLogGaps( formatted_line_t * frmline, int usable_width, int extra_width ) {
++        static FILE * out = NULL;
++        static bool checked = false;
++        if ( !checked ) {
++            checked = true;
++            const char * path = getenv("PERIGEE_GAPS_CSV");
++            if ( path && *path && (out = fopen(path, "a")) != NULL && ftell(out) == 0 )
++                fprintf(out, "face,size_px,space_px,usable_px,natural_px,extra_px,gaps,words,chars,hyphen,node,y\n");
++        }
++        if ( !out || frmline->word_count == 0 )
++            return;
++        LVFont * font = NULL;
++        ldomNode * node = NULL;
++        for ( int i=0; i<(int)frmline->word_count && !font; i++ ) {
++            src_text_fragment_t * src = &m_pbuffer->srctext[frmline->words[i].src_text_index];
++            if ( !(src->flags & LTEXT_SRC_IS_OBJECT) ) {
++                font = (LVFont *) src->t.font;
++                node = (ldomNode *) src->object;
++            }
++        }
++        if ( !font )
++            return;
++        int gaps = 0;
++        int chars = 0;
++        for ( int i=0; i<(int)frmline->word_count; i++ ) {
++            if ( i < (int)frmline->word_count-1 && frmline->words[i].flags & LTEXT_WORD_CAN_ADD_SPACE_AFTER )
++                gaps++;
++            if ( !(m_pbuffer->srctext[frmline->words[i].src_text_index].flags & LTEXT_SRC_IS_OBJECT) )
++                chars += frmline->words[i].t.len;
++        }
++        bool hyphen = frmline->words[frmline->word_count-1].flags & LTEXT_WORD_CAN_HYPH_BREAK_LINE_AFTER;
++        fprintf(out, "%s,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d\n", font->getTypeFace().c_str(), font->getSize(),
++                font->getCharWidth(' '), usable_width, (int)frmline->width, extra_width, gaps,
++                (int)frmline->word_count, chars, hyphen ? 1 : 0, node ? (int)node->getDataIndex() : -1, m_y);
++    }
++
+     /// align line: add or reduce widths of spaces to achieve desired text alignment
+     void alignLine( formatted_line_t * frmline, int alignment, int rightIndent=0, bool hasInlineBoxes=false ) {
+         // Fetch current line x offset and max width
+@@ -3115,6 +3154,9 @@
+             }
+         }
+ 
++        if ( alignment == LTEXT_ALIGN_WIDTH )
++            perigeeLogGaps( frmline, usable_width, extra_width );
++
+         if ( extra_width < 0 ) {
+             // line is too wide
+             // reduce spaces to fit line
