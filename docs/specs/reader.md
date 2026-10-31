@@ -141,7 +141,7 @@ Holding a word selects it; dragging on without lifting the finger stretches the 
 
 ### Menu
 
-The middle of the page shows two bars and, on systems that have one, the navigation bar. The system's scrim under its buttons is off while a book is open, so the bar takes the colour of the menu under it. Top: back, title, author, chapter, search, contents, settings. Bottom: a button that returns to where the last jump was made from, "N of M", the bookmark toggle and a position slider. Back also returns from a jump before it closes the book.
+The middle of the page shows two bars and with them the system's status bar, with the clock, and, on systems that have one, the navigation bar; the page stays where it was, and both system bars hide again with the menu. The system's scrim under the clock and the buttons is off while a book is open, so the system bars take the colour of the menu under them, and their icons are dark on a light menu and light on a dark one. Top: back, title, author, chapter, search, contents, settings. Bottom: a button that returns to where the last jump was made from, "N of M", the bookmark toggle and a position slider. Back also returns from a jump before it closes the book.
 
 Contents, bookmarks and quotes are three tabs of one sheet; each entry jumps to its place. A quote with a star shows it in the list. Search lists every match with the words around it.
 
