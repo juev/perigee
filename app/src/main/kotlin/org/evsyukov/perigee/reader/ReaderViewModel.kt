@@ -30,6 +30,7 @@ import org.evsyukov.perigee.data.Alignment
 import org.evsyukov.perigee.data.Book
 import org.evsyukov.perigee.data.Bookmark
 import org.evsyukov.perigee.data.ColorScheme
+import org.evsyukov.perigee.data.Hinting
 import org.evsyukov.perigee.data.Library
 import org.evsyukov.perigee.data.Quote
 import org.evsyukov.perigee.data.ReaderPreferences
@@ -39,6 +40,7 @@ import org.evsyukov.perigee.engine.BookReader
 import org.evsyukov.perigee.engine.Engine
 import org.evsyukov.perigee.engine.EngineSettings
 import org.evsyukov.perigee.engine.Highlight
+import org.evsyukov.perigee.engine.HintingMode
 import org.evsyukov.perigee.engine.Layout
 import org.evsyukov.perigee.engine.Page
 import org.evsyukov.perigee.engine.PageColors
@@ -820,6 +822,17 @@ class ReaderViewModel internal constructor(
                 fontWeight = prefs.fontWeight,
                 contrast = prefs.contrast.coerceIn(EngineSettings.CONTRASTS),
                 boldWordStarts = prefs.boldWordStarts,
+                antialiasing = prefs.antialiasing,
+                hinting = when (prefs.hinting) {
+                    Hinting.Auto -> HintingMode.Auto
+                    Hinting.Native -> HintingMode.Native
+                    Hinting.Off -> HintingMode.Off
+                },
+                ligatures = prefs.ligatures,
+                fractionalPositioning = prefs.fractionalPositioning.coerceIn(ReaderPrefs.FRACTIONAL_STEPS),
+                monospaceSizePercent = prefs.monospaceSizePercent
+                    .coerceIn(ReaderPrefs.MONOSPACE_SIZES.first, ReaderPrefs.MONOSPACE_SIZES.last),
+                embeddedFonts = prefs.embeddedFonts,
                 lineSpacingPercent = prefs.lineSpacingPercent,
                 marginHorizontal = side + overdraw,
                 // A strip left clear above the page, as under a camera cutout, is margin already: only what

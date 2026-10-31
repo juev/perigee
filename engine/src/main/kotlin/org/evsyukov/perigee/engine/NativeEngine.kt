@@ -40,6 +40,8 @@ internal object NativeEngine {
         /** The page size to lay the book out at; 0 keeps the size it has. */
         width: Int, height: Int,
         boldWordStarts: Boolean,
+        antialiasing: Boolean, hinting: Int, ligatures: Boolean, fractionalPositioning: Int,
+        monospaceSizePercent: Int, embeddedFonts: Boolean,
     )
 
     /** Returns false when the file cannot be opened. */
@@ -47,6 +49,9 @@ internal object NativeEngine {
 
     /** How the loaded book's text is shaped: 2 is HarfBuzz without ligatures, 3 is HarfBuzz with everything. */
     external fun kerningMode(handle: Long): Int
+
+    /** The hinting mode the font manager draws with, for every book: 0 none, 1 the font's own, 2 autohint. */
+    external fun hintingMode(): Int
 
     /** Writes the parsed and laid out book to the engine's cache; small files are skipped. */
     external fun saveCache(handle: Long)

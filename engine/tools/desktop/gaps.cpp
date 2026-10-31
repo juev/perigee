@@ -5,7 +5,9 @@
 // with --lookahead on the line breaker looks one line ahead before a wide gap; with --paragraph on it
 // breaks each justified paragraph as a whole; with --repair on it reworks only the lines around a loose
 // one; with --png every drawn page is also saved as an 8-bit
-// grayscale PGM, with --text the text of every page goes to a file.
+// grayscale PGM, with --text the text of every page goes to a file. --antialias, --hinting, --kerning,
+// --fractional, --monospace-scale and --embedded-fonts change how the glyphs are drawn (issue #122); left
+// out, they are what the app sets today.
 
 #include <cerrno>
 #include <chrono>
@@ -64,7 +66,9 @@ const char* EXTRA_CSS =
         "            [--paragraph on|off [--tolerance 300] [--hyphen-penalty 50] [--paragraph-log FILE]]\n"
         "            [--repair on|off [--hyphen-penalty 50] [--paragraph-log FILE]]\n"
         "            [--lang ru-US]\n"
-        "            [--text FILE] [--same-size on|off] [--switch-face NAME] [--user-css FILE]\n");
+        "            [--text FILE] [--same-size on|off] [--switch-face NAME] [--user-css FILE]\n"
+        "            [--antialias on|off] [--hinting 0|1|2] [--kerning 0|1|2|3] [--fractional 0|1|2|3]\n"
+        "            [--monospace-scale 100] [--embedded-fonts on|off]\n");
     std::exit(2);
 }
 
@@ -72,6 +76,16 @@ int toInt(const char* flag, const std::string& value) {
     char* end = nullptr;
     long n = std::strtol(value.c_str(), &end, 10);
     if (value.empty() || *end || n <= 0 || n > INT_MAX) usage((std::string(flag) + " wants a positive number").c_str());
+    return static_cast<int>(n);
+}
+
+// One of the modes 0..max of a font property. The engine would map a value outside its list to another
+// one without a word, so it is refused here.
+int toMode(const char* flag, const std::string& value, int max) {
+    char* end = nullptr;
+    long n = std::strtol(value.c_str(), &end, 10);
+    if (value.empty() || *end || n < 0 || n > max)
+        usage((std::string(flag) + " wants 0 to " + std::to_string(max)).c_str());
     return static_cast<int>(n);
 }
 
@@ -148,6 +162,9 @@ int main(int argc, char** argv) {
     std::set<int> only;
     std::vector<std::pair<std::string, std::string>> fonts;
     int size = 0, width = 0, height = 0, dpi = 336, weight = 400, lineSpacing = 120, condensing = 75;
+    // How the glyphs are drawn; the defaults are the app's.
+    std::string antialias = "on", embeddedFonts = "on";
+    int hinting = 2, kerning = KERNING_LIGHT, fractional = 0, monospaceScale = 100;
     for (int i = 1; i < argc; i++) {
         std::string flag = argv[i];
         if (i + 1 >= argc) usage((flag + " wants a value").c_str());
@@ -179,6 +196,12 @@ int main(int argc, char** argv) {
         else if (flag == "--switch-face") switchFace = value;
         else if (flag == "--user-css") userCss = value;
         else if (flag == "--pages") only = toPages(value);
+        else if (flag == "--antialias") antialias = value;
+        else if (flag == "--hinting") hinting = toMode("--hinting", value, 2);
+        else if (flag == "--kerning") kerning = toMode("--kerning", value, 3);
+        else if (flag == "--fractional") fractional = toMode("--fractional", value, 3);
+        else if (flag == "--monospace-scale") monospaceScale = toInt("--monospace-scale", value);
+        else if (flag == "--embedded-fonts") embeddedFonts = value;
         else if (flag == "--font") {
             auto eq = value.find('=');
             if (eq == std::string::npos || eq == 0) usage("--font wants NAME=PATH");
@@ -192,6 +215,8 @@ int main(int argc, char** argv) {
     if (paragraph != "on" && paragraph != "off") usage("--paragraph wants on or off");
     if (sameSize != "on" && sameSize != "off") usage("--same-size wants on or off");
     if (repair != "on" && repair != "off") usage("--repair wants on or off");
+    if (antialias != "on" && antialias != "off") usage("--antialias wants on or off");
+    if (embeddedFonts != "on" && embeddedFonts != "off") usage("--embedded-fonts wants on or off");
     if (paragraph == "on" && repair == "on") usage("--paragraph on and --repair on exclude each other");
     if (paragraph == "off" && !tolerance.empty()) usage("--tolerance goes with --paragraph on");
     if (paragraph == "off" && repair == "off" && (!hyphenPenalty.empty() || !paragraphLog.empty()))
@@ -259,8 +284,8 @@ int main(int argc, char** argv) {
     CRPropRef props = LVCreatePropsContainer();
     props->setInt(PROP_REQUESTED_DOM_VERSION, gDOMVersionCurrent);
     props->setInt(PROP_RENDER_BLOCK_RENDERING_FLAGS, BLOCK_RENDERING_FULL_FEATURED);
-    props->setInt(PROP_FONT_HINTING, 2);
-    props->setInt(PROP_FONT_KERNING, KERNING_LIGHT);
+    props->setInt(PROP_FONT_HINTING, hinting);  // the app's 2 unless asked
+    props->setInt(PROP_FONT_KERNING, kerning);  // the app's light kerning unless asked
     props->setInt(PROP_TEXTLANG_EMBEDDED_LANGS_ENABLED, 1);
     props->setInt(PROP_FORMAT_MIN_SPACE_CONDENSING_PERCENT, condensing);  // the app's 75 unless asked
     props->setInt(PROP_MIN_FILE_SIZE_TO_CACHE, INT_MAX);
@@ -276,6 +301,13 @@ int main(int argc, char** argv) {
     props->setInt(PROP_FLOATING_PUNCTUATION, 1);
     props->setInt(PROP_LANDSCAPE_PAGES, 1);
     props->setInt(PROP_RENDER_DPI, dpi);
+    // Not set by the app today, which leaves the engine's defaults 2, 0, 100 and 1; issue #122 adds them here.
+    // The font manager changes the instances it already holds, and the embedded fonts flag is kept for the
+    // document LoadDocument creates.
+    props->setInt(PROP_FONT_ANTIALIASING, antialias == "on" ? 2 : 0);
+    props->setInt(PROP_FONT_FRACTIONAL_POSITIONING, fractional);
+    props->setInt(PROP_FONT_MONOSPACE_SCALE, monospaceScale);
+    props->setInt(PROP_EMBEDDED_FONTS, embeddedFonts == "on" ? 1 : 0);
     view.propsApply(props);
     const perigee::FaceSize faceSize =
         sameSize == "on" ? perigee::sizeOfFace(lString8(face.c_str()), size, weight) : perigee::FaceSize{size, lString8()};
@@ -301,7 +333,9 @@ int main(int argc, char** argv) {
     lString32 language = lang.empty() ? view.getLanguage() : Utf8ToUnicode(lang.c_str());
     props = LVCreatePropsContainer();
     if (!language.empty()) props->setString(PROP_TEXTLANG_MAIN_LANG, UnicodeToUtf8(language).c_str());
-    props->setInt(PROP_FONT_KERNING, KERNING_LIGHT);  // needsFullShaping() is false for the languages measured
+    // needsFullShaping() is false for the languages measured, so the app sets light kerning here again;
+    // --kerning replaces it, as in create.
+    props->setInt(PROP_FONT_KERNING, kerning);
     view.propsApply(props);
     auto started = std::chrono::steady_clock::now();
     view.Render();
@@ -343,6 +377,14 @@ int main(int argc, char** argv) {
     std::string faceName;
     for (char c : face)
         if (c != ' ') faceName += c;
+    // The drawing settings that differ from the app's, so that runs with other ones keep their own images.
+    std::string drawing;
+    if (antialias == "off") drawing += "-aa0";
+    if (hinting != 2) drawing += "-h" + std::to_string(hinting);
+    if (kerning != KERNING_LIGHT) drawing += "-k" + std::to_string(kerning);
+    if (fractional != 0) drawing += "-f" + std::to_string(fractional);
+    if (monospaceScale != 100) drawing += "-ms" + std::to_string(monospaceScale);
+    if (embeddedFonts == "off") drawing += "-noembedded";
     LVGrayDrawBuf page(width, height, 8);
     int saved = 0;
     FILE* pageText = nullptr;
@@ -357,7 +399,7 @@ int main(int argc, char** argv) {
         if (png.empty() || (!only.empty() && !only.count(i + 1))) continue;
         std::string path = png + "/" + stem(book) + "-p" + std::to_string(i + 1) + "-" + faceName + "-cap" + cap +
                            (lookahead == "on" ? "-lookahead" : "") +
-                           (paragraph == "on" ? "-paragraph" : "") + (repair == "on" ? "-repair" : "") + ".pgm";
+                           (paragraph == "on" ? "-paragraph" : "") + (repair == "on" ? "-repair" : "") + drawing + ".pgm";
         if (!writePgm(path, page)) {
             std::fprintf(stderr, "gaps: cannot write %s\n", path.c_str());
             return 1;
@@ -371,9 +413,11 @@ int main(int argc, char** argv) {
     }
     for (int number : only)
         if (number > pages) std::fprintf(stderr, "gaps: no page %d, the book has %d\n", number, pages);
-    std::printf("%s: %s, %d px, text width %d px, hyphenation %s, language %s, cap %s, lookahead %s, paragraph %s: %d pages\n",
+    std::printf("%s: %s, %d px, text width %d px, hyphenation %s, language %s, cap %s, lookahead %s, paragraph %s, "
+                "antialias %s, hinting %d, kerning %d, fractional %d, monospace scale %d %%, embedded fonts %s: %d pages\n",
                 book.c_str(), face.c_str(), size, width, hyphenation.c_str(), UnicodeToUtf8(language).c_str(), cap.c_str(),
-                lookahead.c_str(), paragraph.c_str(), pages);
+                lookahead.c_str(), paragraph.c_str(), antialias.c_str(), hinting, kerning, fractional, monospaceScale,
+                embeddedFonts.c_str(), pages);
     {
         LVFontRef font = perigee::regularFont(lString8(face.c_str()), faceSize.em, weight, faceSize.em);
         std::printf("size: em %d px (asked %d, drawn %d), x-height %.2f px, caps %.2f px, font height %d px%s%s\n", faceSize.em, size,

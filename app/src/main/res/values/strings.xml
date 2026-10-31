@@ -61,6 +61,15 @@
     <string name="setting_font_weight">Font boldness</string>
     <string name="setting_contrast">Contrast</string>
     <string name="setting_bold_word_starts">Bold word starts</string>
+    <string name="setting_antialiasing">Smoothing</string>
+    <string name="setting_hinting">Hinting</string>
+    <string name="hinting_auto">Auto</string>
+    <string name="hinting_native">The font\'s own</string>
+    <string name="hinting_off">Off</string>
+    <string name="setting_ligatures">Ligatures</string>
+    <string name="hint_ligatures">The book is laid out again, and a long one takes noticeably longer to lay out.</string>
+    <string name="setting_fractional">Sub-pixel placement</string>
+    <string name="hint_fractional">Letters are placed between pixels only with ligatures on; until then this changes nothing.</string>
     <string name="setting_line_spacing">Line spacing</string>
     <string name="setting_alignment">Align text</string>
     <string name="align_justify">Justified</string>
@@ -74,6 +83,8 @@
     <string name="setting_page_margins">Page margins</string>
     <string name="chars_per_line">≈%1$d characters per line</string>
     <string name="setting_two_pages">Two pages in landscape</string>
+    <string name="setting_code_size">Code size</string>
+    <string name="setting_embedded_fonts">The book\'s own fonts</string>
     <string name="setting_volume_keys">Volume keys turn pages</string>
     <string name="setting_brightness_gesture">Brightness by sliding along the left edge</string>
     <string name="setting_dim_below_flicker">Darker without flicker</string>
