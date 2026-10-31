@@ -1,7 +1,7 @@
 # Word gaps: a justified page today and with a ceiling on the word space
 
-Date: 2026-10-31. Status: research; the app is unchanged, the ceiling, the breakers and the repair
-exist only in the desktop harness. The current conclusion is in "Repair only the loose lines". Task: [issue #99](https://github.com/juev/perigee/issues/99).
+Date: 2026-10-31. Status: research; the repair and the `ru-US` dictionary are in the app
+(`0002-repair-loose-lines.patch`), the ceiling and the breakers only in the desktop harness. The current conclusion is in "Repair only the loose lines". Task: [issue #99](https://github.com/juev/perigee/issues/99).
 
 The ceiling: a justified line whose gap — the font's own space plus its share of the
 line's leftover width — would come out wider than the ceiling is left aligned instead,
