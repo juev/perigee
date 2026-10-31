@@ -20,7 +20,14 @@ hook marks them `capped`. Such lines still count in `lines`, `chars` and `hyph`,
 column gives their share, and the gap columns describe only the lines that stay justified. Rows
 written before the column existed count as not capped. A run with `gaps --lookahead on` marks the
 lines whose break the lookahead moved `lookahead`; `moved` gives their share, and `widest` is the
-widest gap left justified.
+widest gap left justified. A run with `gaps --paragraph on` marks the lines of paragraphs the
+paragraph breaker broke `paragraph`; `para` gives their share. The columns `>0.75em` and `>0.5em`
+(the gaps of --over) give the share of all the lines counted whose gap, justified, is wider.
+
+With --costs the report reads the log of `gaps --paragraph-log` instead: the paragraphs planned in
+Render(), the pass that planned them, the distribution of their cost and where the time went:
+
+    gaps-report.py --costs runs/paragraph.log
 
 The CLI writes a marker row `#page,N` before drawing page N; the rows after it are the lines
 formatted while that page was drawn. With --by-page the report lists the pages with the most lines
@@ -61,6 +68,7 @@ def rows_with_pages(handle):
         row["page"] = page[0]
         row["capped"] = row.get("capped") or "0"
         row["lookahead"] = row.get("lookahead") or "0"
+        row["paragraph"] = row.get("paragraph") or "0"
         yield row
 
 
@@ -94,18 +102,23 @@ def main():
     parser.add_argument("--lang", default="ru_RU", help="language label of the book, for the lang column")
     parser.add_argument("--caps", type=float, nargs="+", default=[1.5, 2.0, 2.5, 3.0])
     parser.add_argument("--by-page", action="store_true", help="list the pages with the most wide gaps instead")
+    parser.add_argument("--costs", action="store_true", help="read paragraph logs of gaps --paragraph-log instead")
     parser.add_argument("--over", type=float, nargs="+", default=[0.75, 0.5],
-                        help="gaps in em that --by-page counts lines over, the first one ranking first")
+                        help="gaps in em the table and --by-page count lines over, the first one ranking first in --by-page")
     parser.add_argument("--top", type=int, default=10, help="pages --by-page lists")
     args = parser.parse_args()
     if args.by_page:
         by_page(args)
         return
+    if args.costs:
+        costs(args)
+        return
 
     header = (f"{'font':14s} {'lang':6s} {'width':>5s} {'space':>6s} {'lines':>6s} "
               f"{'p50':>6s} {'p90':>6s} {'p99':>6s}")
     header += "".join(f">{int(cap * 100)}%".rjust(8) for cap in args.caps)
-    header += f" {'chars':>6s} {'hyph':>6s} {'ragged':>6s} {'moved':>6s} {'widest':>6s}  setting"
+    header += f" {'chars':>6s} {'hyph':>6s} {'ragged':>6s} {'moved':>6s} {'para':>6s} {'widest':>6s}"
+    header += "".join(f">{em:g}em".rjust(8) for em in args.over) + "  setting"
     print("gap widths in em of the lines left justified; the last columns are the share of them needing a wider gap")
     print(header)
     notes = []
@@ -118,6 +131,7 @@ def main():
             justified = [r for r in rows if r["capped"] == "0"]
             ragged = (len(rows) - len(justified)) / len(rows)
             moved = sum(1 for r in rows if r["lookahead"] == "1") / len(rows)
+            para = sum(1 for r in rows if r["paragraph"] == "1") / len(rows)
             gaps = [gap_em(r, size) for r in justified]
             spaces = [int(r["space_px"]) / size for r in justified]
             condensed = sum(1 for r in rows if int(r["extra_px"]) < 0)
@@ -129,8 +143,11 @@ def main():
                 f"{100 * sum(1 for gap, s in zip(gaps, spaces) if gap > cap * s) / max(len(gaps), 1):6.1f}%"
                 for cap in args.caps
             )
-            line += (f" {chars:6.1f} {100 * hyphens:5.1f}% {100 * ragged:5.1f}% {100 * moved:5.1f}%"
-                     f" {max(gaps, default=float('nan')):6.2f}  {setting}")
+            line += (f" {chars:6.1f} {100 * hyphens:5.1f}% {100 * ragged:5.1f}% {100 * moved:5.1f}% {100 * para:5.1f}%"
+                     f" {max(gaps, default=float('nan')):6.2f}")
+            ems = [gap * size for gap in gaps]
+            line += "".join(f"{100 * sum(1 for g in ems if g > em * size) / len(rows):7.1f}%" for em in args.over)
+            line += f"  {setting}"
             print(line)
             notes.append(f"{setting} {face}: {usable} px over {size} px = {usable / size:.1f} em, "
                          f"{condensed} of {len(rows)} lines condensed below the space")
@@ -138,6 +155,37 @@ def main():
     print()
     for note in notes:
         print(note)
+
+
+def costs(args):
+    """Per paragraph log, the paragraphs planned in Render(): passes, cost percentiles, time by candidates."""
+    for path in args.csv:
+        rows, dropped = [], 0
+        with open(path, encoding="utf-8") as handle:
+            for line in handle:
+                if line.startswith("#draw"):
+                    break
+                if line.startswith("#dropped"):
+                    dropped += 1
+                elif not line.startswith("node"):
+                    node, chars, cands, edges, lines, run, cost, us, hyph_us = line.strip().split(",")
+                    rows.append((int(cands), int(edges), int(run), float(cost), int(us), int(hyph_us), int(lines)))
+        passes = Counter(row[2] for row in rows)
+        print(f"{os.path.basename(path)}: {len(rows)} paragraphs in Render(); first pass {passes[1]}, "
+              f"second pass {passes[2]}, left greedy {passes[0]}, plans dropped {dropped}")
+        for run, name in ((1, "first pass"), (2, "second pass")):
+            values = [row[3] for row in rows if row[2] == run]
+            if values:
+                print(f"  cost, {name}: zero {sum(1 for v in values if v == 0)} of {len(values)}, "
+                      + ", ".join(f"p{p} {pct(values, p):.0f}" for p in (50, 90, 99)) + f", max {max(values):.0f}")
+        total = sum(row[4] for row in rows)
+        print(f"  time {total / 1000:.1f} ms, hyphenation {sum(row[5] for row in rows) / 1000:.1f} ms of it")
+        print(f"  {'candidates':>12s} {'paragraphs':>10s} {'edges':>8s} {'ms':>6s}")
+        for low, high in ((0, 50), (50, 100), (100, 200), (200, 400), (400, 10 ** 9)):
+            part = [row for row in rows if low <= row[0] < high]
+            label = f"{low}-{high - 1}" if high < 10 ** 9 else f"{low}+"
+            print(f"  {label:>12s} {len(part):10d} {sum(row[1] for row in part):8d} {sum(row[4] for row in part) / 1000:6.1f}")
+        print()
 
 
 def by_page(args):
