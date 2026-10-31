@@ -43,12 +43,14 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -66,6 +68,7 @@ import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.LayoutCoordinates
@@ -162,7 +165,7 @@ fun ReaderScreen(file: File, onClose: () -> Unit, viewModel: ReaderViewModel = v
             else -> close()
         }
     }
-    HideSystemBars(navigation = panel == Panel.Menu)
+    HideSystemBars(menu = panel == Panel.Menu)
     LifecycleEventEffect(Lifecycle.Event.ON_STOP) { viewModel.paused() }
     LifecycleEventEffect(Lifecycle.Event.ON_START) { viewModel.resumed() }
     val (windowBrightness, dim) = Dimming.split(prefs.brightness, prefs.dimBelowFlicker, MIN_BRIGHTNESS)
@@ -566,27 +569,39 @@ private fun ProgressLine(progress: Float, chapters: List<Float>, color: Color, m
 
 /**
  * Hides the status and navigation bars while a book is on screen; a swipe from the edge shows them briefly.
- * With [navigation] the navigation bar stays, on systems that have one, without the system's scrim:
- * the buttons lie on the menu, in its colour.
+ * With [menu] both bars stay, the navigation bar on systems that have one, without the system's scrim:
+ * the clock and the buttons lie on the menu, in its colour.
  */
+@Suppress("DEPRECATION")
 @Composable
-private fun HideSystemBars(navigation: Boolean) {
+private fun HideSystemBars(menu: Boolean) {
     val window = LocalActivity.current?.window
     DisposableEffect(window) {
         val controller = window?.let { WindowCompat.getInsetsController(it, it.decorView) }
         controller?.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-        controller?.hide(WindowInsetsCompat.Type.systemBars())
         val scrim = window?.isNavigationBarContrastEnforced
+        // Deprecated since Android 15, which draws no scrim under the status bar; older systems still do.
+        val statusScrim = window?.isStatusBarContrastEnforced
         window?.isNavigationBarContrastEnforced = false
+        window?.isStatusBarContrastEnforced = false
         onDispose {
             controller?.show(WindowInsetsCompat.Type.systemBars())
             scrim?.let { window.isNavigationBarContrastEnforced = it }
+            statusScrim?.let { window.isStatusBarContrastEnforced = it }
         }
     }
-    DisposableEffect(window, navigation) {
+    DisposableEffect(window, menu) {
         val controller = window?.let { WindowCompat.getInsetsController(it, it.decorView) }
-        if (navigation) controller?.show(WindowInsetsCompat.Type.navigationBars()) else controller?.hide(WindowInsetsCompat.Type.navigationBars())
+        if (menu) controller?.show(WindowInsetsCompat.Type.systemBars()) else controller?.hide(WindowInsetsCompat.Type.systemBars())
         onDispose { }
+    }
+    // The menu is drawn in the app's theme, not in the page's colours: dark icons on a light menu, light on a dark one.
+    val light = MaterialTheme.colorScheme.surface.luminance() > 0.5f
+    SideEffect {
+        window?.let { WindowCompat.getInsetsController(it, it.decorView) }?.apply {
+            isAppearanceLightStatusBars = light
+            isAppearanceLightNavigationBars = light
+        }
     }
 }
 

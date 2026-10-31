@@ -199,17 +199,20 @@ class ReaderScreenTest {
     }
 
     @Test
-    fun theMenuShowsTheNavigationBarWithoutLayingTheBookOutAgain() {
+    fun theMenuShowsTheSystemBarsWithoutLayingTheBookOutAgain() {
         show()
         waitForBook()
         fun barShown() = ViewCompat.getRootWindowInsets(activity.window.decorView)?.isVisible(WindowInsetsCompat.Type.navigationBars()) == true
+        fun clockShown() = ViewCompat.getRootWindowInsets(activity.window.decorView)?.isVisible(WindowInsetsCompat.Type.statusBars()) == true
         val before = model().state.value.page
-        rule.waitUntil(TIMEOUT) { !barShown() }
+        rule.waitUntil(TIMEOUT) { !barShown() && !clockShown() }
         openMenu()
-        rule.waitUntil(TIMEOUT) { barShown() }
+        rule.waitUntil(TIMEOUT) { barShown() && clockShown() }
         assertFalse("no scrim of the system under the buttons", activity.window.isNavigationBarContrastEnforced)
+        @Suppress("DEPRECATION")
+        assertFalse("no scrim of the system under the clock", activity.window.isStatusBarContrastEnforced)
         tapPage(0.5f, 0.5f)
-        rule.waitUntil(TIMEOUT) { !barShown() }
+        rule.waitUntil(TIMEOUT) { !barShown() && !clockShown() }
         assertEquals("the page is the same", before?.pageCount, model().state.value.page?.pageCount)
     }
 
