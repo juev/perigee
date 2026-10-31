@@ -3,7 +3,8 @@
 // applySettings, load) and EngineSettings.extraCss; the page has no margins, so the text width is
 // --width-px. With --cap-em the hook leaves lines whose gap would be wider than the ceiling ragged;
 // with --lookahead on the line breaker looks one line ahead before a wide gap; with --paragraph on it
-// breaks each justified paragraph as a whole; with --png every drawn page is also saved as an 8-bit
+// breaks each justified paragraph as a whole; with --repair on it reworks only the lines around a loose
+// one; with --png every drawn page is also saved as an 8-bit
 // grayscale PGM, with --text the text of every page goes to a file.
 
 #include <cerrno>
@@ -59,6 +60,8 @@ const char* EXTRA_CSS =
         "            [--data DIR] [--css fb2.css] [--render-dpi 336] [--weight 400] [--line-spacing 120]\n"
         "            [--min-space-condensing 75] [--cap-em 0.75] [--lookahead on|off] [--png DIR [--pages 3,17,42]]\n"
         "            [--paragraph on|off [--tolerance 300] [--hyphen-penalty 50] [--paragraph-log FILE]]\n"
+        "            [--repair on|off [--hyphen-penalty 50] [--paragraph-log FILE]]\n"
+        "            [--lang ru-US]\n"
         "            [--text FILE] [--same-size on|off] [--switch-face NAME]\n");
     std::exit(2);
 }
@@ -124,7 +127,7 @@ std::string stem(const std::string& path) {
 
 int main(int argc, char** argv) {
     std::string book, face, out, hyphenation, data = GAPS_DATA_DIR, css = "fb2.css", capEm, png, text;
-    std::string lookahead = "off", paragraph = "off", tolerance, hyphenPenalty, paragraphLog, sameSize = "on", switchFace;
+    std::string lookahead = "off", paragraph = "off", repair = "off", lang, tolerance, hyphenPenalty, paragraphLog, sameSize = "on", switchFace;
     std::set<int> only;
     std::vector<std::pair<std::string, std::string>> fonts;
     int size = 0, width = 0, height = 0, dpi = 336, weight = 400, lineSpacing = 120, condensing = 75;
@@ -148,6 +151,8 @@ int main(int argc, char** argv) {
         else if (flag == "--cap-em") toEm("--cap-em", capEm = value);
         else if (flag == "--lookahead") lookahead = value;
         else if (flag == "--paragraph") paragraph = value;
+        else if (flag == "--repair") repair = value;
+        else if (flag == "--lang") lang = value;
         else if (flag == "--tolerance") toNumber("--tolerance", tolerance = value);
         else if (flag == "--hyphen-penalty") toNumber("--hyphen-penalty", hyphenPenalty = value);
         else if (flag == "--paragraph-log") paragraphLog = value;
@@ -168,8 +173,11 @@ int main(int argc, char** argv) {
     if (lookahead != "on" && lookahead != "off") usage("--lookahead wants on or off");
     if (paragraph != "on" && paragraph != "off") usage("--paragraph wants on or off");
     if (sameSize != "on" && sameSize != "off") usage("--same-size wants on or off");
-    if (paragraph == "off" && (!tolerance.empty() || !hyphenPenalty.empty() || !paragraphLog.empty()))
-        usage("--tolerance, --hyphen-penalty and --paragraph-log go with --paragraph on");
+    if (repair != "on" && repair != "off") usage("--repair wants on or off");
+    if (paragraph == "on" && repair == "on") usage("--paragraph on and --repair on exclude each other");
+    if (paragraph == "off" && !tolerance.empty()) usage("--tolerance goes with --paragraph on");
+    if (paragraph == "off" && repair == "off" && (!hyphenPenalty.empty() || !paragraphLog.empty()))
+        usage("--hyphen-penalty and --paragraph-log go with --paragraph on or --repair on");
     if (!only.empty() && png.empty()) usage("--pages names the pages --png writes");
 
     // The hook opens the file on the first justified line it sees and writes the header to an empty one.
@@ -185,6 +193,8 @@ int main(int argc, char** argv) {
     // The paragraph breaker and its settings, read once as well; unset unless asked for.
     if (paragraph == "on") setenv("PERIGEE_GAPS_PARAGRAPH", "1", 1);
     else unsetenv("PERIGEE_GAPS_PARAGRAPH");
+    if (repair == "on") setenv("PERIGEE_GAPS_REPAIR", "1", 1);
+    else unsetenv("PERIGEE_GAPS_REPAIR");
     if (tolerance.empty()) unsetenv("PERIGEE_GAPS_TOLERANCE");
     else setenv("PERIGEE_GAPS_TOLERANCE", tolerance.c_str(), 1);
     if (hyphenPenalty.empty()) unsetenv("PERIGEE_GAPS_HYPHEN_PENALTY");
@@ -269,7 +279,7 @@ int main(int argc, char** argv) {
         std::fprintf(stderr, "gaps: cannot load %s\n", book.c_str());
         return 1;
     }
-    lString32 language = view.getLanguage();
+    lString32 language = lang.empty() ? view.getLanguage() : Utf8ToUnicode(lang.c_str());
     props = LVCreatePropsContainer();
     if (!language.empty()) props->setString(PROP_TEXTLANG_MAIN_LANG, UnicodeToUtf8(language).c_str());
     props->setInt(PROP_FONT_KERNING, KERNING_LIGHT);  // needsFullShaping() is false for the languages measured
@@ -328,7 +338,7 @@ int main(int argc, char** argv) {
         if (png.empty() || (!only.empty() && !only.count(i + 1))) continue;
         std::string path = png + "/" + stem(book) + "-p" + std::to_string(i + 1) + "-" + faceName + "-cap" + cap +
                            (lookahead == "on" ? "-lookahead" : "") +
-                           (paragraph == "on" ? "-paragraph" : "") + ".pgm";
+                           (paragraph == "on" ? "-paragraph" : "") + (repair == "on" ? "-repair" : "") + ".pgm";
         if (!writePgm(path, page)) {
             std::fprintf(stderr, "gaps: cannot write %s\n", path.c_str());
             return 1;
