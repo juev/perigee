@@ -23,6 +23,9 @@ class EngineFeaturesTest {
     private val dir: File = File(context.cacheDir, "books").apply { mkdirs() }
     private val base = EngineSettings(fontFace = TestBooks.TEST_FONT)
 
+    // The size at which the first line of the test book holds "quick brown fox jumps" whole.
+    private val roomyLine = base.copy(fontSize = 26)
+
     @Before
     fun registerTestFont() {
         runBlocking { Engine.registerFonts(context, TestBooks.fonts(context)) }
@@ -159,7 +162,7 @@ class EngineFeaturesTest {
     }
 
     @Test
-    fun draggingSelectsWholeWordsBetweenTheTwoPoints() = open(TestBooks.epub(dir)).use { doc ->
+    fun draggingSelectsWholeWordsBetweenTheTwoPoints() = open(TestBooks.epub(dir), roomyLine).use { doc ->
         val (first, from) = doc.locate("quick")
         // The next word on the same line, three words further.
         val to = doc.search("jumps").first { it.page == first.page }
@@ -174,7 +177,7 @@ class EngineFeaturesTest {
     }
 
     @Test
-    fun aSelectionFromGapToGapHasNoSpacesAtItsEnds() = open(TestBooks.epub(dir)).use { doc ->
+    fun aSelectionFromGapToGapHasNoSpacesAtItsEnds() = open(TestBooks.epub(dir), roomyLine).use { doc ->
         val (first, quick) = doc.locate("quick")
         val onLine = { word: String -> doc.search(word).first { it.page == first.page }.let { doc.rects(it.range.start, it.range.end).first() } }
         val brown = onLine("brown")
@@ -319,9 +322,10 @@ class EngineFeaturesTest {
     @Test
     fun footnoteParagraphsTakeNoParagraphSpacing() {
         val file = TestBooks.epub(dir, longNote = true)
-        fun gap(spacing: Int) = open(file, base.copy(paragraphSpacingPercent = spacing)).use { doc ->
-            val (_, first) = doc.locate("zebras")
-            val (_, second) = doc.locate(TestBooks.NOTE_SECOND_WORD)
+        fun gap(spacing: Int) = open(file, roomyLine.copy(paragraphSpacingPercent = spacing)).use { doc ->
+            val (firstHit, first) = doc.locate("zebras")
+            val (secondHit, second) = doc.locate(TestBooks.NOTE_SECOND_WORD)
+            assertEquals("the note is on one page, or the distance means nothing", firstHit.page, secondHit.page)
             second.top - first.top
         }
         assertEquals("from the first paragraph of the note to the second", gap(0), gap(100))

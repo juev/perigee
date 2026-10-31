@@ -58,6 +58,16 @@ Faces offered for reading come from three places:
 
 The default face is Roboto.
 
+The font size is the size of Roboto. An em is a nominal length, and each face spends it differently: at one em the letters differ by 11 % and the lines by 33 % across the eight faces above, so the number would mean another size in each. So the number the reader picks stays Roboto's, and any other face is set at the em that gives it Roboto's x-height, with Roboto's line height in place of its own (`face_size.h`). The app gets this in `EngineSettings.fontSize` and the engine works it out when the settings are applied: `view.getFontSize()` is the size actually drawn. Roboto's pages stay as they were, and every other face looks different from how it did before this rule, once, with no setting to turn it off and no change to stored preferences.
+
+- The x-height is measured on the `x` glyph of the regular weight the book is drawn in, at 1024 px, because hinting rounds a height at the drawn size to whole pixels. A face with an optical size axis is measured at the optical size of the em it is drawn at, so Literata's is that of its text. Capitals are not matched: Comfortaa's stay about 6 % taller than Roboto's.
+- The line height is a default rule in the stylesheet (`body { line-height: … }`), a number so that a heading takes it to its own size. A book that sets a line height keeps it, in ems of the face drawn, and the reader's percentage applies to it as before.
+- Characters per line stay the face's own: wider letters take more room, so the same book at the same setting still has about 17 % more pages in Comfortaa than in PT Sans.
+
+Measured with `engine/tools/desktop` at 63 px on a page of 1024 by 2200 px, with 120 % line spacing, over one book of 1500 paragraphs: x-height 33 to 34 px, lines 87 to 88 px apart and 25 lines to the page in all eight faces. Before, the x-height was 32 to 35 px, the lines 83 to 112 px apart, and the pages held 19 to 26 lines. Measuring costs 0.4 ms when the face changes, and the layout that follows takes as long as it did.
+
+The engine limits a font to 72 px by default, which a 560 dpi phone reaches at 20 dp. `create` raises the limit, since the sizes the settings offer are far above it.
+
 A character the chosen font lacks is taken from Noto Serif, the app's font with the most scripts, then from the device's fonts of single scripts, in that order (`Engine.FALLBACK_FACE`).
 
 Not done yet: fonts of the reader's own, from a folder.
@@ -70,10 +80,10 @@ Not done yet: fonts of the reader's own, from a folder.
 |---|---|---|
 | Colour scheme | `colors` | Text and page colour. Presets: `Day`, `Night`, `Oled`, `Sepia`. Night is `#C8C8C8` on dark grey `#1E1E1E`, not on black. OLED is `#FFFFFF` on pure black, so the black pixels of an OLED screen stay off; its colours are those of ReadEra's "Night contrast", measured on the reader's phone on 2026-10-29 (ReadEra's "Night" is `#A1A1A1` and its "Console" `#008000`, both on black). Sepia is `#644D32` on `#F0DEC7`, measured from ReadEra. |
 | Font | `fontFace` | A face from `Engine.fontFaces`. |
-| Font size | `fontSize` | |
+| Font size | `fontSize` | The size of Roboto: every face is drawn with Roboto's letters at this size, see Fonts. |
 | Font boldness | `fontWeight` | CSS weight of regular text, 400 by default. Values the engine accepts are in `EngineSettings.FONT_WEIGHTS`. Bold text gets heavier with it. |
 | Contrast | `contrast` | How dark the strokes are drawn, in five steps from 0, the font as it is: the engine's gamma on glyph coverage, 1.0, 1.2, 1.4, 1.6 and 1.8. Letters keep their widths, so a change paints the pages again without laying the book out, as new colours do. The engine keeps one gamma for all books. |
-| Line spacing | `lineSpacingPercent` | 100 is the font's own line height. |
+| Line spacing | `lineSpacingPercent` | 100 is Roboto's line height at the font size, in every face, see Fonts. |
 | Align text | `textAlign` | Justify, left, centre, right. |
 | Hyphenation | `hyphenation` | By the dictionary of the book's language. |
 | Paragraph spacing | `paragraphSpacingPercent` | In percent of the font size; `null` leaves it to the book. |

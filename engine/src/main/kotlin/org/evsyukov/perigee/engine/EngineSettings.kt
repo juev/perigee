@@ -29,9 +29,11 @@ enum class TextAlign(internal val css: String) {
  */
 data class EngineSettings(
     val fontFace: String = DEFAULT_FONT_FACE,
+    /** The size of Roboto: any other face is drawn with Roboto's x-height and line height at this size. */
     val fontSize: Int = 28,
     /** CSS weight of regular text: 400 is the font as designed, bold text gets heavier with it. */
     val fontWeight: Int = 400,
+    /** Of Roboto's line height at [fontSize], in every face; a book that sets a line height keeps it. */
     val lineSpacingPercent: Int = 100,
     val marginHorizontal: Int = 24,
     val marginTop: Int = 24,
