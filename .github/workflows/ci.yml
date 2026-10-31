@@ -125,6 +125,18 @@ jobs:
       # Built before the emulator is up, so that it does not sit idle through the engine's build.
       - name: Build the engine
         run: ./gradlew :engine:assembleDebug
+      # The action downloads the image once, and a broken download fails the job before any test.
+      - name: Install the system image
+        run: |
+          image=system-images/android-36/google_apis/x86_64
+          for attempt in 1 2 3; do
+            "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "system-images;android-36;google_apis;x86_64" --channel=0 > /dev/null || true
+            if [ -f "$ANDROID_HOME/$image/system.img" ]; then exit 0; fi
+            echo "Attempt $attempt: the system image did not install"
+            rm -rf "$ANDROID_HOME/.temp" "$ANDROID_HOME/.downloadIntermediates" "$ANDROID_HOME/$image"
+            sleep 15
+          done
+          exit 1
       - uses: ReactiveCircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0
         with:
           api-level: 36
