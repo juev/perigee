@@ -1,6 +1,14 @@
 --- a/crengine/src/lvtextfm.cpp
 +++ b/crengine/src/lvtextfm.cpp
-@@ -409,6 +409,47 @@
+@@ -16,6 +16,7 @@
+ #include <stdlib.h>
+ #include <stdio.h>
+ #include <string.h>
++#include <chrono>
+ #include "../include/lvfnt.h"
+ #include "../include/lvtextfm.h"
+ #include "../include/lvdrawbuf.h"
+@@ -409,6 +410,97 @@
      //   width) and can better apply values in %
  }
  
@@ -15,7 +23,7 @@
 +        checked = true;
 +        const char * path = getenv("PERIGEE_GAPS_CSV");
 +        if ( path && *path && (out = fopen(path, "a")) != NULL && ftell(out) == 0 )
-+            fprintf(out, "face,size_px,space_px,usable_px,natural_px,extra_px,gaps,words,chars,hyphen,node,y,capped,lookahead\n");
++            fprintf(out, "face,size_px,space_px,usable_px,natural_px,extra_px,gaps,words,chars,hyphen,node,y,capped,lookahead,paragraph,cost\n");
 +    }
 +    return out;
 +}
@@ -45,18 +53,75 @@
 +    return on == 1;
 +}
 +
++/// PERIGEE_GAPS_PARAGRAPH=1: choose the breaks of a justified paragraph as a whole, by the lowest total
++/// badness of its lines, instead of line by line. Read once; off when unset.
++static bool perigeeGapsParagraph() {
++    static int on = -1;
++    if ( on < 0 ) {
++        const char * value = getenv("PERIGEE_GAPS_PARAGRAPH");
++        on = value && !strcmp(value, "1") ? 1 : 0;
++    }
++    return on == 1;
++}
++
++/// A non-negative number from the environment variable name, or fallback when unset or not one. Read
++/// once per variable by the callers below.
++static double perigeeGapsNumber( const char * name, double fallback ) {
++    const char * value = getenv(name);
++    if ( !value || !*value )
++        return fallback;
++    char * end = NULL;
++    double number = strtod(value, &end);
++    return *end || number < 0 ? fallback : number;
++}
++
++/// PERIGEE_GAPS_TOLERANCE: how far a line of the paragraph breaker may stretch on its first pass, in
++/// percent of its stretch (300 when unset: the leftover up to three times half the line's spaces).
++static double perigeeGapsTolerance() {
++    static double tolerance = perigeeGapsNumber("PERIGEE_GAPS_TOLERANCE", 300);
++    return tolerance;
++}
++
++/// PERIGEE_GAPS_HYPHEN_PENALTY: what the paragraph breaker adds for a line that ends with a hyphen
++/// (50 when unset).
++static double perigeeGapsHyphenPenalty() {
++    static double penalty = perigeeGapsNumber("PERIGEE_GAPS_HYPHEN_PENALTY", 50);
++    return penalty;
++}
++
++/// PERIGEE_GAPS_PARAGRAPH_LOG: a stream with one row per paragraph the breaker planned, opened like
++/// perigeeGapsCsv(); NULL when unset. Not static: gaps writes a marker through it after Render().
++FILE * perigeeGapsParagraphLog() {
++    static FILE * out = NULL;
++    static bool checked = false;
++    if ( !checked ) {
++        checked = true;
++        const char * path = getenv("PERIGEE_GAPS_PARAGRAPH_LOG");
++        if ( path && *path && (out = fopen(path, "a")) != NULL && ftell(out) == 0 )
++            fprintf(out, "node,chars,candidates,edges,lines,pass,cost,us,hyphenation_us\n");
++    }
++    return out;
++}
++
  class LVFormatter {
  public:
      //LVArray<lUInt16>  widths_buf;
-@@ -443,6 +484,7 @@
+@@ -443,6 +535,14 @@
      bool m_indent_first_line_done;
      int  m_indent_after_first_line;
      int  m_indent_current;
 +    bool m_perigee_moved = false; // the lookahead moved the break of the line being added
++    // The paragraph breaker's plan for the paragraph being formatted: the wrap position of each line
++    // and whether it is a hyphenation point, the next line to take, and the cost of the plan.
++    bool m_perigee_para = false;
++    LVArray<int> m_perigee_breaks;
++    LVArray<int> m_perigee_hyphens;
++    int  m_perigee_line = 0;
++    double m_perigee_cost = 0;
      int  m_specified_para_dir;
      #if (USE_FRIBIDI==1)
          // Bidi/RTL support
-@@ -2751,6 +2793,198 @@
+@@ -2751,6 +2851,432 @@
  #define MIN_WORD_LEN_TO_HYPHENATE 4
  #define MAX_WORD_SIZE 64
  
@@ -94,9 +159,10 @@
 +                && space + (double)extra_width / gaps > cap_em * font->getSize();
 +        if ( out ) {
 +            bool hyphen = frmline->words[frmline->word_count-1].flags & LTEXT_WORD_CAN_HYPH_BREAK_LINE_AFTER;
-+            fprintf(out, "%s,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d\n", font->getTypeFace().c_str(), font->getSize(),
++            fprintf(out, "%s,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%.0f\n", font->getTypeFace().c_str(), font->getSize(),
 +                    space, usable_width, (int)frmline->width, extra_width, gaps, (int)frmline->word_count, chars,
-+                    hyphen ? 1 : 0, node ? (int)node->getDataIndex() : -1, m_y, capped ? 1 : 0, m_perigee_moved ? 1 : 0);
++                    hyphen ? 1 : 0, node ? (int)node->getDataIndex() : -1, m_y, capped ? 1 : 0, m_perigee_moved ? 1 : 0,
++                    m_perigee_para ? 1 : 0, m_perigee_para ? m_perigee_cost : 0.0);
 +        }
 +        return capped;
 +    }
@@ -252,10 +318,243 @@
 +        return true;
 +    }
 +
++    /// Perigee paragraph breaker, PERIGEE_GAPS_PARAGRAPH=1: plans the breaks of the paragraph in m_text
++    /// as a whole and leaves them in m_perigee_breaks and m_perigee_hyphens, for the line loop of
++    /// processParagraph() to take in place of its greedy ones. Returns false, and the paragraph stays
++    /// greedy, when the paragraph is out of scope or no plan fits.
++    ///
++    /// Candidates are the wraps the greedy loop may take (libunibreak's, not deprecated, after the last
++    /// space of a run) and the points hyphenate() finds in the words the greedy loop would hyphenate.
++    /// A line from s to a candidate is measured from the cumulative widths only: its natural width, plus
++    /// a hyphen; its stretch, half the space of each gap; its shrink, what the condensing floor lets each
++    /// gap lose, as the greedy loop counts it. It fits when natural <= width + shrink. Its badness is
++    /// min(10000, 100 r^3), r the leftover over the stretch or the excess over the shrink; a hyphen adds
++    /// the hyphen penalty, a hyphen after a hyphen 10000 more; the last line costs nothing. The first
++    /// pass takes only lines with r <= tolerance / 100; when it finds no path, the second takes every
++    /// line that fits, its badness not capped. A start is dropped from the active ones once a line from
++    /// it overflows without a hyphen, as every later line from it would too. No other bound.
++    bool perigeePlanParagraph( src_text_fragment_t * para ) {
++        m_perigee_breaks.clear();
++        m_perigee_hyphens.clear();
++        m_perigee_line = 0;
++        m_perigee_cost = 0;
++        // Images, inline boxes, floats, BiDi, CJK, initial letters, ::first-line and preformatted line
++        // feeds are out of scope: such paragraphs stay greedy.
++        if ( (para->flags & LTEXT_FLAG_NEWLINE) != LTEXT_ALIGN_WIDTH || (para->flags & LTEXT_LEGACY_RENDERING)
++                || m_pbuffer->floatcount > 0 || m_has_bidi || m_has_cjk || m_initial_letter_exclusion.active
++                || m_length < 2 || m_srcs[0]->lang_cfg->duplicateRealHyphenOnNextLine() )
++            return false;
++        for ( int i=0; i<m_length; i++ )
++            if ( (m_flags[i] & LCHAR_IS_OBJECT) || m_text[i] == '\n' || (m_srcs[i]->flags & LTEXT_IS_FIRST_LINE_CLONE) )
++                return false;
++        int maxWidth = getCurrentLineWidth();
++        if ( maxWidth <= 3 * m_pbuffer->strut_height )
++            return false;
++        FILE * log = perigeeGapsParagraphLog();
++        auto started = std::chrono::steady_clock::now();
++        // The indent of the first line and of the others, as the line loop will set them.
++        int firstX = m_indent_current;
++        int nextX = m_indent_first_line_done ? m_indent_current : m_indent_after_first_line;
++
++        // Gaps before each position, the shrink they allow and their spaces, as the greedy loop counts them.
++        LVArray<int> gapsTo( m_length+1, 0 );
++        LVArray<int> shrinkTo( m_length+1, 0 );
++        LVArray<int> spaceTo( m_length+1, 0 );
++        for ( int i=0; i<m_length; i++ ) {
++            bool gap = i < m_length-1 && (m_flags[i] & LCHAR_IS_SPACE) && !(m_flags[i] & LCHAR_LOCKED_SPACING)
++                    && !(m_flags[i+1] & LCHAR_IS_SPACE);
++            gapsTo[i+1] = gapsTo[i] + (gap ? 1 : 0);
++            shrinkTo[i+1] = shrinkTo[i] + (gap ? getMaxCondensedSpaceTruncation(i) : 0);
++            spaceTo[i+1] = spaceTo[i] + (gap ? m_widths[i] - (i > 0 ? m_widths[i-1] : 0) : 0);
++        }
++
++        // Hyphenation points, as the hyphenation loop of the line loop finds them: the hyphen's width
++        // after each, 0 elsewhere. hyphenate() marks them in m_flags; the flags are put back.
++        LVArray<int> hyphenAt( m_length, 0 );
++        for ( int i=0; i<m_length; ) {
++            int wstart, wend;
++            bool has_rtl;
++            lStr_findWordBounds( m_text, m_length, i, wstart, wend, has_rtl );
++            if ( wend <= i ) { // no word at i
++                i++;
++                continue;
++            }
++            i = wend;
++            src_text_fragment_t * src = m_srcs[wend-1];
++            int len = wend - wstart;
++            if ( len < MIN_WORD_LEN_TO_HYPHENATE || has_rtl || !(src->flags & LTEXT_HYPHENATE) || (src->flags & LTEXT_FLAG_NOWRAP) )
++                continue;
++            if ( len > MAX_WORD_SIZE )
++                len = MAX_WORD_SIZE;
++            int hyphen_width = 0;
++            for ( int k=wstart; k<wend && !hyphen_width; k++ )
++                if ( !(m_srcs[k]->flags & LTEXT_SRC_IS_OBJECT) )
++                    hyphen_width = ((LVFont *)m_srcs[k]->t.font)->getHyphenWidth();
++            if ( hyphen_width <= 0 )
++                continue;
++            lUInt16 widths[MAX_WORD_SIZE];
++            lUInt16 saved[MAX_WORD_SIZE];
++            int wordStart_w = wstart>0 ? m_widths[wstart-1] : 0;
++            for ( int k=0; k<len; k++ ) {
++                widths[k] = m_widths[wstart+k] - wordStart_w;
++                saved[k] = m_flags[wstart+k];
++            }
++            if ( src->lang_cfg->getHyphMethod()->hyphenate(m_text+wstart, len, widths, (lUInt8 *)(m_flags+wstart),
++                        hyphen_width, 0xFFFF, 2) ) {
++                for ( int k=0; k<len-1; k++ )
++                    if ( (m_flags[wstart+k] & LCHAR_ALLOW_HYPH_WRAP_AFTER) && !(m_flags[wstart+k+1] & LCHAR_IS_CLUSTER_TAIL) )
++                        hyphenAt[wstart+k] = hyphen_width;
++            }
++            for ( int k=0; k<len; k++ )
++                m_flags[wstart+k] = saved[k];
++        }
++
++        auto hyphenated = std::chrono::steady_clock::now();
++
++        // Candidates in order: node 0 is the start of the paragraph, node k the break after cand[k-1].
++        LVArray<int> cand;
++        LVArray<int> candHyphen;
++        for ( int i=0; i<m_length; i++ ) {
++            bool wrap = i == m_length-1 || ( (m_flags[i] & LCHAR_ALLOW_WRAP_AFTER) && !(m_flags[i] & LCHAR_DEPRECATED_WRAP_AFTER)
++                    && !(m_flags[i+1] & LCHAR_IS_SPACE) );
++            if ( wrap || hyphenAt[i] > 0 ) {
++                cand.add( i );
++                candHyphen.add( wrap ? 0 : hyphenAt[i] );
++            }
++        }
++        int nodes = cand.length() + 1;
++        const double INF = 1e30;
++        double rMax = perigeeGapsTolerance() / 100;
++        double hyphenPenalty = perigeeGapsHyphenPenalty();
++        LVArray<double> best( nodes, INF );
++        LVArray<int> from( nodes, -1 );
++        LVArray<int> active;
++        LVArray<int> kept;
++        int edges = 0;
++        int pass;
++        for ( pass=1; pass<=2; pass++ ) {
++            for ( int k=0; k<nodes; k++ ) {
++                best[k] = INF;
++                from[k] = -1;
++            }
++            best[0] = 0;
++            active.clear();
++            active.add( 0 );
++            for ( int k=1; k<nodes && active.length() > 0; k++ ) {
++                int b = cand[k-1];
++                int hyphen = candHyphen[k-1];
++                bool last = b == m_length-1;
++                kept.clear();
++                for ( int a=0; a<active.length(); a++ ) {
++                    int j = active[a];
++                    int s = j == 0 ? 0 : cand[j-1] + 1;
++                    int x = j == 0 ? firstX : nextX;
++                    int e = b;
++                    while ( e > s && (m_flags[e] & LCHAR_IS_SPACE) )
++                        e--;
++                    if ( m_flags[e] & LCHAR_IS_SPACE ) { // nothing but spaces
++                        kept.add( j );
++                        continue;
++                    }
++                    int w0 = s > 0 ? m_widths[s-1] : 0;
++                    int plain = x + m_widths[e] - w0;
++                    int shrink = shrinkTo[e] - shrinkTo[s];
++                    if ( plain > maxWidth + shrink )
++                        continue; // overflows, and so will every later line from s: dropped
++                    kept.add( j );
++                    if ( hyphen && b <= s+1 ) // the greedy loop does not hyphenate after a line's first char
++                        continue;
++                    int natural = plain + hyphen;
++                    if ( natural > maxWidth + shrink )
++                        continue;
++                    edges++;
++                    double cost = 0;
++                    if ( !last ) {
++                        int leftover = maxWidth - natural;
++                        double r;
++                        if ( leftover >= 0 ) {
++                            double stretch = (spaceTo[e] - spaceTo[s]) * 0.5;
++                            r = stretch > 0 ? leftover / stretch : leftover > 0 ? INF : 0;
++                        }
++                        else
++                            r = shrink > 0 ? -leftover / (double)shrink : 0;
++                        if ( pass == 1 && r > rMax )
++                            continue;
++                        // The second pass keeps the badness past 10000: with the ceiling every line past it
++                        // costs the same, and the pass puts the paragraph's whole hole into one line.
++                        double badness = r >= INF ? 1e12 : 100 * r * r * r;
++                        if ( pass == 1 && badness > 10000 )
++                            badness = 10000;
++                        cost = badness;
++                        if ( hyphen ) {
++                            cost += hyphenPenalty;
++                            if ( j > 0 && candHyphen[j-1] )
++                                cost += 10000; // TeX's \doublehyphendemerits
++                        }
++                    }
++                    if ( best[j] + cost < best[k] ) {
++                        best[k] = best[j] + cost;
++                        from[k] = j;
++                    }
++                }
++                active.clear();
++                active.add( kept );
++                if ( best[k] < INF && !last )
++                    active.add( k );
++            }
++            if ( best[nodes-1] < INF )
++                break;
++        }
++        bool planned = pass <= 2;
++        if ( planned ) {
++            LVArray<int> path;
++            for ( int k=nodes-1; k>0; k=from[k] )
++                path.add( k );
++            for ( int p=path.length()-1; p>=0; p-- ) {
++                m_perigee_breaks.add( cand[path[p]-1] );
++                m_perigee_hyphens.add( candHyphen[path[p]-1] > 0 ? 1 : 0 );
++            }
++            m_perigee_cost = best[nodes-1];
++        }
++        if ( log ) {
++            auto us = [](std::chrono::steady_clock::duration d) {
++                return (long)std::chrono::duration_cast<std::chrono::microseconds>(d).count();
++            };
++            ldomNode * node = (ldomNode *) m_srcs[0]->object;
++            fprintf(log, "%d,%d,%d,%d,%d,%d,%.0f,%ld,%ld\n", node ? (int)node->getDataIndex() : -1, m_length, cand.length(),
++                    edges, m_perigee_breaks.length(), planned ? pass : 0, m_perigee_cost,
++                    us(std::chrono::steady_clock::now() - started), us(hyphenated - started));
++        }
++        return planned;
++    }
++
++    /// Perigee paragraph breaker: puts the planned break of the line that starts at pos into wrapPos, in
++    /// place of the greedy one, and sets the hyphenation flag where the plan hyphenates and the greedy
++    /// loop did not (and clears it where the greedy loop did and the plan does not). lastFit is the
++    /// furthest wrap the greedy loop found to fit. A plan that disagrees with the loop (no break left, a
++    /// break before pos or past lastFit) is dropped and the rest of the paragraph stays greedy.
++    void perigeeTakePlannedBreak( int pos, int lastFit, int lastHyphWrap, int & wrapPos ) {
++        int b = m_perigee_line < m_perigee_breaks.length() ? m_perigee_breaks[m_perigee_line] : -1;
++        if ( b < pos || b > lastFit ) {
++            m_perigee_para = false;
++            if ( FILE * log = perigeeGapsParagraphLog() ) {
++                ldomNode * node = (ldomNode *) m_srcs[0]->object;
++                fprintf(log, "#dropped,%d,%d,%d,%d\n", node ? (int)node->getDataIndex() : -1, m_perigee_line, b, lastFit);
++            }
++            return;
++        }
++        if ( lastHyphWrap >= 0 && lastHyphWrap != b )
++            m_flags[lastHyphWrap] &= ~LCHAR_ALLOW_HYPH_WRAP_AFTER;
++        if ( m_perigee_hyphens[m_perigee_line] )
++            m_flags[b] |= LCHAR_ALLOW_HYPH_WRAP_AFTER;
++        wrapPos = b;
++        m_perigee_line++;
++    }
++
      /// align line: add or reduce widths of spaces to achieve desired text alignment
      void alignLine( formatted_line_t * frmline, int alignment, int rightIndent=0, bool hasInlineBoxes=false ) {
          // Fetch current line x offset and max width
-@@ -3115,6 +3349,10 @@
+@@ -3115,6 +3641,10 @@
              }
          }
  
@@ -266,17 +565,30 @@
          if ( extra_width < 0 ) {
              // line is too wide
              // reduce spaces to fit line
-@@ -5541,6 +5779,9 @@
+@@ -4994,6 +5524,9 @@
+         // We use N x strut_height because it's one easily acccessible font metric here.
+         int minWidth = 3 * m_pbuffer->strut_height;
+ 
++        // Perigee paragraph breaker (engine/tools/desktop): only with PERIGEE_GAPS_PARAGRAPH=1.
++        m_perigee_para = perigeeGapsParagraph() && perigeePlanParagraph( para );
++
+         // split paragraph into lines, export lines
+         int pos = 0;
+ 
+@@ -5541,6 +6074,12 @@
                  }
                  #endif
              }
++            // Perigee paragraph breaker: the planned break replaces the greedy one.
++            if ( m_perigee_para )
++                perigeeTakePlannedBreak( pos, lastNormalWrap > i-1 ? lastNormalWrap : i-1, lastHyphWrap, wrapPos );
 +            // Perigee lookahead (engine/tools/desktop): only with PERIGEE_GAPS_LOOKAHEAD=1.
-+            m_perigee_moved = lastMandatoryWrap < 0 && !is_css_first_line && perigeeGapsLookahead()
++            m_perigee_moved = lastMandatoryWrap < 0 && !is_css_first_line && !m_perigee_para && perigeeGapsLookahead()
 +                    && perigeeLookahead( pos, x, maxWidth, para, wrapPos, lastHyphWrap );
              // End (not included) of current line
              int endp = wrapPos + (lastMandatoryWrap<0 ? 1 : 0);
  
-@@ -5664,6 +5905,7 @@
+@@ -5664,6 +6203,7 @@
              // Best position to end this line found.
              bool hasInlineBoxes = firstInlineBoxPos >= 0 && firstInlineBoxPos < endp;
              addLine(pos, endp, x, para, pos==0, wrapPos>=m_length-1, preFormattedOnly, isLastPara, hasInlineBoxes);
@@ -284,3 +596,11 @@
              pos = wrapPos + 1; // start of next line
  
              #if (USE_LIBUNIBREAK==1)
+@@ -5682,6 +6222,7 @@
+             }
+             #endif
+         }
++        m_perigee_para = false;
+ 
+     }
+ 
