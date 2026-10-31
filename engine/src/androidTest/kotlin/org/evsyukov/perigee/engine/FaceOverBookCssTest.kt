@@ -22,52 +22,69 @@ import org.junit.runner.RunWith
  * document, and an element that names a font asks the engine for that name first. So the setting did
  * nothing for such a book, and the page stayed the same whatever was picked (issue #120). Every book
  * the tests generated had no `font-family`, which is why nothing caught it.
+ *
+ * What was drawn is read from the page itself: a book that names a face, with the override on, must
+ * draw exactly what a book naming no face draws — same face, same text, same page.
  */
 @RunWith(AndroidJUnit4::class)
 class FaceOverBookCssTest {
     private val context: Context = InstrumentationRegistry.getInstrumentation().targetContext
     private val dir: File = File(context.cacheDir, "books").apply { mkdirs() }
 
-    @Test
-    fun theFaceChosenBeatsAListThatEndsInAGeneric() {
-        val book = epub("list-ending-in-a-generic.epub", """p { font-family: "PT Serif", serif; }""")
-        val pages = pagesIn(book)
-        assertNotEquals("a book listing a face and a generic: $pages", pages.first, pages.second)
+    /** A book that names a face in a list ending in a generic, as Calibre and the stores write one. */
+    private val listed: File by lazy {
+        epub("list-ending-in-a-generic.epub", """p { font-family: "PT Serif", serif; }""")
     }
 
-    @Test
-    fun theFaceChosenBeatsABookThatNamesOneFont() {
-        val book = epub("one-named-face.epub", """p { font-family: "PT Serif"; }""")
-        val pages = pagesIn(book)
-        assertNotEquals("a book naming one face: $pages", pages.first, pages.second)
-    }
+    /** A book that names one face and no generic. */
+    private val named: File by lazy { epub("one-named-face.epub", """p { font-family: "PT Serif"; }""") }
 
-    /** The switch in the reading settings, off: the book keeps the face it names, as it used to. */
+    /** The same book with nothing about faces: what the reader's choice draws when nothing contests it. */
+    private val plain: File by lazy { epub("no-font-family.epub", null) }
+
+    @Test
+    fun theFaceChosenBeatsAListThatEndsInAGeneric() = assertTheChosenFaceIsDrawn(listed)
+
+    @Test
+    fun theFaceChosenBeatsABookThatNamesOneFont() = assertTheChosenFaceIsDrawn(named)
+
+    /** The switch in the reading settings, off: the book keeps the face it names. */
     @Test
     fun aBookKeepsItsOwnFaceWhenTheReaderSaysSo() {
-        val book = epub("book-keeps-its-face.epub", """p { font-family: "PT Serif"; }""")
-        val roboto = page(book, EngineSettings(fontFace = ROBOTO, overrideBookFont = false))
-        val literata = page(book, EngineSettings(fontFace = LITERATA, overrideBookFont = false))
-        assertEquals("the book's own face whichever face is picked: $roboto, $literata", roboto, literata)
+        val chosen = page(named, LITERATA, override = true)
+        val own = page(named, LITERATA, override = false)
+        assertNotEquals("the book's own face with the switch off: $chosen", chosen, own)
     }
 
     /** The path the app takes: the reader changes the face with the book already open. */
     @Test
     fun theFaceChangedOnAnOpenBookIsDrawn() {
-        val book = epub("open-book.epub", """p { font-family: "PT Serif"; }""")
-        EngineDocument.open(context, book, WIDTH, HEIGHT, EngineSettings(fontFace = ROBOTO), DENSITY).use { doc ->
-            val roboto = hash(doc)
+        EngineDocument.open(
+            context, named, WIDTH, HEIGHT, EngineSettings(fontFace = LITERATA, overrideBookFont = false), DENSITY,
+        ).use { doc ->
+            val bookFace = hash(doc)
             doc.apply(EngineSettings(fontFace = LITERATA))
-            assertNotEquals("the face changed on the open book: $roboto", roboto, hash(doc))
+            val ourFace = hash(doc)
+            doc.apply(EngineSettings(fontFace = PT_SANS))
+            assertNotEquals("one face replaced by another on the open book: $ourFace", ourFace, hash(doc))
+            assertNotEquals("and the book's own face was not that: $bookFace", bookFace, ourFace)
         }
     }
 
-    /** A page of the book in each of two faces, drawn from its start. */
-    private fun pagesIn(book: File): Pair<Int, Int> =
-        page(book, EngineSettings(fontFace = ROBOTO)) to page(book, EngineSettings(fontFace = LITERATA))
+    /** With the override on, the book's page is the page a book naming no face draws. */
+    private fun assertTheChosenFaceIsDrawn(book: File) {
+        val chosen = page(book, LITERATA, override = true)
+        assertEquals(
+            "a book naming a face draws what a book naming none does",
+            page(plain, LITERATA, override = true), chosen,
+        )
+        assertNotEquals("and not the face the book names", page(book, LITERATA, override = false), chosen)
+    }
 
-    private fun page(book: File, settings: EngineSettings): Int =
-        EngineDocument.open(context, book, WIDTH, HEIGHT, settings, DENSITY).use(::hash)
+    private fun page(book: File, face: String, override: Boolean): Int =
+        EngineDocument.open(
+            context, book, WIDTH, HEIGHT, EngineSettings(fontFace = face, overrideBookFont = override), DENSITY,
+        ).use(::hash)
 
     private fun hash(doc: EngineDocument): Int {
         val page = Bitmap.createBitmap(WIDTH, HEIGHT, Bitmap.Config.ARGB_8888)
@@ -75,8 +92,11 @@ class FaceOverBookCssTest {
         return ByteBuffer.allocate(page.byteCount).also { page.copyPixelsToBuffer(it) }.array().contentHashCode()
     }
 
-    /** An EPUB whose chapter sets [css], so that the book, not the app, decides the face. */
-    private fun epub(name: String, css: String): File {
+    /**
+     * An EPUB whose chapter takes its rules from a stylesheet of its own, listed in the package as a
+     * book does; a null [css] leaves the book with nothing about faces.
+     */
+    private fun epub(name: String, css: String?): File {
         val file = File(dir, name)
         ZipOutputStream(file.outputStream()).use { zip ->
             val mimetype = "application/epub+zip".toByteArray()
@@ -94,6 +114,8 @@ class FaceOverBookCssTest {
                 zip.write(text.toByteArray())
                 zip.closeEntry()
             }
+            val stylesheet = if (css == null) "" else
+                """  <item id="css" href="style.css" media-type="text/css"/>"""
             entry(
                 "META-INF/container.xml",
                 """<?xml version="1.0"?>
@@ -111,19 +133,23 @@ class FaceOverBookCssTest {
     <dc:language>en</dc:language>
     <dc:identifier id="id">perigee-face-over-book-css</dc:identifier>
   </metadata>
-  <manifest><item id="c1" href="c1.xhtml" media-type="application/xhtml+xml"/></manifest>
+  <manifest>
+  <item id="c1" href="c1.xhtml" media-type="application/xhtml+xml"/>
+$stylesheet
+  </manifest>
   <spine><itemref idref="c1"/></spine>
 </package>""",
             )
+            if (css != null) entry("style.css", css)
             val paragraphs = (1..PARAGRAPHS).joinToString("\n") {
                 "<p>Paragraph $it. The quick brown fox jumps over the lazy dog while the engine lays " +
                     "out this line, and the letters of the face decide how far it reaches.</p>"
             }
+            val link = if (css == null) "" else """<link rel="stylesheet" type="text/css" href="style.css"/>"""
             entry(
                 "c1.xhtml",
                 """<?xml version="1.0" encoding="UTF-8"?>
-<html xmlns="http://www.w3.org/1999/xhtml"><head><title>One</title>
-<style type="text/css">$css</style></head>
+<html xmlns="http://www.w3.org/1999/xhtml"><head><title>One</title>$link</head>
 <body>$paragraphs</body></html>""",
             )
         }
@@ -131,8 +157,8 @@ class FaceOverBookCssTest {
     }
 
     private companion object {
-        const val ROBOTO = "Roboto"
         const val LITERATA = "Literata"
+        const val PT_SANS = "PT Sans"
         const val PARAGRAPHS = 40
         const val WIDTH = 600
         const val HEIGHT = 800
