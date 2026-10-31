@@ -30,9 +30,14 @@ for PATCH in "$ROOT"/engine/src/main/cpp/patches/*.patch "$HERE/lvtextfm-gaps.pa
     GIT_CEILING_DIRECTORIES="$BUILD" git -C "$SRC" apply --whitespace=nowarn "$PATCH"
 done
 
+# crengine calls the 64-bit file API by its Linux names; on macOS the plain calls are the 64-bit ones.
+if [ "$(uname)" = Darwin ]; then
+    export CXXFLAGS="${CXXFLAGS:-} -Dstat64=stat -Dfstat64=fstat -Dlseek64=lseek -Dopen64=open -Dftruncate64=ftruncate -Doff64_t=off_t -Dmmap64=mmap"
+fi
+
 cmake -S "$HERE" -B "$BUILD/cmake" \
     -DCMAKE_BUILD_TYPE=Release \
     -DCRENGINE_DIR="$SRC" \
     -DPERIGEE_DEPS_CACHE="$BUILD/deps"
-cmake --build "$BUILD/cmake" --target gaps -j "$(nproc)"
+cmake --build "$BUILD/cmake" --target gaps -j "$(getconf _NPROCESSORS_ONLN)"
 echo "built $BUILD/cmake/gaps"

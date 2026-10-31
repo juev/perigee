@@ -168,11 +168,11 @@ def costs(args):
                 if line.startswith("#dropped"):
                     dropped += 1
                 elif not line.startswith("node"):
-                    node, chars, cands, edges, lines, run, cost, us, hyph_us = line.strip().split(",")
+                    node, chars, cands, edges, lines, run, cost, us, hyph_us = line.strip().split(",")[:9]
                     rows.append((int(cands), int(edges), int(run), float(cost), int(us), int(hyph_us), int(lines)))
         passes = Counter(row[2] for row in rows)
         print(f"{os.path.basename(path)}: {len(rows)} paragraphs in Render(); first pass {passes[1]}, "
-              f"second pass {passes[2]}, left greedy {passes[0]}, plans dropped {dropped}")
+              f"second pass {passes[2]}, repaired {passes[3]}, left greedy {passes[0]}, plans dropped {dropped}")
         for run, name in ((1, "first pass"), (2, "second pass")):
             values = [row[3] for row in rows if row[2] == run]
             if values:
