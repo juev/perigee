@@ -56,6 +56,11 @@ data class EngineSettings(
     val twoPages: Boolean = false,
     /** The opening third of words of five or more letters in the 600 weight, the rest in 300; the book is laid out again. */
     val boldWordStarts: Boolean = false,
+    /**
+     * The reader's face is drawn over a face the book names; off leaves the book the face its own
+     * `font-family` asks for.
+     */
+    val overrideBookFont: Boolean = true,
     /** CSS the owner wrote, appended after every rule of the app's own. */
     val userCss: String = "",
 ) {
@@ -69,9 +74,12 @@ data class EngineSettings(
             // otherwise keep it, since the choice otherwise reaches only the document's root style and
             // every element that names a font asks the engine for that name first (issue #120). The
             // `!important` of a rule appended last beats the book's own rules and its inline styles.
-            append("* { font-family: ${quoted(fontFace)} !important; }\n")
-            // Code keeps the look the format stylesheet gives it, `fb2.css`'s own monospace list.
-            append("code, pre, tt, samp, kbd { font-family: \"Courier New\", \"Courier\", monospace !important; }\n")
+            // Turned off, a book that names a face keeps it, and the choice covers only the rest.
+            if (overrideBookFont) {
+                append("* { font-family: ${quoted(fontFace)} !important; }\n")
+                // Code keeps the look the format stylesheet gives it, `fb2.css`'s own monospace list.
+                append("code, pre, tt, samp, kbd { font-family: \"Courier New\", \"Courier\", monospace !important; }\n")
+            }
             append("body, p, li { text-align: ${textAlign.css} !important; }\n")
             paragraphSpacingPercent?.let {
                 append("p { margin-top: 0 !important; margin-bottom: ${it / 100.0}em !important; }\n")

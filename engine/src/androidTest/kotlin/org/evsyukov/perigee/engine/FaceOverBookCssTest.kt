@@ -9,6 +9,7 @@ import java.nio.ByteBuffer
 import java.util.zip.CRC32
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -41,6 +42,15 @@ class FaceOverBookCssTest {
         assertNotEquals("a book naming one face: $pages", pages.first, pages.second)
     }
 
+    /** The switch in the reading settings, off: the book keeps the face it names, as it used to. */
+    @Test
+    fun aBookKeepsItsOwnFaceWhenTheReaderSaysSo() {
+        val book = epub("book-keeps-its-face.epub", """p { font-family: "PT Serif"; }""")
+        val roboto = page(book, EngineSettings(fontFace = ROBOTO, overrideBookFont = false))
+        val literata = page(book, EngineSettings(fontFace = LITERATA, overrideBookFont = false))
+        assertEquals("the book's own face whichever face is picked: $roboto, $literata", roboto, literata)
+    }
+
     /** The path the app takes: the reader changes the face with the book already open. */
     @Test
     fun theFaceChangedOnAnOpenBookIsDrawn() {
@@ -53,11 +63,11 @@ class FaceOverBookCssTest {
     }
 
     /** A page of the book in each of two faces, drawn from its start. */
-    private fun pagesIn(book: File): Pair<Int, Int> {
-        fun page(face: String): Int =
-            EngineDocument.open(context, book, WIDTH, HEIGHT, EngineSettings(fontFace = face), DENSITY).use(::hash)
-        return page(ROBOTO) to page(LITERATA)
-    }
+    private fun pagesIn(book: File): Pair<Int, Int> =
+        page(book, EngineSettings(fontFace = ROBOTO)) to page(book, EngineSettings(fontFace = LITERATA))
+
+    private fun page(book: File, settings: EngineSettings): Int =
+        EngineDocument.open(context, book, WIDTH, HEIGHT, settings, DENSITY).use(::hash)
 
     private fun hash(doc: EngineDocument): Int {
         val page = Bitmap.createBitmap(WIDTH, HEIGHT, Bitmap.Config.ARGB_8888)

@@ -55,6 +55,7 @@
     <string name="font_trial_rough">Примерно: по одному отрывку на шрифт и без проверки понимания.</string>
     <string name="font_trial_use">Выбрать %1$s</string>
     <string name="font_trial_too_short">Здесь слишком мало текста для теста.</string>
+    <string name="setting_override_book_font">Читать выбранным шрифтом, а не тем, что задан в книге</string>
     <string name="setting_font_size">Размер шрифта</string>
     <string name="setting_font_weight">Жирность шрифта</string>
     <string name="setting_contrast">Контрастность</string>

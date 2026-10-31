@@ -56,6 +56,7 @@
     <string name="font_trial_rough">Rough: one passage per font, and no check that it was understood.</string>
     <string name="font_trial_use">Use %1$s</string>
     <string name="font_trial_too_short">There is too little text here for a trial.</string>
+    <string name="setting_override_book_font">Use my font over the one the book sets</string>
     <string name="setting_font_size">Font size</string>
     <string name="setting_font_weight">Font boldness</string>
     <string name="setting_contrast">Contrast</string>

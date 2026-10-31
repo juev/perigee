@@ -151,6 +151,10 @@ internal fun SettingsSheet(
                 Choice(R.string.setting_font, prefs.fontFace, fontFaces, label = { it }) { chosen ->
                     onChange { it.copy(fontFace = chosen) }
                 }
+                // A book that names a font of its own: the reader decides which one is read.
+                Toggle(R.string.setting_override_book_font, prefs.overrideBookFont) { on ->
+                    onChange { it.copy(overrideBookFont = on) }
+                }
                 TextButton(onClick = onFontTrial, modifier = Modifier.testTag("font-trial-open")) {
                     Text(stringResource(R.string.font_trial_open))
                 }

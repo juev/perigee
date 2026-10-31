@@ -53,6 +53,8 @@ data class ReaderPrefs(
     /** The light around the screen chooses between [dayScheme] and [nightScheme]. */
     val schemeByLight: Boolean = false,
     val fontFace: String = "Roboto",
+    /** The reader's face is drawn over a face the book names; off leaves the book its own. */
+    val overrideBookFont: Boolean = true,
     val fontSize: Int = 18,
     val fontWeight: Int = 400,
     /** How dark letters are drawn, 0 as the font has them; the steps are `EngineSettings.CONTRASTS`. */
@@ -147,6 +149,7 @@ class ReaderPreferences private constructor(private val store: DataStore<Prefere
             nightScheme = p[NIGHT_SCHEME].enumOr(d.nightScheme),
             schemeByLight = p[SCHEME_BY_LIGHT] ?: d.schemeByLight,
             fontFace = p[FONT_FACE] ?: d.fontFace,
+            overrideBookFont = p[OVERRIDE_BOOK_FONT] ?: d.overrideBookFont,
             fontSize = p[FONT_SIZE] ?: d.fontSize,
             fontWeight = p[FONT_WEIGHT] ?: d.fontWeight,
             contrast = p[CONTRAST] ?: d.contrast,
@@ -181,6 +184,7 @@ class ReaderPreferences private constructor(private val store: DataStore<Prefere
         p[NIGHT_SCHEME] = v.nightScheme.name
         p[SCHEME_BY_LIGHT] = v.schemeByLight
         p[FONT_FACE] = v.fontFace
+        p[OVERRIDE_BOOK_FONT] = v.overrideBookFont
         p[FONT_SIZE] = v.fontSize
         p[FONT_WEIGHT] = v.fontWeight
         p[CONTRAST] = v.contrast
@@ -218,6 +222,7 @@ class ReaderPreferences private constructor(private val store: DataStore<Prefere
         private val NIGHT_SCHEME = stringPreferencesKey("night_scheme")
         private val SCHEME_BY_LIGHT = booleanPreferencesKey("scheme_by_light")
         private val FONT_FACE = stringPreferencesKey("font_face")
+        private val OVERRIDE_BOOK_FONT = booleanPreferencesKey("override_book_font")
         private val FONT_SIZE = intPreferencesKey("font_size")
         private val FONT_WEIGHT = intPreferencesKey("font_weight")
         private val CONTRAST = intPreferencesKey("contrast")
