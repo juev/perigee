@@ -815,6 +815,7 @@ class ReaderViewModel internal constructor(
             val overdraw = if (twoPages) side else 0
             val settings = EngineSettings(
                 fontFace = prefs.fontFace,
+                overrideBookFont = prefs.overrideBookFont,
                 fontSize = px(prefs.fontSize),
                 fontWeight = prefs.fontWeight,
                 contrast = prefs.contrast.coerceIn(EngineSettings.CONTRASTS),
