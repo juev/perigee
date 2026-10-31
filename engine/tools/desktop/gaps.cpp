@@ -1,12 +1,16 @@
 // Lays a book out with crengine as Perigee does and leaves one CSV row per justified line, written by
 // the measurement hook of lvtextfm-gaps.patch. The settings follow engine_jni.cpp (create,
 // applySettings, load) and EngineSettings.extraCss; the page has no margins, so the text width is
-// --width-px.
+// --width-px. With --cap-em the hook leaves lines whose gap would be wider than the ceiling ragged;
+// with --png every drawn page is also saved as an 8-bit grayscale PGM.
 
+#include <cerrno>
 #include <climits>
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <set>
 #include <string>
 #include <utility>
 #include <vector>
@@ -20,6 +24,10 @@
 #include "lvstring.h"
 #include "lvstsheet.h"
 #include "lvtinydom.h"
+
+// The stream of PERIGEE_GAPS_CSV, defined by the hook in lvtextfm.cpp: the page markers go through it so
+// that they stay in order with the rows the hook writes.
+FILE* perigeeGapsCsv();
 
 namespace {
 
@@ -42,7 +50,7 @@ const char* EXTRA_CSS =
         "usage: gaps --book BOOK.fb2 --font NAME=PATH.ttf [--font ...] --face NAME --size-px 28\n"
         "            --width-px 1032 --height-px 2000 --hyphenation on|off --out CSV\n"
         "            [--data DIR] [--css fb2.css] [--render-dpi 336] [--weight 400] [--line-spacing 120]\n"
-        "            [--min-space-condensing 75]\n");
+        "            [--min-space-condensing 75] [--cap-em 0.75] [--png DIR [--pages 3,17,42]]\n");
     std::exit(2);
 }
 
@@ -53,10 +61,52 @@ int toInt(const char* flag, const std::string& value) {
     return static_cast<int>(n);
 }
 
+double toEm(const char* flag, const std::string& value) {
+    char* end = nullptr;
+    errno = 0;
+    double em = std::strtod(value.c_str(), &end);
+    if (value.empty() || *end || errno || !std::isfinite(em) || em <= 0)
+        usage((std::string(flag) + " wants a positive number of ems").c_str());
+    return em;
+}
+
+// "3,17,42": page numbers counted from 1.
+std::set<int> toPages(const std::string& value) {
+    std::set<int> pages;
+    size_t start = 0;
+    while (start <= value.size()) {
+        size_t comma = value.find(',', start);
+        if (comma == std::string::npos) comma = value.size();
+        pages.insert(toInt("--pages", value.substr(start, comma - start)));
+        start = comma + 1;
+    }
+    return pages;
+}
+
+// A binary PGM of an 8-bit grayscale buffer, one byte a pixel, 0 black and 255 white.
+bool writePgm(const std::string& path, LVGrayDrawBuf& buf) {
+    FILE* f = std::fopen(path.c_str(), "wb");
+    if (!f) return false;
+    std::fprintf(f, "P5\n%d %d\n255\n", buf.GetWidth(), buf.GetHeight());
+    bool ok = true;
+    for (int y = 0; y < buf.GetHeight() && ok; y++)
+        ok = std::fwrite(buf.GetScanLine(y), 1, buf.GetWidth(), f) == static_cast<size_t>(buf.GetWidth());
+    return std::fclose(f) == 0 && ok;
+}
+
+// The name of the book's file without its directory and extension.
+std::string stem(const std::string& path) {
+    size_t slash = path.find_last_of('/');
+    std::string name = slash == std::string::npos ? path : path.substr(slash + 1);
+    size_t dot = name.find_last_of('.');
+    return dot == std::string::npos || dot == 0 ? name : name.substr(0, dot);
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
-    std::string book, face, out, hyphenation, data = GAPS_DATA_DIR, css = "fb2.css";
+    std::string book, face, out, hyphenation, data = GAPS_DATA_DIR, css = "fb2.css", capEm, png;
+    std::set<int> only;
     std::vector<std::pair<std::string, std::string>> fonts;
     int size = 0, width = 0, height = 0, dpi = 336, weight = 400, lineSpacing = 120, condensing = 75;
     for (int i = 1; i < argc; i++) {
@@ -76,6 +126,9 @@ int main(int argc, char** argv) {
         else if (flag == "--weight") weight = toInt("--weight", value);
         else if (flag == "--line-spacing") lineSpacing = toInt("--line-spacing", value);
         else if (flag == "--min-space-condensing") condensing = toInt("--min-space-condensing", value);
+        else if (flag == "--cap-em") toEm("--cap-em", capEm = value);
+        else if (flag == "--png") png = value;
+        else if (flag == "--pages") only = toPages(value);
         else if (flag == "--font") {
             auto eq = value.find('=');
             if (eq == std::string::npos || eq == 0) usage("--font wants NAME=PATH");
@@ -85,11 +138,15 @@ int main(int argc, char** argv) {
     if (book.empty() || face.empty() || out.empty() || fonts.empty() || !size || !width || !height)
         usage("--book, --font, --face, --size-px, --width-px, --height-px and --out are required");
     if (hyphenation != "on" && hyphenation != "off") usage("--hyphenation wants on or off");
+    if (!only.empty() && png.empty()) usage("--pages names the pages --png writes");
 
     // The hook opens the file on the first justified line it sees and writes the header to an empty one.
     if (FILE* f = std::fopen(out.c_str(), "w")) std::fclose(f);
     else usage(("cannot write " + out).c_str());
     setenv("PERIGEE_GAPS_CSV", out.c_str(), 1);
+    // The hook reads the ceiling once, at the first justified line; without --cap-em none is inherited.
+    if (capEm.empty()) unsetenv("PERIGEE_GAPS_CAP_EM");
+    else setenv("PERIGEE_GAPS_CAP_EM", capEm.c_str(), 1);
 
     InitFontManager(lString8());
     HyphMan::initDictionaries(Utf8ToUnicode((data + "/hyph/").c_str()));
@@ -170,13 +227,33 @@ int main(int argc, char** argv) {
     // The full rendering breaks the lines but formats them "light", without alignLine(): a page's
     // paragraphs are justified when the page is drawn, as on the screen. A paragraph that runs over
     // two pages may be formatted for each; gaps-report.py drops the repeated lines by node and y.
+    // Every page is drawn, so the CSV covers the book; --pages only picks the pages saved. Before
+    // each page a marker row "#page,N" (from 1) goes into the CSV: the rows after it are the lines
+    // formatted while drawing that page, which takes a paragraph whole when its first line is there.
     const int pages = view.getPageCount();
-    LVGrayDrawBuf page(width, height, 2);
+    const std::string cap = capEm.empty() ? "none" : capEm;
+    std::string faceName;
+    for (char c : face)
+        if (c != ' ') faceName += c;
+    LVGrayDrawBuf page(width, height, 8);
+    int saved = 0;
     for (int i = 0; i < pages; i++) {
+        if (FILE* csv = perigeeGapsCsv()) std::fprintf(csv, "#page,%d\n", i + 1);
         view.goToPage(i, false, true, false);
+        page.Clear(0xFFFFFF);
         view.Draw(page, false);
+        if (png.empty() || (!only.empty() && !only.count(i + 1))) continue;
+        std::string path = png + "/" + stem(book) + "-p" + std::to_string(i + 1) + "-" + faceName + "-cap" + cap + ".pgm";
+        if (!writePgm(path, page)) {
+            std::fprintf(stderr, "gaps: cannot write %s\n", path.c_str());
+            return 1;
+        }
+        saved++;
     }
-    std::printf("%s: %s, %d px, text width %d px, hyphenation %s, language %s: %d pages\n", book.c_str(), face.c_str(),
-                size, width, hyphenation.c_str(), UnicodeToUtf8(language).c_str(), pages);
+    for (int number : only)
+        if (number > pages) std::fprintf(stderr, "gaps: no page %d, the book has %d\n", number, pages);
+    std::printf("%s: %s, %d px, text width %d px, hyphenation %s, language %s, cap %s: %d pages\n", book.c_str(),
+                face.c_str(), size, width, hyphenation.c_str(), UnicodeToUtf8(language).c_str(), cap.c_str(), pages);
+    if (!png.empty()) std::printf("%d pages written to %s\n", saved, png.c_str());
     return 0;
 }

@@ -1,23 +1,56 @@
 --- a/crengine/src/lvtextfm.cpp
 +++ b/crengine/src/lvtextfm.cpp
-@@ -2751,6 +2751,45 @@
+@@ -409,6 +409,36 @@
+     //   width) and can better apply values in %
+ }
+ 
++/// Perigee measurement hook (engine/tools/desktop): the stream named by PERIGEE_GAPS_CSV, opened
++/// for appending on the first call, with the header written to an empty file; NULL when the variable
++/// is unset. Not static: the gaps CLI declares it and writes its page markers through the same stream,
++/// so they stay in order with the rows.
++FILE * perigeeGapsCsv() {
++    static FILE * out = NULL;
++    static bool checked = false;
++    if ( !checked ) {
++        checked = true;
++        const char * path = getenv("PERIGEE_GAPS_CSV");
++        if ( path && *path && (out = fopen(path, "a")) != NULL && ftell(out) == 0 )
++            fprintf(out, "face,size_px,space_px,usable_px,natural_px,extra_px,gaps,words,chars,hyphen,node,y,capped\n");
++    }
++    return out;
++}
++
++/// PERIGEE_GAPS_CAP_EM: the widest gap of a justified line, in ems of the line's font; a line that
++/// would get a wider one is left ragged. Read once; 0 (no ceiling) when unset or not a positive number.
++static double perigeeGapsCapEm() {
++    static double cap = 0;
++    static bool checked = false;
++    if ( !checked ) {
++        checked = true;
++        const char * value = getenv("PERIGEE_GAPS_CAP_EM");
++        if ( value && *value && (cap = atof(value)) < 0 )
++            cap = 0;
++    }
++    return cap;
++}
++
+ class LVFormatter {
+ public:
+     //LVArray<lUInt16>  widths_buf;
+@@ -2751,6 +2781,47 @@
  #define MIN_WORD_LEN_TO_HYPHENATE 4
  #define MAX_WORD_SIZE 64
  
-+    /// Perigee measurement hook (engine/tools/desktop): with PERIGEE_GAPS_CSV naming a file,
-+    /// one row per justified line, taken before the line's extra width is spread over its gaps
-+    /// (or, when negative, taken out of them). The variable is read once; unset, nothing is done.
-+    void perigeeLogGaps( formatted_line_t * frmline, int usable_width, int extra_width ) {
-+        static FILE * out = NULL;
-+        static bool checked = false;
-+        if ( !checked ) {
-+            checked = true;
-+            const char * path = getenv("PERIGEE_GAPS_CSV");
-+            if ( path && *path && (out = fopen(path, "a")) != NULL && ftell(out) == 0 )
-+                fprintf(out, "face,size_px,space_px,usable_px,natural_px,extra_px,gaps,words,chars,hyphen,node,y\n");
-+        }
-+        if ( !out || frmline->word_count == 0 )
-+            return;
++    /// Perigee measurement hook (engine/tools/desktop), called for every justified line before its
++    /// extra width is spread over its gaps (or, when negative, taken out of them). With
++    /// PERIGEE_GAPS_CSV it writes one row per line. With PERIGEE_GAPS_CAP_EM it returns true for a
++    /// line of two gaps or more whose gap, the space plus its share of the extra width, would be wider
++    /// than the ceiling: the caller then aligns it left. Both unset, it returns false at once.
++    bool perigeeGaps( formatted_line_t * frmline, int usable_width, int extra_width ) {
++        FILE * out = perigeeGapsCsv();
++        double cap_em = perigeeGapsCapEm();
++        if ( (!out && cap_em <= 0) || frmline->word_count == 0 )
++            return false;
 +        LVFont * font = NULL;
 +        ldomNode * node = NULL;
 +        for ( int i=0; i<(int)frmline->word_count && !font; i++ ) {
@@ -28,7 +61,7 @@
 +            }
 +        }
 +        if ( !font )
-+            return;
++            return false;
 +        int gaps = 0;
 +        int chars = 0;
 +        for ( int i=0; i<(int)frmline->word_count; i++ ) {
@@ -37,21 +70,28 @@
 +            if ( !(m_pbuffer->srctext[frmline->words[i].src_text_index].flags & LTEXT_SRC_IS_OBJECT) )
 +                chars += frmline->words[i].t.len;
 +        }
-+        bool hyphen = frmline->words[frmline->word_count-1].flags & LTEXT_WORD_CAN_HYPH_BREAK_LINE_AFTER;
-+        fprintf(out, "%s,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d\n", font->getTypeFace().c_str(), font->getSize(),
-+                font->getCharWidth(' '), usable_width, (int)frmline->width, extra_width, gaps,
-+                (int)frmline->word_count, chars, hyphen ? 1 : 0, node ? (int)node->getDataIndex() : -1, m_y);
++        int space = font->getCharWidth(' ');
++        bool capped = cap_em > 0 && gaps >= 2 && extra_width > 0
++                && space + (double)extra_width / gaps > cap_em * font->getSize();
++        if ( out ) {
++            bool hyphen = frmline->words[frmline->word_count-1].flags & LTEXT_WORD_CAN_HYPH_BREAK_LINE_AFTER;
++            fprintf(out, "%s,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d\n", font->getTypeFace().c_str(), font->getSize(),
++                    space, usable_width, (int)frmline->width, extra_width, gaps, (int)frmline->word_count, chars,
++                    hyphen ? 1 : 0, node ? (int)node->getDataIndex() : -1, m_y, capped ? 1 : 0);
++        }
++        return capped;
 +    }
 +
      /// align line: add or reduce widths of spaces to achieve desired text alignment
      void alignLine( formatted_line_t * frmline, int alignment, int rightIndent=0, bool hasInlineBoxes=false ) {
          // Fetch current line x offset and max width
-@@ -3115,6 +3154,9 @@
+@@ -3115,6 +3186,10 @@
              }
          }
  
-+        if ( alignment == LTEXT_ALIGN_WIDTH )
-+            perigeeLogGaps( frmline, usable_width, extra_width );
++        // A line the ceiling of PERIGEE_GAPS_CAP_EM leaves ragged keeps its natural spacing.
++        if ( alignment == LTEXT_ALIGN_WIDTH && perigeeGaps( frmline, usable_width, extra_width ) )
++            alignment = LTEXT_ALIGN_LEFT;
 +
          if ( extra_width < 0 ) {
              // line is too wide
