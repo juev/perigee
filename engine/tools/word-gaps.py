@@ -153,7 +153,9 @@ def measure(paragraphs, lang, advances, space, width_em):
                         width = word_width(word)
                         index += 1
                 break
-            if len(line) > 2:
+            # The last line of a paragraph is not justified, and counting it as one
+            # would put a large, unreal leftover into the tail of the distribution.
+            if len(line) > 2 and index < len(words):
                 leftover = width_em - width
                 gaps.append(space + leftover / (len(line) - 1))
     return gaps
