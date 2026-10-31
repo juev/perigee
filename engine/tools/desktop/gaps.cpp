@@ -50,7 +50,9 @@ const char* EXTRA_CSS =
     " { -cr-hint: footnote-inpage; margin: 0 !important; -cr-only-if: not-inline; font-size: 80% !important; }\n"
     "body[name=\"notes\"] section p, body[name=\"comments\"] section p, *[type~=\"footnote\"] p, *[type~=\"note\"] p, "
     "*[type~=\"endnote\"] p, *[type~=\"rearnote\"] p, *[role~=\"doc-footnote\"] p, *[role~=\"doc-endnote\"] p"
-    " { margin-top: 0 !important; margin-bottom: 0 !important; }\n";
+    " { margin-top: 0 !important; margin-bottom: 0 !important; }\n"
+    // EngineSettings.PART_TITLE_CSS: a part title and the chapter title under it share a page.
+    "section title + section title { page-break-before: auto !important; }\n";
 
 [[noreturn]] void usage(const char* message) {
     if (message) std::fprintf(stderr, "gaps: %s\n", message);
