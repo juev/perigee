@@ -71,6 +71,7 @@ data class EngineSettings(
                 append("p { text-indent: ${if (it) PARAGRAPH_INDENT else "0"} !important; }\n")
             }
             append(FOOTNOTE_CSS)
+            append(PART_TITLE_CSS)
             // A rule that matches nothing: it makes the stylesheet, and so the layout kept in the engine's
             // cache, differ with bold word starts on and off.
             if (boldWordStarts) append(".perigee-bold-word-starts { font-style: normal }\n")
@@ -110,5 +111,14 @@ data class EngineSettings(
                 " { -cr-hint: footnote-inpage; margin: 0 !important; -cr-only-if: not-inline; font-size: 80% !important; }\n" +
                 FOOTNOTES.joinToString(", ") { "$it p" } +
                 " { margin-top: 0 !important; margin-bottom: 0 !important; }\n"
+
+        /**
+         * A part's title and the title of its first chapter stay on one page. `fb2.css` breaks the page
+         * before every `title`, and in FB2 the part's title is followed by the section of its first chapter,
+         * so the break before the chapter left the part title alone on a page of its own. Only a title that
+         * opens a section right after another title loses its break; every other chapter still starts a page.
+         */
+        private const val PART_TITLE_CSS =
+            "section title + section title { page-break-before: auto !important; }\n"
     }
 }
