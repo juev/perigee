@@ -322,4 +322,14 @@
     <string name="book_read_on">Читать дальше</string>
     <string name="book_no_description">Книга о себе ничего не рассказывает.</string>
     <string name="action_rotate">Повернуть экран</string>
+    <string name="setting_styles">Стили книги</string>
+    <string name="setting_styles_own">Ваш CSS поверх встроенного стиля</string>
+    <string name="setting_styles_none">Встроенный стиль</string>
+    <string name="styles_title">Стили книги</string>
+    <string name="styles_hint">CSS отсюда применяется последним: правило с !important перекрывает настройки чтения.</string>
+    <string name="styles_unbalanced">Не сходятся скобки { }, комментарии /* */ или кавычки: исправьте, чтобы сохранить.</string>
+    <string name="styles_reset">Вернуть встроенный стиль</string>
+    <string name="styles_reset_text">Ваш CSS будет удалён, и книга вернётся к стилю приложения.</string>
+    <string name="styles_reset_confirm">Вернуть</string>
+    <string name="styles_previous">Вернуть прошлую версию</string>
 </resources>

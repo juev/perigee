@@ -312,4 +312,14 @@
     <string name="book_read_on">Read on</string>
     <string name="book_no_description">The book says nothing of what it is about.</string>
     <string name="action_rotate">Turn the screen</string>
+    <string name="setting_styles">Book styles</string>
+    <string name="setting_styles_own">Your CSS is applied over the built-in style</string>
+    <string name="setting_styles_none">The built-in style</string>
+    <string name="styles_title">Book styles</string>
+    <string name="styles_hint">CSS written here is applied last: a rule with !important overrides the reading settings.</string>
+    <string name="styles_unbalanced">Braces { }, comments /* */ or quotes do not pair up: fix them to save.</string>
+    <string name="styles_reset">Restore the built-in style</string>
+    <string name="styles_reset_text">Your CSS is removed and the book is set as the app ships it.</string>
+    <string name="styles_reset_confirm">Restore</string>
+    <string name="styles_previous">Put the last version back</string>
 </resources>

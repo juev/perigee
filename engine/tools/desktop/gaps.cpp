@@ -64,7 +64,7 @@ const char* EXTRA_CSS =
         "            [--paragraph on|off [--tolerance 300] [--hyphen-penalty 50] [--paragraph-log FILE]]\n"
         "            [--repair on|off [--hyphen-penalty 50] [--paragraph-log FILE]]\n"
         "            [--lang ru-US]\n"
-        "            [--text FILE] [--same-size on|off] [--switch-face NAME]\n");
+        "            [--text FILE] [--same-size on|off] [--switch-face NAME] [--user-css FILE]\n");
     std::exit(2);
 }
 
@@ -125,11 +125,26 @@ std::string stem(const std::string& path) {
     return dot == std::string::npos || dot == 0 ? name : name.substr(0, dot);
 }
 
+// EXTRA_CSS and then the owner's CSS from --user-css, as EngineSettings.extraCss appends ReaderPrefs.userCss.
+std::string extraCssWith(const std::string& userCssFile) {
+    std::string css = EXTRA_CSS;
+    if (userCssFile.empty()) return css;
+    FILE* f = std::fopen(userCssFile.c_str(), "rb");
+    if (!f) usage(("cannot read " + userCssFile).c_str());
+    std::string user;
+    char buffer[4096];
+    for (size_t n; (n = std::fread(buffer, 1, sizeof buffer, f)) > 0;) user.append(buffer, n);
+    std::fclose(f);
+    // The app leaves a blank overlay out.
+    if (user.find_first_not_of(" \t\r\n") != std::string::npos) css += user + "\n";
+    return css;
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
     std::string book, face, out, hyphenation, data = GAPS_DATA_DIR, css = "fb2.css", capEm, png, text;
-    std::string lookahead = "off", paragraph = "off", repair = "off", lang, tolerance, hyphenPenalty, paragraphLog, sameSize = "on", switchFace;
+    std::string lookahead = "off", paragraph = "off", repair = "off", lang, tolerance, hyphenPenalty, paragraphLog, sameSize = "on", switchFace, userCss;
     std::set<int> only;
     std::vector<std::pair<std::string, std::string>> fonts;
     int size = 0, width = 0, height = 0, dpi = 336, weight = 400, lineSpacing = 120, condensing = 75;
@@ -162,6 +177,7 @@ int main(int argc, char** argv) {
         else if (flag == "--text") text = value;
         else if (flag == "--same-size") sameSize = value;
         else if (flag == "--switch-face") switchFace = value;
+        else if (flag == "--user-css") userCss = value;
         else if (flag == "--pages") only = toPages(value);
         else if (flag == "--font") {
             auto eq = value.find('=');
@@ -267,12 +283,13 @@ int main(int argc, char** argv) {
     view.setPageMargins(lvRect(0, 0, 0, 0));
     view.setVisiblePageCount(1, false);
     const std::string stylesheetName = css;
+    const std::string extraCss = extraCssWith(userCss);
     lString8 stylesheet;
     if (!LVLoadStylesheetFile(Utf8ToUnicode((data + "/" + css).c_str()), stylesheet)) {
         std::fprintf(stderr, "gaps: cannot read %s/%s\n", data.c_str(), css.c_str());
         return 1;
     }
-    stylesheet << "\r\n" << EXTRA_CSS << "\r\n" << faceSize.css;
+    stylesheet << "\r\n" << extraCss.c_str() << "\r\n" << faceSize.css;
     view.setStyleSheet(stylesheet, false);
     view.Resize(width, height);
 
@@ -303,7 +320,7 @@ int main(int argc, char** argv) {
         view.setFontSize(next.em);
         lString8 css;
         LVLoadStylesheetFile(Utf8ToUnicode((data + "/" + stylesheetName).c_str()), css);
-        css << "\r\n" << EXTRA_CSS << "\r\n" << next.css;
+        css << "\r\n" << extraCss.c_str() << "\r\n" << next.css;
         view.setStyleSheet(css, false);
         view.Render();
         auto laidOut = std::chrono::steady_clock::now();

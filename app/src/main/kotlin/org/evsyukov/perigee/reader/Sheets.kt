@@ -95,6 +95,7 @@ internal fun SettingsSheet(
     charsPerLine: Int?,
     lightSensor: Boolean,
     onFontTrial: () -> Unit,
+    onStyles: () -> Unit,
     onChange: ((ReaderPrefs) -> ReaderPrefs) -> Unit,
     onDismiss: () -> Unit,
 ) {
@@ -253,6 +254,15 @@ internal fun SettingsSheet(
                         }
                     },
                 ) { chosen -> onChange { it.copy(screenOnMinutes = chosen) } }
+                // The owner's CSS opens on a screen of its own: a sheet is no place to write in.
+                Column(Modifier.fillMaxWidth().clickable(onClick = onStyles).padding(vertical = 6.dp).testTag("styles-open")) {
+                    Text(stringResource(R.string.setting_styles), style = MaterialTheme.typography.bodyLarge)
+                    Text(
+                        stringResource(if (prefs.userCss.isBlank()) R.string.setting_styles_none else R.string.setting_styles_own),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             }
         }
     }

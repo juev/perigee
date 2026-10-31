@@ -56,6 +56,8 @@ data class EngineSettings(
     val twoPages: Boolean = false,
     /** The opening third of words of five or more letters in the 600 weight, the rest in 300; the book is laid out again. */
     val boldWordStarts: Boolean = false,
+    /** CSS the owner wrote, appended after every rule of the app's own. */
+    val userCss: String = "",
 ) {
     /** The engine's gamma for [contrast]. */
     internal val gamma: Double get() = GAMMAS[contrast.coerceIn(CONTRASTS)]
@@ -75,6 +77,9 @@ data class EngineSettings(
             // A rule that matches nothing: it makes the stylesheet, and so the layout kept in the engine's
             // cache, differ with bold word starts on and off.
             if (boldWordStarts) append(".perigee-bold-word-starts { font-style: normal }\n")
+            // Last of all: an `!important` rule of the owner's beats one of the app's of the same specificity
+            // only by coming later. A change in it changes the stylesheet, and the engine restyles the book.
+            if (userCss.isNotBlank()) append(userCss).append('\n')
         }
 
     companion object {
