@@ -2,6 +2,7 @@ package org.evsyukov.perigee.data
 
 import android.content.Context
 import androidx.datastore.core.DataStore
+import androidx.datastore.preferences.core.MutablePreferences
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
@@ -82,6 +83,8 @@ data class ReaderPrefs(
     val warmToMinute: Int = 7 * 60,
     /** How warm the tint is, one of [WARM_STRENGTHS]. */
     val warmStrength: Int = 3,
+    /** CSS the owner wrote, applied after everything the app sets; empty means the shipped look. */
+    val userCss: String = "",
 ) {
     /** Choosing a scheme by hand; it becomes the one the day/night switch goes to on its side, light or dark. */
     fun withScheme(scheme: ColorScheme): ReaderPrefs =
@@ -114,8 +117,24 @@ private val Context.readerStore: DataStore<Preferences> by preferencesDataStore(
 class ReaderPreferences private constructor(private val store: DataStore<Preferences>) {
     val prefs: Flow<ReaderPrefs> = store.data.map(::read)
 
+    /** The owner's CSS as it was before its last [USER_CSS_KEPT] changes, the latest first: a bad edit can be taken back. */
+    val previousUserCss: Flow<List<String>> = store.data.map { p -> PREVIOUS_USER_CSS.mapNotNull { p[it] } }
+
     suspend fun update(change: (ReaderPrefs) -> ReaderPrefs) {
-        store.edit { stored -> write(stored, change(read(stored))) }
+        store.edit { stored ->
+            val old = read(stored)
+            val new = change(old)
+            write(stored, new)
+            if (new.userCss != old.userCss && old.userCss.isNotBlank()) keepPrevious(stored, old.userCss)
+        }
+    }
+
+    /** Each kept version moves a place down to make room for [css]; the oldest is dropped. */
+    private fun keepPrevious(p: MutablePreferences, css: String) {
+        for (i in PREVIOUS_USER_CSS.lastIndex downTo 1) {
+            p[PREVIOUS_USER_CSS[i - 1]]?.let { p[PREVIOUS_USER_CSS[i]] = it }
+        }
+        p[PREVIOUS_USER_CSS[0]] = css
     }
 
     private fun read(p: Preferences): ReaderPrefs {
@@ -150,10 +169,11 @@ class ReaderPreferences private constructor(private val store: DataStore<Prefere
             warmFromMinute = p[WARM_FROM] ?: d.warmFromMinute,
             warmToMinute = p[WARM_TO] ?: d.warmToMinute,
             warmStrength = p[WARM_STRENGTH] ?: d.warmStrength,
+            userCss = p[USER_CSS] ?: d.userCss,
         )
     }
 
-    private fun write(p: androidx.datastore.preferences.core.MutablePreferences, v: ReaderPrefs) {
+    private fun write(p: MutablePreferences, v: ReaderPrefs) {
         p[PAGE_TURN] = v.pageTurn.name
         p[TAP_SCHEME] = v.tapScheme.name
         p[COLOR_SCHEME] = v.colorScheme.name
@@ -183,6 +203,7 @@ class ReaderPreferences private constructor(private val store: DataStore<Prefere
         p[WARM_FROM] = v.warmFromMinute
         p[WARM_TO] = v.warmToMinute
         p[WARM_STRENGTH] = v.warmStrength
+        p[USER_CSS] = v.userCss
     }
 
     /** A value written by a newer version that this one does not know reads as the default. */
@@ -219,6 +240,11 @@ class ReaderPreferences private constructor(private val store: DataStore<Prefere
         private val WARM_FROM = intPreferencesKey("warm_from_minute")
         private val WARM_TO = intPreferencesKey("warm_to_minute")
         private val WARM_STRENGTH = intPreferencesKey("warm_strength")
+        private val USER_CSS = stringPreferencesKey("user_css")
+
+        /** How many versions of the owner's CSS before the current one are kept. */
+        const val USER_CSS_KEPT = 3
+        private val PREVIOUS_USER_CSS = (1..USER_CSS_KEPT).map { stringPreferencesKey("user_css_previous_$it") }
 
         @Volatile
         private var instance: ReaderPreferences? = null

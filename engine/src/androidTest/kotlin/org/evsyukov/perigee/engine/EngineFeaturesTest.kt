@@ -511,6 +511,17 @@ class EngineFeaturesTest {
     }
 
     @Test
+    fun ownersCssComesAfterTheSettings() {
+        val file = TestBooks.epub(dir)
+        val indented = base.copy(paragraphIndent = true)
+        // Where a word of a paragraph's first line starts: the indent moves it.
+        fun firstLineX(settings: EngineSettings) = open(file, settings).use { it.locate("paragraph 2. The").second.left }
+        val app = firstLineX(indented)
+        val owner = firstLineX(indented.copy(userCss = "p { text-indent: 0 !important; }"))
+        assertTrue("the owner's !important rule beats the app's: $owner against $app", owner < app)
+    }
+
+    @Test
     fun looserSettingsTakeMorePages() {
         val file = TestBooks.epub(dir)
         fun pages(settings: EngineSettings) = open(file, settings).use { it.pageCount }

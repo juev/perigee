@@ -15,10 +15,12 @@ import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
@@ -147,6 +149,10 @@ class ReaderViewModel internal constructor(
 
     private val _prefs = MutableStateFlow(ReaderPrefs())
     val prefs: StateFlow<ReaderPrefs> = _prefs.asStateFlow()
+
+    /** The owner's CSS as it was before the last changes, the latest first: a bad edit can be taken back. */
+    val previousUserCss: StateFlow<List<String>> =
+        preferences.previousUserCss.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
     private var reader: BookReader? = null
     private var file: File? = null
@@ -830,6 +836,7 @@ class ReaderViewModel internal constructor(
                 paragraphIndent = prefs.paragraphIndent,
                 colors = colorsOf(prefs.colorScheme),
                 twoPages = twoPages,
+                userCss = prefs.userCss,
             )
             return Triple(viewport.width + 2 * overdraw, viewport.height, settings)
         }

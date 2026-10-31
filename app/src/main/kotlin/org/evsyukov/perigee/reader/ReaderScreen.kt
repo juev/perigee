@@ -106,7 +106,7 @@ import org.evsyukov.perigee.data.TapScheme
 import org.evsyukov.perigee.engine.Page
 
 /** What the reader opened on top of the page. */
-private enum class Panel { None, Menu, Settings, Contents, Search }
+private enum class Panel { None, Menu, Settings, Contents, Search, Styles }
 
 /** What a finger moving over the page turned out to be doing. */
 private enum class Drag { Undecided, Brightness, Done }
@@ -144,6 +144,7 @@ internal fun startsOnBottomEdge(y: Float, height: Int, edge: Float): Boolean = y
 fun ReaderScreen(file: File, onClose: () -> Unit, viewModel: ReaderViewModel = viewModel()) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val prefs by viewModel.prefs.collectAsStateWithLifecycle()
+    val previousUserCss by viewModel.previousUserCss.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val density = LocalDensity.current
     val scope = rememberCoroutineScope()
@@ -381,6 +382,15 @@ fun ReaderScreen(file: File, onClose: () -> Unit, viewModel: ReaderViewModel = v
                 onClose = viewModel::closeFontTrial,
             )
         }
+        // Over the page rather than a sheet: Back closes it as it closes the sheets.
+        if (panel == Panel.Styles) {
+            StylesScreen(
+                css = prefs.userCss,
+                previous = previousUserCss.firstOrNull(),
+                onSave = { css -> viewModel.updatePrefs { it.copy(userCss = css) } },
+                onClose = { panel = Panel.None },
+            )
+        }
     }
 
     when (panel) {
@@ -390,6 +400,7 @@ fun ReaderScreen(file: File, onClose: () -> Unit, viewModel: ReaderViewModel = v
                 panel = Panel.None
                 viewModel.startFontTrial()
             },
+            onStyles = { panel = Panel.Styles },
             onChange = viewModel::updatePrefs,
         ) { panel = Panel.None }
         Panel.Contents -> ContentsSheet(
@@ -411,7 +422,7 @@ fun ReaderScreen(file: File, onClose: () -> Unit, viewModel: ReaderViewModel = v
             },
             onDismiss = { panel = Panel.None },
         )
-        Panel.None, Panel.Menu -> Unit
+        Panel.None, Panel.Menu, Panel.Styles -> Unit
     }
 }
 
