@@ -58,6 +58,8 @@ Faces offered for reading come from three places:
 
 The default face is Roboto.
 
+The face the reader picks decides the text of every book, including a book that sets a font of its own: a `font-family` in the book's CSS, or in its inline styles, is overridden by an `!important` rule the app appends last to the format stylesheet (`* { font-family: … !important }`, `EngineSettings.extraCss`). Without it the choice reached only the document's root style, and an element that named a font asked the engine for that name first, so for such a book the setting did nothing at all — the face stayed the book's whatever was picked. `code`, `pre`, `tt`, `samp` and `kbd` are the exception and keep the format stylesheet's own monospace list (`fb2.css`). `FaceOverBookCssTest` holds this: a book that names a face, in a list ending in a generic and on its own, is drawn differently in two faces, and so is one whose face is changed while it is open.
+
 The font size is the size of Roboto. An em is a nominal length, and each face spends it differently: at one em the letters differ by 11 % and the lines by 33 % across the eight faces above, so the number would mean another size in each. So the number the reader picks stays Roboto's, and any other face is set at the em that gives it Roboto's x-height, with Roboto's line height in place of its own (`face_size.h`). The app gets this in `EngineSettings.fontSize` and the engine works it out when the settings are applied: `view.getFontSize()` is the size actually drawn. Roboto's pages stay as they were, and every other face looks different from how it did before this rule, once, with no setting to turn it off and no change to stored preferences.
 
 - The x-height is measured on the `x` glyph of the regular weight the book is drawn in, at 1024 px, because hinting rounds a height at the drawn size to whole pixels. A face with an optical size axis is measured at the optical size of the em it is drawn at, so Literata's is that of its text. Capitals are not matched: Comfortaa's stay about 6 % taller than Roboto's.
@@ -191,6 +193,7 @@ The engine is covered by instrumented tests in `engine/src/androidTest`, run wit
 - `BookReaderTest` — page turning, drawing ahead, layout changes, calls from many threads, closing one book while another opens.
 - `:app`, `ReaderScreenTest` — the screen as the reader uses it: opening, turning by touch and swipe, reopening at the saved place, rotation, a changing screen size, menu, contents, bookmarks, search, settings, quotes, notes and stars, a quote made on the server appearing in the open book. `ZoneTest` covers the touch zones, `ScreenOnTest` the time the screen stays on. `:data`, `LibraryTest` covers what is stored.
 - `ShippedFontsTest` — the app's fonts are offered, each draws a Russian page its own way, and Noto Serif is the first fallback.
+- `FaceOverBookCssTest` — the face the reader picks is drawn over a book that names fonts of its own, and over a book that is open when the face is changed.
 - `ControlPagesTest` — control pages compared with accepted pictures in `engine/src/androidTest/assets/golden`. The pages are set in PT Serif from the test assets, so they do not depend on the fonts of the device. The class comment says how to accept a new look.
 
 ## Rotation

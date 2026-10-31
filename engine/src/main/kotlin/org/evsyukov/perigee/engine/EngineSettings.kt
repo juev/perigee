@@ -65,6 +65,13 @@ data class EngineSettings(
     /** Overrides appended to the format stylesheet, in the manner of KOReader style tweaks. */
     internal val extraCss: String
         get() = buildString {
+            // The reader's face, over whatever the book asks for: a book's own `font-family` would
+            // otherwise keep it, since the choice otherwise reaches only the document's root style and
+            // every element that names a font asks the engine for that name first (issue #120). The
+            // `!important` of a rule appended last beats the book's own rules and its inline styles.
+            append("* { font-family: ${quoted(fontFace)} !important; }\n")
+            // Code keeps the look the format stylesheet gives it, `fb2.css`'s own monospace list.
+            append("code, pre, tt, samp, kbd { font-family: \"Courier New\", \"Courier\", monospace !important; }\n")
             append("body, p, li { text-align: ${textAlign.css} !important; }\n")
             paragraphSpacingPercent?.let {
                 append("p { margin-top: 0 !important; margin-bottom: ${it / 100.0}em !important; }\n")
@@ -84,6 +91,10 @@ data class EngineSettings(
 
     companion object {
         const val DEFAULT_FONT_FACE = "Roboto"
+
+        /** A face name as a CSS value: quoted, with the characters that would end the quoting escaped. */
+        private fun quoted(face: String): String =
+            "\"" + face.replace("\\", "\\\\").replace("\"", "\\\"") + "\""
 
         /** Weights the engine can synthesize when the font file has no such cut. */
         val FONT_WEIGHTS = listOf(100, 200, 300, 400, 425, 450, 475, 500, 525, 550, 600, 650, 700, 800, 900, 950)
