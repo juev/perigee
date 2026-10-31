@@ -2,9 +2,11 @@
 // the measurement hook of lvtextfm-gaps.patch. The settings follow engine_jni.cpp (create,
 // applySettings, load) and EngineSettings.extraCss; the page has no margins, so the text width is
 // --width-px. With --cap-em the hook leaves lines whose gap would be wider than the ceiling ragged;
-// with --png every drawn page is also saved as an 8-bit grayscale PGM.
+// with --lookahead on the line breaker looks one line ahead before a wide gap; with --png every drawn
+// page is also saved as an 8-bit grayscale PGM, with --text the text of every page goes to a file.
 
 #include <cerrno>
+#include <chrono>
 #include <climits>
 #include <cmath>
 #include <cstdio>
@@ -50,7 +52,8 @@ const char* EXTRA_CSS =
         "usage: gaps --book BOOK.fb2 --font NAME=PATH.ttf [--font ...] --face NAME --size-px 28\n"
         "            --width-px 1032 --height-px 2000 --hyphenation on|off --out CSV\n"
         "            [--data DIR] [--css fb2.css] [--render-dpi 336] [--weight 400] [--line-spacing 120]\n"
-        "            [--min-space-condensing 75] [--cap-em 0.75] [--png DIR [--pages 3,17,42]]\n");
+        "            [--min-space-condensing 75] [--cap-em 0.75] [--lookahead on|off] [--png DIR [--pages 3,17,42]]\n"
+        "            [--text FILE]\n");
     std::exit(2);
 }
 
@@ -105,7 +108,8 @@ std::string stem(const std::string& path) {
 }  // namespace
 
 int main(int argc, char** argv) {
-    std::string book, face, out, hyphenation, data = GAPS_DATA_DIR, css = "fb2.css", capEm, png;
+    std::string book, face, out, hyphenation, data = GAPS_DATA_DIR, css = "fb2.css", capEm, png, text;
+    std::string lookahead = "off";
     std::set<int> only;
     std::vector<std::pair<std::string, std::string>> fonts;
     int size = 0, width = 0, height = 0, dpi = 336, weight = 400, lineSpacing = 120, condensing = 75;
@@ -127,7 +131,9 @@ int main(int argc, char** argv) {
         else if (flag == "--line-spacing") lineSpacing = toInt("--line-spacing", value);
         else if (flag == "--min-space-condensing") condensing = toInt("--min-space-condensing", value);
         else if (flag == "--cap-em") toEm("--cap-em", capEm = value);
+        else if (flag == "--lookahead") lookahead = value;
         else if (flag == "--png") png = value;
+        else if (flag == "--text") text = value;
         else if (flag == "--pages") only = toPages(value);
         else if (flag == "--font") {
             auto eq = value.find('=');
@@ -138,6 +144,7 @@ int main(int argc, char** argv) {
     if (book.empty() || face.empty() || out.empty() || fonts.empty() || !size || !width || !height)
         usage("--book, --font, --face, --size-px, --width-px, --height-px and --out are required");
     if (hyphenation != "on" && hyphenation != "off") usage("--hyphenation wants on or off");
+    if (lookahead != "on" && lookahead != "off") usage("--lookahead wants on or off");
     if (!only.empty() && png.empty()) usage("--pages names the pages --png writes");
 
     // The hook opens the file on the first justified line it sees and writes the header to an empty one.
@@ -147,6 +154,9 @@ int main(int argc, char** argv) {
     // The hook reads the ceiling once, at the first justified line; without --cap-em none is inherited.
     if (capEm.empty()) unsetenv("PERIGEE_GAPS_CAP_EM");
     else setenv("PERIGEE_GAPS_CAP_EM", capEm.c_str(), 1);
+    // The line breaker reads PERIGEE_GAPS_LOOKAHEAD once as well; only --lookahead on sets it.
+    if (lookahead == "on") setenv("PERIGEE_GAPS_LOOKAHEAD", "1", 1);
+    else unsetenv("PERIGEE_GAPS_LOOKAHEAD");
 
     InitFontManager(lString8());
     HyphMan::initDictionaries(Utf8ToUnicode((data + "/hyph/").c_str()));
@@ -222,7 +232,9 @@ int main(int argc, char** argv) {
     if (!language.empty()) props->setString(PROP_TEXTLANG_MAIN_LANG, UnicodeToUtf8(language).c_str());
     props->setInt(PROP_FONT_KERNING, KERNING_LIGHT);  // needsFullShaping() is false for the languages measured
     view.propsApply(props);
+    auto started = std::chrono::steady_clock::now();
     view.Render();
+    auto rendered = std::chrono::steady_clock::now();
 
     // The full rendering breaks the lines but formats them "light", without alignLine(): a page's
     // paragraphs are justified when the page is drawn, as on the screen. A paragraph that runs over
@@ -237,23 +249,38 @@ int main(int argc, char** argv) {
         if (c != ' ') faceName += c;
     LVGrayDrawBuf page(width, height, 8);
     int saved = 0;
+    FILE* pageText = nullptr;
+    if (!text.empty() && !(pageText = std::fopen(text.c_str(), "w"))) usage(("cannot write " + text).c_str());
     for (int i = 0; i < pages; i++) {
         if (FILE* csv = perigeeGapsCsv()) std::fprintf(csv, "#page,%d\n", i + 1);
         view.goToPage(i, false, true, false);
         page.Clear(0xFFFFFF);
         view.Draw(page, false);
+        if (pageText)
+            std::fprintf(pageText, "#page,%d\n%s\n", i + 1, UnicodeToUtf8(view.getPageText(false, i)).c_str());
         if (png.empty() || (!only.empty() && !only.count(i + 1))) continue;
-        std::string path = png + "/" + stem(book) + "-p" + std::to_string(i + 1) + "-" + faceName + "-cap" + cap + ".pgm";
+        std::string path = png + "/" + stem(book) + "-p" + std::to_string(i + 1) + "-" + faceName + "-cap" + cap +
+                           (lookahead == "on" ? "-lookahead" : "") + ".pgm";
         if (!writePgm(path, page)) {
             std::fprintf(stderr, "gaps: cannot write %s\n", path.c_str());
             return 1;
         }
         saved++;
     }
+    auto drawn = std::chrono::steady_clock::now();
+    if (pageText && std::fclose(pageText) != 0) {
+        std::fprintf(stderr, "gaps: cannot write %s\n", text.c_str());
+        return 1;
+    }
     for (int number : only)
         if (number > pages) std::fprintf(stderr, "gaps: no page %d, the book has %d\n", number, pages);
-    std::printf("%s: %s, %d px, text width %d px, hyphenation %s, language %s, cap %s: %d pages\n", book.c_str(),
-                face.c_str(), size, width, hyphenation.c_str(), UnicodeToUtf8(language).c_str(), cap.c_str(), pages);
+    std::printf("%s: %s, %d px, text width %d px, hyphenation %s, language %s, cap %s, lookahead %s: %d pages\n",
+                book.c_str(), face.c_str(), size, width, hyphenation.c_str(), UnicodeToUtf8(language).c_str(), cap.c_str(),
+                lookahead.c_str(), pages);
+    auto ms = [](std::chrono::steady_clock::duration d) {
+        return static_cast<long>(std::chrono::duration_cast<std::chrono::milliseconds>(d).count());
+    };
+    std::printf("time: Render() %ld ms, drawing the pages %ld ms\n", ms(rendered - started), ms(drawn - rendered));
     if (!png.empty()) std::printf("%d pages written to %s\n", saved, png.c_str());
     return 0;
 }

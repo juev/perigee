@@ -18,7 +18,9 @@ and the share of lines ending in a hyphen.
 A run with `gaps --cap-em` leaves the lines whose gap would be wider than the ceiling ragged; the
 hook marks them `capped`. Such lines still count in `lines`, `chars` and `hyph`, the `ragged`
 column gives their share, and the gap columns describe only the lines that stay justified. Rows
-written before the column existed count as not capped.
+written before the column existed count as not capped. A run with `gaps --lookahead on` marks the
+lines whose break the lookahead moved `lookahead`; `moved` gives their share, and `widest` is the
+widest gap left justified.
 
 The CLI writes a marker row `#page,N` before drawing page N; the rows after it are the lines
 formatted while that page was drawn. With --by-page the report lists the pages with the most lines
@@ -58,6 +60,7 @@ def rows_with_pages(handle):
     for row in csv.DictReader(lines()):
         row["page"] = page[0]
         row["capped"] = row.get("capped") or "0"
+        row["lookahead"] = row.get("lookahead") or "0"
         yield row
 
 
@@ -102,7 +105,7 @@ def main():
     header = (f"{'font':14s} {'lang':6s} {'width':>5s} {'space':>6s} {'lines':>6s} "
               f"{'p50':>6s} {'p90':>6s} {'p99':>6s}")
     header += "".join(f">{int(cap * 100)}%".rjust(8) for cap in args.caps)
-    header += f" {'chars':>6s} {'hyph':>6s} {'ragged':>6s}  setting"
+    header += f" {'chars':>6s} {'hyph':>6s} {'ragged':>6s} {'moved':>6s} {'widest':>6s}  setting"
     print("gap widths in em of the lines left justified; the last columns are the share of them needing a wider gap")
     print(header)
     notes = []
@@ -114,6 +117,7 @@ def main():
             usable = Counter(int(r["usable_px"]) for r in rows).most_common(1)[0][0]
             justified = [r for r in rows if r["capped"] == "0"]
             ragged = (len(rows) - len(justified)) / len(rows)
+            moved = sum(1 for r in rows if r["lookahead"] == "1") / len(rows)
             gaps = [gap_em(r, size) for r in justified]
             spaces = [int(r["space_px"]) / size for r in justified]
             condensed = sum(1 for r in rows if int(r["extra_px"]) < 0)
@@ -125,7 +129,8 @@ def main():
                 f"{100 * sum(1 for gap, s in zip(gaps, spaces) if gap > cap * s) / max(len(gaps), 1):6.1f}%"
                 for cap in args.caps
             )
-            line += f" {chars:6.1f} {100 * hyphens:5.1f}% {100 * ragged:5.1f}%  {setting}"
+            line += (f" {chars:6.1f} {100 * hyphens:5.1f}% {100 * ragged:5.1f}% {100 * moved:5.1f}%"
+                     f" {max(gaps, default=float('nan')):6.2f}  {setting}")
             print(line)
             notes.append(f"{setting} {face}: {usable} px over {size} px = {usable / size:.1f} em, "
                          f"{condensed} of {len(rows)} lines condensed below the space")

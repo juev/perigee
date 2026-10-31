@@ -1,6 +1,6 @@
 --- a/crengine/src/lvtextfm.cpp
 +++ b/crengine/src/lvtextfm.cpp
-@@ -409,6 +409,36 @@
+@@ -409,6 +409,47 @@
      //   width) and can better apply values in %
  }
  
@@ -15,7 +15,7 @@
 +        checked = true;
 +        const char * path = getenv("PERIGEE_GAPS_CSV");
 +        if ( path && *path && (out = fopen(path, "a")) != NULL && ftell(out) == 0 )
-+            fprintf(out, "face,size_px,space_px,usable_px,natural_px,extra_px,gaps,words,chars,hyphen,node,y,capped\n");
++            fprintf(out, "face,size_px,space_px,usable_px,natural_px,extra_px,gaps,words,chars,hyphen,node,y,capped,lookahead\n");
 +    }
 +    return out;
 +}
@@ -34,10 +34,29 @@
 +    return cap;
 +}
 +
++/// PERIGEE_GAPS_LOOKAHEAD=1: before a justified line is added, look one line ahead and move its break
++/// a few wraps earlier when that gives the pair a narrower worst gap. Read once; off when unset.
++static bool perigeeGapsLookahead() {
++    static int on = -1;
++    if ( on < 0 ) {
++        const char * value = getenv("PERIGEE_GAPS_LOOKAHEAD");
++        on = value && !strcmp(value, "1") ? 1 : 0;
++    }
++    return on == 1;
++}
++
  class LVFormatter {
  public:
      //LVArray<lUInt16>  widths_buf;
-@@ -2751,6 +2781,47 @@
+@@ -443,6 +484,7 @@
+     bool m_indent_first_line_done;
+     int  m_indent_after_first_line;
+     int  m_indent_current;
++    bool m_perigee_moved = false; // the lookahead moved the break of the line being added
+     int  m_specified_para_dir;
+     #if (USE_FRIBIDI==1)
+         // Bidi/RTL support
+@@ -2751,6 +2793,198 @@
  #define MIN_WORD_LEN_TO_HYPHENATE 4
  #define MAX_WORD_SIZE 64
  
@@ -75,17 +94,168 @@
 +                && space + (double)extra_width / gaps > cap_em * font->getSize();
 +        if ( out ) {
 +            bool hyphen = frmline->words[frmline->word_count-1].flags & LTEXT_WORD_CAN_HYPH_BREAK_LINE_AFTER;
-+            fprintf(out, "%s,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d\n", font->getTypeFace().c_str(), font->getSize(),
++            fprintf(out, "%s,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d\n", font->getTypeFace().c_str(), font->getSize(),
 +                    space, usable_width, (int)frmline->width, extra_width, gaps, (int)frmline->word_count, chars,
-+                    hyphen ? 1 : 0, node ? (int)node->getDataIndex() : -1, m_y, capped ? 1 : 0);
++                    hyphen ? 1 : 0, node ? (int)node->getDataIndex() : -1, m_y, capped ? 1 : 0, m_perigee_moved ? 1 : 0);
 +        }
 +        return capped;
++    }
++
++    /// Perigee lookahead: the gap, in px, of a justified line from start to the wrap at end: the width
++    /// its letters leave, shared by its gaps (a space at the wrap is not laid out). 0 without a gap.
++    double perigeeLineGap( int start, int end, int x, int maxWidth, bool hyphen, int & gaps ) {
++        int last = end;
++        while ( last > start && (m_flags[last] & LCHAR_IS_SPACE) )
++            last--;
++        int spaces = 0;
++        gaps = 0;
++        for ( int i=start; i<last; i++ ) {
++            if ( m_flags[i] & LCHAR_IS_SPACE ) {
++                spaces += m_widths[i] - (i > 0 ? m_widths[i-1] : 0);
++                if ( !(m_flags[i+1] & LCHAR_IS_SPACE) )
++                    gaps++;
++            }
++        }
++        int letters = m_widths[last] - (start > 0 ? m_widths[start-1] : 0) - spaces;
++        if ( hyphen )
++            letters += ((LVFont *)m_srcs[last]->t.font)->getHyphenWidth();
++        return gaps > 0 ? (double)(maxWidth - x - letters) / gaps : 0;
++    }
++
++    /// Perigee lookahead: the line processParagraph() would make from start, in short: up to the last
++    /// wrap that fits with the spaces condensed, or to a hyphenation point after it when more than
++    /// unused_space_threshold_percent would stay unused. Returns its gap, 0 when it is the
++    /// paragraph's last line, which is not justified.
++    double perigeeNextLineGap( int start, int x, int maxWidth ) {
++        int w0 = start > 0 ? m_widths[start-1] : 0;
++        int reduce = 0;
++        int wrap = -1;
++        int i;
++        for ( i=start; i<m_length; i++ ) {
++            lUInt16 flags = m_flags[i];
++            bool fits = x + m_widths[i]-w0 <= maxWidth + reduce;
++            if ( !fits && !((flags & LCHAR_IS_SPACE) && (flags & LCHAR_ALLOW_WRAP_AFTER)) )
++                break;
++            if ( (flags & LCHAR_ALLOW_WRAP_AFTER) && !(flags & LCHAR_DEPRECATED_WRAP_AFTER) )
++                wrap = i;
++            if ( i == m_length-1 )
++                return 0;
++            if ( !fits )
++                break;
++            if ( (flags & LCHAR_IS_SPACE) && !(flags & LCHAR_LOCKED_SPACING) && !(m_flags[i+1] & LCHAR_IS_SPACE) )
++                reduce += getMaxCondensedSpaceTruncation(i);
++        }
++        if ( wrap < 0 )
++            wrap = i > start ? i-1 : start;
++        int end = wrap;
++        bool hyphen = false;
++        int unused = maxWidth - (x + m_widths[wrap]-w0);
++        int wordpos = i-1;
++        // As the hyphenation loop of processParagraph() does: from the last char that fits back to
++        // the wrap, word by word, until one has a hyphenation point that fits.
++        while ( !hyphen && wordpos > wrap && unused * 100 / maxWidth > m_pbuffer->unused_space_threshold_percent ) {
++            if ( !(m_srcs[wordpos]->flags & LTEXT_HYPHENATE) || (m_srcs[wordpos]->flags & LTEXT_FLAG_NOWRAP) ) {
++                wordpos -= MIN_WORD_LEN_TO_HYPHENATE;
++                continue;
++            }
++            int wstart, wend;
++            bool has_rtl;
++            lStr_findWordBounds( m_text, m_length, wordpos, wstart, wend, has_rtl );
++            if ( wend <= wrap )
++                break;
++            int len = wend - wstart;
++            if ( len < MIN_WORD_LEN_TO_HYPHENATE || has_rtl ) {
++                wordpos = wstart - 1;
++                continue;
++            }
++            if ( wstart >= wordpos ) {
++                wordpos -= MIN_WORD_LEN_TO_HYPHENATE;
++                continue;
++            }
++            if ( len > MAX_WORD_SIZE )
++                len = MAX_WORD_SIZE;
++            lUInt16 widths[MAX_WORD_SIZE];
++            lUInt16 saved[MAX_WORD_SIZE];
++            int wordStart_w = wstart>0 ? m_widths[wstart-1] : 0;
++            for ( int k=0; k<len; k++ ) {
++                widths[k] = m_widths[wstart+k] - wordStart_w;
++                saved[k] = m_flags[wstart+k];
++            }
++            int max_width = maxWidth + reduce - (x + (wordStart_w - w0));
++            int hyphen_width = ((LVFont *)m_srcs[wstart]->t.font)->getHyphenWidth();
++            // hyphenate() sets flags in m_flags: they are put back, the line is formatted for real later
++            if ( m_srcs[wordpos]->lang_cfg->getHyphMethod()->hyphenate(m_text+wstart, len, widths,
++                        (lUInt8 *)(m_flags+wstart), hyphen_width, max_width, 2) ) {
++                for ( int k=0; k<len; k++ ) {
++                    if ( (m_flags[wstart+k] & LCHAR_ALLOW_HYPH_WRAP_AFTER) && widths[k] + hyphen_width <= max_width
++                            && wstart + k > start+1 ) {
++                        end = wstart + k;
++                        hyphen = true;
++                    }
++                }
++            }
++            for ( int k=0; k<len; k++ )
++                m_flags[wstart+k] = saved[k];
++            wordpos = wstart - 1;
++        }
++        int gaps;
++        return perigeeLineGap( start, end, x, maxWidth, hyphen, gaps );
++    }
++
++    /// Perigee lookahead, PERIGEE_GAPS_LOOKAHEAD=1: when this justified line or the next one would get a
++    /// gap wider than the ceiling (PERIGEE_GAPS_CAP_EM, 0.75 em without it), try the three wraps before
++    /// wrapPos and keep the one whose worse gap of the pair is the narrowest, if it beats the greedy
++    /// break by a pixel or more (less is a tie, and the greedy break stays). A candidate must leave
++    /// this line two gaps and may not push the next line over the ceiling when the greedy break did
++    /// not. Returns true when it moved wrapPos.
++    bool perigeeLookahead( int pos, int x, int maxWidth, src_text_fragment_t * para, int & wrapPos, int lastHyphWrap ) {
++        // Images, inline boxes, floats, BiDi and CJK are out of scope: such paragraphs stay greedy.
++        if ( (para->flags & LTEXT_FLAG_NEWLINE) != LTEXT_ALIGN_WIDTH || (para->flags & LTEXT_LEGACY_RENDERING)
++                || m_pbuffer->floatcount > 0 || m_has_bidi || m_has_cjk || wrapPos >= m_length-1 || maxWidth <= 0 )
++            return false;
++        for ( int i=pos; i<m_length; i++ )
++            if ( m_flags[i] & LCHAR_IS_OBJECT )
++                return false;
++        double cap = perigeeGapsCapEm() > 0 ? perigeeGapsCapEm() : 0.75;
++        cap *= ((LVFont *)m_srcs[pos]->t.font)->getSize();
++        int nextX = m_indent_current; // the indent of the lines after the first
++        int gaps;
++        double thisGap = perigeeLineGap( pos, wrapPos, x, maxWidth, wrapPos == lastHyphWrap, gaps );
++        double nextGap = perigeeNextLineGap( wrapPos+1, nextX, maxWidth );
++        if ( thisGap <= cap && nextGap <= cap )
++            return false;
++        double best = thisGap > nextGap ? thisGap : nextGap;
++        int bestWrap = wrapPos;
++        int tried = 0;
++        for ( int c=wrapPos-1; c>pos && tried<3; c-- ) {
++            if ( !(m_flags[c] & LCHAR_ALLOW_WRAP_AFTER) || (m_flags[c] & LCHAR_DEPRECATED_WRAP_AFTER)
++                    || (m_flags[c+1] & LCHAR_IS_SPACE) )
++                continue;
++            tried++;
++            double gap = perigeeLineGap( pos, c, x, maxWidth, false, gaps );
++            if ( gaps < 2 )
++                break; // the earlier wraps leave fewer still
++            double next = perigeeNextLineGap( c+1, nextX, maxWidth );
++            if ( next > cap && nextGap <= cap )
++                continue;
++            double worst = gap > next ? gap : next;
++            if ( worst <= best - 1 ) {
++                best = worst;
++                bestWrap = c;
++            }
++        }
++        if ( bestWrap == wrapPos )
++            return false;
++        if ( wrapPos == lastHyphWrap ) // the hyphenation point is not used now
++            m_flags[lastHyphWrap] &= ~LCHAR_ALLOW_HYPH_WRAP_AFTER;
++        wrapPos = bestWrap;
++        return true;
 +    }
 +
      /// align line: add or reduce widths of spaces to achieve desired text alignment
      void alignLine( formatted_line_t * frmline, int alignment, int rightIndent=0, bool hasInlineBoxes=false ) {
          // Fetch current line x offset and max width
-@@ -3115,6 +3186,10 @@
+@@ -3115,6 +3349,10 @@
              }
          }
  
@@ -96,3 +266,21 @@
          if ( extra_width < 0 ) {
              // line is too wide
              // reduce spaces to fit line
+@@ -5541,6 +5779,9 @@
+                 }
+                 #endif
+             }
++            // Perigee lookahead (engine/tools/desktop): only with PERIGEE_GAPS_LOOKAHEAD=1.
++            m_perigee_moved = lastMandatoryWrap < 0 && !is_css_first_line && perigeeGapsLookahead()
++                    && perigeeLookahead( pos, x, maxWidth, para, wrapPos, lastHyphWrap );
+             // End (not included) of current line
+             int endp = wrapPos + (lastMandatoryWrap<0 ? 1 : 0);
+ 
+@@ -5664,6 +5905,7 @@
+             // Best position to end this line found.
+             bool hasInlineBoxes = firstInlineBoxPos >= 0 && firstInlineBoxPos < endp;
+             addLine(pos, endp, x, para, pos==0, wrapPos>=m_length-1, preFormattedOnly, isLastPara, hasInlineBoxes);
++            m_perigee_moved = false;
+             pos = wrapPos + 1; // start of next line
+ 
+             #if (USE_LIBUNIBREAK==1)
