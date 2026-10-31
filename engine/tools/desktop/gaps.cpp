@@ -28,6 +28,8 @@
 #include "lvstsheet.h"
 #include "lvtinydom.h"
 
+#include "../../src/main/cpp/jni/face_size.h"
+
 // The stream of PERIGEE_GAPS_CSV, defined by the hook in lvtextfm.cpp: the page markers go through it so
 // that they stay in order with the rows the hook writes.
 FILE* perigeeGapsCsv();
@@ -57,7 +59,7 @@ const char* EXTRA_CSS =
         "            [--data DIR] [--css fb2.css] [--render-dpi 336] [--weight 400] [--line-spacing 120]\n"
         "            [--min-space-condensing 75] [--cap-em 0.75] [--lookahead on|off] [--png DIR [--pages 3,17,42]]\n"
         "            [--paragraph on|off [--tolerance 300] [--hyphen-penalty 50] [--paragraph-log FILE]]\n"
-        "            [--text FILE]\n");
+        "            [--text FILE] [--same-size on|off] [--switch-face NAME]\n");
     std::exit(2);
 }
 
@@ -122,7 +124,7 @@ std::string stem(const std::string& path) {
 
 int main(int argc, char** argv) {
     std::string book, face, out, hyphenation, data = GAPS_DATA_DIR, css = "fb2.css", capEm, png, text;
-    std::string lookahead = "off", paragraph = "off", tolerance, hyphenPenalty, paragraphLog;
+    std::string lookahead = "off", paragraph = "off", tolerance, hyphenPenalty, paragraphLog, sameSize = "on", switchFace;
     std::set<int> only;
     std::vector<std::pair<std::string, std::string>> fonts;
     int size = 0, width = 0, height = 0, dpi = 336, weight = 400, lineSpacing = 120, condensing = 75;
@@ -151,6 +153,8 @@ int main(int argc, char** argv) {
         else if (flag == "--paragraph-log") paragraphLog = value;
         else if (flag == "--png") png = value;
         else if (flag == "--text") text = value;
+        else if (flag == "--same-size") sameSize = value;
+        else if (flag == "--switch-face") switchFace = value;
         else if (flag == "--pages") only = toPages(value);
         else if (flag == "--font") {
             auto eq = value.find('=');
@@ -163,6 +167,7 @@ int main(int argc, char** argv) {
     if (hyphenation != "on" && hyphenation != "off") usage("--hyphenation wants on or off");
     if (lookahead != "on" && lookahead != "off") usage("--lookahead wants on or off");
     if (paragraph != "on" && paragraph != "off") usage("--paragraph wants on or off");
+    if (sameSize != "on" && sameSize != "off") usage("--same-size wants on or off");
     if (paragraph == "off" && (!tolerance.empty() || !hyphenPenalty.empty() || !paragraphLog.empty()))
         usage("--tolerance, --hyphen-penalty and --paragraph-log go with --paragraph on");
     if (!only.empty() && png.empty()) usage("--pages names the pages --png writes");
@@ -207,6 +212,7 @@ int main(int argc, char** argv) {
         return false;
     };
     std::vector<std::string> names{face};
+    if (!switchFace.empty()) names.push_back(switchFace);
     for (const auto& font : fonts) names.push_back(font.first);
     for (const auto& name : names) {
         if (registered(name)) continue;
@@ -221,6 +227,7 @@ int main(int argc, char** argv) {
     view.setViewMode(DVM_PAGES, -1);
     view.Resize(width, height);
     view.setPageHeaderInfo(0);
+    view.setMaxFontSize(perigee::MAX_FONT_PX);
     CRPropRef props = LVCreatePropsContainer();
     props->setInt(PROP_REQUESTED_DOM_VERSION, gDOMVersionCurrent);
     props->setInt(PROP_RENDER_BLOCK_RENDERING_FLAGS, BLOCK_RENDERING_FULL_FEATURED);
@@ -242,15 +249,18 @@ int main(int argc, char** argv) {
     props->setInt(PROP_LANDSCAPE_PAGES, 1);
     props->setInt(PROP_RENDER_DPI, dpi);
     view.propsApply(props);
-    view.setFontSize(size);
+    const perigee::FaceSize faceSize =
+        sameSize == "on" ? perigee::sizeOfFace(lString8(face.c_str()), size, weight) : perigee::FaceSize{size, lString8()};
+    view.setFontSize(faceSize.em);
     view.setPageMargins(lvRect(0, 0, 0, 0));
     view.setVisiblePageCount(1, false);
+    const std::string stylesheetName = css;
     lString8 stylesheet;
     if (!LVLoadStylesheetFile(Utf8ToUnicode((data + "/" + css).c_str()), stylesheet)) {
         std::fprintf(stderr, "gaps: cannot read %s/%s\n", data.c_str(), css.c_str());
         return 1;
     }
-    stylesheet << "\r\n" << EXTRA_CSS;
+    stylesheet << "\r\n" << EXTRA_CSS << "\r\n" << faceSize.css;
     view.setStyleSheet(stylesheet, false);
     view.Resize(width, height);
 
@@ -269,6 +279,29 @@ int main(int argc, char** argv) {
     auto rendered = std::chrono::steady_clock::now();
     // The rows of the paragraph log after this marker are the paragraphs planned again while drawing.
     if (FILE* log = perigeeGapsParagraphLog()) std::fprintf(log, "#draw\n");
+    // What NativeEngine.applySettings does when the reader picks another face in an open book.
+    if (!switchFace.empty()) {
+        auto asked = std::chrono::steady_clock::now();
+        const perigee::FaceSize next = sameSize == "on" ? perigee::sizeOfFace(lString8(switchFace.c_str()), size, weight)
+                                                        : perigee::FaceSize{size, lString8()};
+        auto measured = std::chrono::steady_clock::now();
+        props = LVCreatePropsContainer();
+        props->setString(PROP_FONT_FACE, switchFace.c_str());
+        view.propsApply(props);
+        view.setFontSize(next.em);
+        lString8 css;
+        LVLoadStylesheetFile(Utf8ToUnicode((data + "/" + stylesheetName).c_str()), css);
+        css << "\r\n" << EXTRA_CSS << "\r\n" << next.css;
+        view.setStyleSheet(css, false);
+        view.Render();
+        auto laidOut = std::chrono::steady_clock::now();
+        auto us = [](std::chrono::steady_clock::duration d) {
+            return static_cast<long>(std::chrono::duration_cast<std::chrono::microseconds>(d).count());
+        };
+        std::printf("switch to %s: measuring %ld us, laying out %ld ms, %d pages\n", switchFace.c_str(), us(measured - asked),
+                    us(laidOut - measured) / 1000, view.getPageCount());
+        return 0;
+    }
 
     // The full rendering breaks the lines but formats them "light", without alignLine(): a page's
     // paragraphs are justified when the page is drawn, as on the screen. A paragraph that runs over
@@ -312,6 +345,13 @@ int main(int argc, char** argv) {
     std::printf("%s: %s, %d px, text width %d px, hyphenation %s, language %s, cap %s, lookahead %s, paragraph %s: %d pages\n",
                 book.c_str(), face.c_str(), size, width, hyphenation.c_str(), UnicodeToUtf8(language).c_str(), cap.c_str(),
                 lookahead.c_str(), paragraph.c_str(), pages);
+    {
+        LVFontRef font = perigee::regularFont(lString8(face.c_str()), faceSize.em, weight, faceSize.em);
+        std::printf("size: em %d px (asked %d, drawn %d), x-height %.2f px, caps %.2f px, font height %d px%s%s\n", faceSize.em, size,
+                    view.getFontSize(), font->getExtraMetric(font_metric_x_height, false) / 64.0,
+                    font->getExtraMetric(font_metric_cap_height, false) / 64.0, font->getHeight(),
+                    faceSize.css.empty() ? "" : ", ", faceSize.css.empty() ? "" : "line height set by the rule");
+    }
     if (paragraph == "on")
         std::printf("paragraph breaker: tolerance %s, hyphen penalty %s\n", tolerance.empty() ? "300" : tolerance.c_str(),
                     hyphenPenalty.empty() ? "50" : hyphenPenalty.c_str());

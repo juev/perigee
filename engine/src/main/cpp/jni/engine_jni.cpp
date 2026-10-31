@@ -25,6 +25,8 @@
 #include "lvstsheet.h"
 #include "lvtinydom.h"
 
+#include "face_size.h"
+
 namespace {
 
 std::string toStd(JNIEnv* env, jstring s) {
@@ -326,6 +328,7 @@ Java_org_evsyukov_perigee_engine_NativeEngine_create(JNIEnv*, jobject, jint widt
     view->setViewMode(DVM_PAGES, -1);
     view->Resize(width, height);
     view->setPageHeaderInfo(0);
+    view->setMaxFontSize(perigee::MAX_FONT_PX);
 
     CRPropRef props = LVCreatePropsContainer();
     // New books get the newest DOM and "web" block rendering, as in KOReader:
@@ -373,7 +376,8 @@ Java_org_evsyukov_perigee_engine_NativeEngine_applySettings(
     props->setInt(PROP_LANDSCAPE_PAGES, twoPages ? 2 : 1);
     props->setInt(PROP_RENDER_DPI, renderDpi);
     view->propsApply(props);
-    view->setFontSize(fontSize);
+    const perigee::FaceSize size = perigee::sizeOfFace(lString8(toStd(env, fontFace).c_str()), fontSize, fontWeight);
+    view->setFontSize(size.em);
     view->setTextColor(0x000000);
     view->setBackgroundColor(0xFFFFFF);
     gPalettes[view] = Palette{static_cast<lUInt32>(textColor) & 0xFFFFFF, static_cast<lUInt32>(backgroundColor) & 0xFFFFFF};
@@ -382,7 +386,7 @@ Java_org_evsyukov_perigee_engine_NativeEngine_applySettings(
 
     lString8 css;
     LVLoadStylesheetFile(Utf8ToUnicode(toStd(env, cssFile).c_str()), css);
-    css << "\r\n" << lString8(toStd(env, extraCss).c_str());
+    css << "\r\n" << lString8(toStd(env, extraCss).c_str()) << "\r\n" << size.css;
     // A new stylesheet has every node of the book styled again: not done for a stylesheet that is the same.
     lString8& applied = gStylesheets[view];
     if (css != applied) {
