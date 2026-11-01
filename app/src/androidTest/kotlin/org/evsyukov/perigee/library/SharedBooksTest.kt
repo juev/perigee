@@ -71,6 +71,10 @@ class SharedBooksTest {
     @get:Rule
     val testName = TestName()
 
+    // The system's notice over the reader's screen, which hides the bars, would take the Back meant for the screen.
+    @get:Rule
+    val noticeSeen = ImmersiveNoticeSeen()
+
     private val instrumentation = InstrumentationRegistry.getInstrumentation()
     private val context: Context = instrumentation.targetContext
     private val library get() = Library.get(context)
@@ -125,7 +129,8 @@ class SharedBooksTest {
             reader(main).state.value.let { "the reader has ${it.book?.title}, page ${it.page?.index}, busy ${it.busy}, failed ${it.failed}" }
         } ?: "no single reader's screen"
         val ours = books().filter { testName.methodName in it.title }.map { "${it.title} (opened ${it.openedAt})" }
-        return "resumed $resumed; $reader; shares waiting ${SharedBooks.shares.value.size}; this test's books $ours"
+        val input = runCatching { ImmersiveNoticeSeen.focus() }.getOrElse { "not told: $it" }
+        return "resumed $resumed; $reader; shares waiting ${SharedBooks.shares.value.size}; this test's books $ours; the input: $input"
     }
 
     private val living = Stage.values().filter { it != Stage.DESTROYED }.toTypedArray()
