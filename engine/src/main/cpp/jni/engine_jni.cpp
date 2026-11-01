@@ -297,6 +297,35 @@ static int kerningFor(const std::string& language, bool ligatures) {
 // The stylesheet each view was last given, to tell a change of it.
 static std::unordered_map<LVDocView*, lString8> gStylesheets;
 
+// What each view's size is worked out from, to work it out again once the styles of the book name the
+// face its text is drawn in: the stylesheet without the size rule, the reader's size, weight and face,
+// and the size last applied.
+struct Sizing {
+    lString8 base;
+    int fontSize = 0;
+    int fontWeight = 0;
+    lString8 face;
+    perigee::FaceSize applied{0, lString8(), lString8()};
+};
+static std::unordered_map<LVDocView*, Sizing> gSizings;
+
+// Sets [view] at [size], with its rule after the stylesheet of [sizing]; true when the size changed.
+// A new stylesheet has every node of the book styled again: not set for a stylesheet that is the same.
+static bool applySize(LVDocView* view, Sizing& sizing, const perigee::FaceSize& size) {
+    const bool changed = size.em != sizing.applied.em || size.css != sizing.applied.css;
+    // The same em is not set again: a property set is a request to lay the book out on the next render.
+    if (size.em != sizing.applied.em) view->setFontSize(size.em);
+    sizing.applied = size;
+    lString8 css = sizing.base;
+    css << "\r\n" << size.css;
+    lString8& applied = gStylesheets[view];
+    if (css != applied) {
+        view->setStyleSheet(css, false);
+        applied = css;
+    }
+    return changed;
+}
+
 // Bold word starts, kept per document by the engine (patches/0001-bold-word-starts.patch); per view
 // here, as the settings come before the book is loaded.
 extern "C++" void perigeeSetBoldWordStarts(const ldomDocument* doc, bool on);
@@ -410,28 +439,32 @@ Java_org_evsyukov_perigee_engine_NativeEngine_applySettings(
     props->setInt(PROP_FONT_MONOSPACE_SCALE, monospaceSizePercent);
     props->setInt(PROP_EMBEDDED_FONTS, embeddedFonts ? 1 : 0);
     view->propsApply(props);
-    const perigee::FaceSize size = perigee::sizeOfFace(lString8(toStd(env, fontFace).c_str()), fontSize, fontWeight);
-    view->setFontSize(size.em);
     view->setTextColor(0x000000);
     view->setBackgroundColor(0xFFFFFF);
     gPalettes[view] = Palette{static_cast<lUInt32>(textColor) & 0xFFFFFF, static_cast<lUInt32>(backgroundColor) & 0xFFFFFF};
     view->setPageMargins(lvRect(marginHorizontal, marginTop, marginHorizontal, marginBottom));
     view->setVisiblePageCount(twoPages ? 2 : 1, false);
 
-    lString8 css;
-    LVLoadStylesheetFile(Utf8ToUnicode(toStd(env, cssFile).c_str()), css);
-    css << "\r\n" << lString8(toStd(env, extraCss).c_str()) << "\r\n" << size.css;
-    // A new stylesheet has every node of the book styled again: not done for a stylesheet that is the same.
-    lString8& applied = gStylesheets[view];
-    if (css != applied) {
-        view->setStyleSheet(css, false);
-        applied = css;
-    }
+    lString8 base;
+    LVLoadStylesheetFile(Utf8ToUnicode(toStd(env, cssFile).c_str()), base);
+    base << "\r\n" << lString8(toStd(env, extraCss).c_str());
+    const lString8 face(toStd(env, fontFace).c_str());
+    Sizing& sizing = gSizings[view];
+    // The size is the one of the face the book's text is drawn in. An open book keeps the styles of the last
+    // settings until it is laid out again: a book drawn then in the face the reader picked is drawn in the one
+    // picked now, a book drawn in a face of its own keeps that face.
+    ldomDocument* doc = view->getDocument();
+    const bool readersFace = !doc || perigee::drawnFace(doc).face == sizing.face;
+    sizing = Sizing{base, fontSize, fontWeight, face, sizing.applied};
+    applySize(view, sizing, perigee::sizeOfDrawnFace(readersFace ? nullptr : doc, face, fontSize, fontWeight));
     // A new page size comes with the settings, as on a rotation: the book is laid out once, at that size.
     if (width > 0 && height > 0) view->Resize(width, height);
 
     if (loaded) {
         view->Render();
+        // The guess fails when the settings change the face drawn: the override turned on or off, the book's
+        // own fonts allowed or not. The size is put right then, at the cost of a second layout.
+        if (applySize(view, sizing, perigee::sizeOfDrawnFace(doc, face, fontSize, fontWeight))) view->Render();
         if (!position.isNull()) view->goToBookmark(position);
     }
 }
@@ -460,7 +493,19 @@ Java_org_evsyukov_perigee_engine_NativeEngine_load(JNIEnv* env, jobject, jlong h
     if (!language.empty()) props->setString(PROP_TEXTLANG_MAIN_LANG, hyphenationLanguage(UnicodeToUtf8(language).c_str()).c_str());
     props->setInt(PROP_FONT_KERNING, kerningFor(UnicodeToUtf8(language).c_str(), gLigatures[view]));
     view->propsApply(props);
+    // Loaded, the book's elements have their styles and fonts, and name the face its text is drawn in: the
+    // size is worked out for that face before the one layout.
+    auto sizing = gSizings.find(view);
+    const bool sized = sizing != gSizings.end();
+    auto resize = [view, &sizing] {
+        Sizing& s = sizing->second;
+        return applySize(view, s, perigee::sizeOfDrawnFace(view->getDocument(), s.face, s.fontSize, s.fontWeight));
+    };
+    if (sized) resize();
     view->Render();
+    // A book read back from the cache comes with the styles of the layout kept there, which other settings
+    // may have made: the face is read again from the styles of the layout just made.
+    if (sized && resize()) view->Render();
     return JNI_TRUE;
 }
 
@@ -489,6 +534,7 @@ Java_org_evsyukov_perigee_engine_NativeEngine_close(JNIEnv*, jobject, jlong hand
         view->close();
     }
     gStylesheets.erase(view);
+    gSizings.erase(view);
     gPalettes.erase(view);
     gBoldWordStarts.erase(view);
     gLigatures.erase(view);
