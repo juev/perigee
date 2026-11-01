@@ -315,6 +315,7 @@
     <string name="about_author">Author</string>
     <string name="about_source">Source code</string>
     <string name="action_licenses">Licenses</string>
+    <string name="about_open_failed">No app on this phone opens the address</string>
     <string name="licenses_title">Licenses</string>
     <string name="licenses_gpl">GNU General Public License, version 3</string>
     <string name="action_view_grid">Show as a grid of covers</string>
