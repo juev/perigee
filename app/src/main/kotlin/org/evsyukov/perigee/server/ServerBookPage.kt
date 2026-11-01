@@ -24,6 +24,8 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.luminance
@@ -45,8 +47,10 @@ import org.evsyukov.perigee.ui.READABLE_WIDTH
 
 /**
  * A book of the server on a page of its own: its cover, who wrote it, where it stands in a
- * series, what the server knows of its editions and what it says the book is about, then the
- * same downloads as its line in the list. It lies over the list, and the way back returns there.
+ * series, what the server knows of its editions and what it says the book is about, the
+ * same downloads as its line in the list, what the reader keeps of it on the server, and the
+ * books the server lists beside it. It lies over the part it was opened from; a book opened
+ * from it lies over it in turn, and the way back returns through them to where the first was.
  * What the server tells of the book is in [state], asked for when the page is opened.
  */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -76,80 +80,101 @@ internal fun ServerBookPage(book: RemoteBook, state: ServerState, model: ServerV
                 )
             },
         ) { padding ->
-            Column(
-                Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 8.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-            ) {
-                // On a tablet the page keeps to a width its lines can be read across, in the middle.
-                Column(Modifier.widthIn(max = READABLE_WIDTH).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                    val faint = MaterialTheme.colorScheme.onSurfaceVariant
-                    val detail = state.detail
-                    Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                        BookCover(book, model, Modifier.size(width = 120.dp, height = 180.dp))
-                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                            Text(book.title.ifEmpty { stringResource(R.string.server_untitled) }, style = MaterialTheme.typography.titleLarge)
-                            val subtitle = detail?.subtitle.orEmpty()
-                            if (subtitle.isNotEmpty()) Text(subtitle, style = MaterialTheme.typography.titleSmall, color = faint)
-                            for (author in book.authors) Text(author, style = MaterialTheme.typography.bodyLarge)
-                            if (book.series.isNotEmpty()) {
-                                val series = if (book.seriesNumber.isEmpty()) {
-                                    book.series
+            // Each book's page keeps its own place: a book opened from it starts at its top, and the way back
+            // returns to the place the page before was left at. A page gone back from is forgotten.
+            val pages = rememberSaveableStateHolder()
+            val live = state.trail.map { it.id } + book.id
+            val kept = remember { HashSet<Long>() }
+            SideEffect {
+                (kept - live.toSet()).forEach(pages::removeState)
+                kept.clear()
+                kept += live
+            }
+            pages.SaveableStateProvider(book.id) {
+                Column(
+                    Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).testTag("server-book-scroll")
+                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    // On a tablet the page keeps to a width its lines can be read across, in the middle.
+                    Column(Modifier.widthIn(max = READABLE_WIDTH).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                        val faint = MaterialTheme.colorScheme.onSurfaceVariant
+                        val detail = state.detail?.takeIf { it.id == book.id }
+                        // A book suggested beside another came without its files: they are the ones its page was told of.
+                        val bookFiles = if (book.filesKnown) book.files else detail?.files.orEmpty()
+                        Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                            BookCover(book, model, Modifier.size(width = 120.dp, height = 180.dp))
+                            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                Text(book.title.ifEmpty { stringResource(R.string.server_untitled) }, style = MaterialTheme.typography.titleLarge)
+                                val subtitle = detail?.subtitle.orEmpty()
+                                if (subtitle.isNotEmpty()) Text(subtitle, style = MaterialTheme.typography.titleSmall, color = faint)
+                                for (author in book.authors) Text(author, style = MaterialTheme.typography.bodyLarge)
+                                if (book.series.isNotEmpty()) {
+                                    val series = if (book.seriesNumber.isEmpty()) {
+                                        book.series
+                                    } else {
+                                        stringResource(R.string.series_line, book.series, book.seriesNumber)
+                                    }
+                                    Text(series, style = MaterialTheme.typography.bodyMedium, color = faint)
+                                }
+                                val context = LocalContext.current
+                                val formats = readableFiles(bookFiles).map { file ->
+                                    val format = file.format.uppercase()
+                                    if (file.size > 0) "$format ${Formatter.formatShortFileSize(context, file.size)}" else format
+                                }
+                                val pages = detail?.pageCount?.let { pluralStringResource(R.plurals.server_book_pages, it, it) }
+                                val isbn = detail?.isbn?.ifEmpty { null }?.let { stringResource(R.string.server_book_isbn, it) }
+                                val known = formats + listOfNotNull(
+                                    detail?.publisher?.ifEmpty { null }, detail?.publishedYear?.toString(), pages,
+                                    detail?.language?.ifEmpty { null }, isbn,
+                                )
+                                if (known.isNotEmpty()) {
+                                    Text(known.joinToString(" · "), style = MaterialTheme.typography.labelMedium, color = faint)
+                                }
+                            }
+                        }
+                        val failure = state.detailFailure
+                        when {
+                            state.detailLoading -> LinearProgressIndicator(Modifier.fillMaxWidth())
+                            failure != null -> Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Text(failureText(failure), color = MaterialTheme.colorScheme.error)
+                                OutlinedButton(onClick = model::retryDetail) { Text(stringResource(R.string.action_retry)) }
+                            }
+                            else -> {
+                                val about = plainText(detail?.description.orEmpty())
+                                if (about.isEmpty()) {
+                                    Text(stringResource(R.string.book_no_description), style = MaterialTheme.typography.bodyMedium, color = faint)
                                 } else {
-                                    stringResource(R.string.series_line, book.series, book.seriesNumber)
+                                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        for (paragraph in about.split('\n')) Text(paragraph, style = MaterialTheme.typography.bodyMedium)
+                                    }
                                 }
-                                Text(series, style = MaterialTheme.typography.bodyMedium, color = faint)
                             }
-                            val context = LocalContext.current
-                            val formats = readableFiles(book).map { file ->
-                                val format = file.format.uppercase()
-                                if (file.size > 0) "$format ${Formatter.formatShortFileSize(context, file.size)}" else format
+                        }
+                        // The same as the book's line in the list, from the same state: a download begun here shows there too.
+                        val files = readableFiles(bookFiles)
+                        // In the library by a file of its, or, for a book suggested beside another, by the server's book itself.
+                    val inLibrary = files.firstNotNullOfOrNull { state.onDevice[it.id] } ?: state.onDeviceByBook[book.id]
+                        when {
+                            // Reading it leaves the pages, as the library's page is left: the reader goes to the book, not back to it.
+                            inLibrary != null -> InLibrary(inLibrary, model) { file ->
+                                model.leaveBooks()
+                                onOpen(file)
                             }
-                            val pages = detail?.pageCount?.let { pluralStringResource(R.plurals.server_book_pages, it, it) }
-                            val isbn = detail?.isbn?.ifEmpty { null }?.let { stringResource(R.string.server_book_isbn, it) }
-                            val known = formats + listOfNotNull(
-                                detail?.publisher?.ifEmpty { null }, detail?.publishedYear?.toString(), pages,
-                                detail?.language?.ifEmpty { null }, isbn,
+                            // Not known yet for a book suggested beside another; its page says so by loading.
+                            !book.filesKnown && detail == null -> Unit
+                            files.isEmpty() -> Text(
+                                stringResource(R.string.catalog_no_readable_file), style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
-                            if (known.isNotEmpty()) {
-                                Text(known.joinToString(" · "), style = MaterialTheme.typography.labelMedium, color = faint)
-                            }
+                            else -> Column { for (file in files) DownloadLine(book, file, state.downloads[file.id], model) }
                         }
-                    }
-                    val failure = state.detailFailure
-                    when {
-                        state.detailLoading -> LinearProgressIndicator(Modifier.fillMaxWidth())
-                        failure != null -> Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Text(failureText(failure), color = MaterialTheme.colorScheme.error)
-                            OutlinedButton(onClick = model::retryDetail) { Text(stringResource(R.string.action_retry)) }
-                        }
-                        else -> {
-                            val about = plainText(detail?.description.orEmpty())
-                            if (about.isEmpty()) {
-                                Text(stringResource(R.string.book_no_description), style = MaterialTheme.typography.bodyMedium, color = faint)
-                            } else {
-                                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    for (paragraph in about.split('\n')) Text(paragraph, style = MaterialTheme.typography.bodyMedium)
-                                }
-                            }
-                        }
-                    }
-                    // The same as the book's line in the list, from the same state: a download begun here shows there too.
-                    val files = readableFiles(book)
-                    val kept = files.firstNotNullOfOrNull { state.onDevice[it.id] }
-                    when {
-                        // Reading it leaves the page, as the library's page is left: the reader goes to the book, not back to it.
-                        kept != null -> InLibrary(kept, model) { file ->
-                            model.closeBook()
-                            onOpen(file)
-                        }
-                        files.isEmpty() -> Text(
-                            stringResource(R.string.catalog_no_readable_file), style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                        else -> Column { for (file in files) DownloadLine(book, file, state.downloads[file.id], model) }
+                        if (detail != null) PersonalSection(book, detail, state, model)
+                        RelatedSections(state, model)
                     }
                 }
             }
         }
+        state.membership?.let { MembershipDialog(it, model) }
     }
 }

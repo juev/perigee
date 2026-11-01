@@ -47,6 +47,25 @@ class AccountsTest {
     }
 
     @Test
+    fun tokensAndKeyOfAnAccountReplacedMeanwhileAreNotKeptForTheNext() = runBlocking {
+        val before = accounts.signIn("https://books.example", "reader", "Reader", tokens, "v3.3.0")
+        val next = accounts.signIn("https://books.example", "reader", "Reader", Tokens("access-b", 7_000, "refresh-b", 11_000), "v3.3.0")
+        assertTrue("each sign-in is another account to the server", before.deviceId != next.deviceId)
+        accounts.saveDevice("their-device", "their-key")
+
+        assertFalse(accounts.saveTokens(Tokens("access-a2", 8_000, "refresh-a2", 12_000), ofDevice = before.deviceId))
+        assertFalse(accounts.saveTokens(Tokens("", 0, "", 0), ofDevice = before.deviceId))
+        assertFalse(accounts.saveDevice("reader", "", ofDevice = before.deviceId))
+        assertEquals(Tokens("access-b", 7_000, "refresh-b", 11_000), accounts.tokens())
+        assertEquals("their-device", accounts.current()?.deviceUser)
+        assertEquals("their-key", accounts.deviceKey())
+
+        assertTrue(accounts.saveTokens(Tokens("access-b2", 9_000, "refresh-b2", 13_000), ofDevice = next.deviceId))
+        assertEquals(Tokens("access-b2", 9_000, "refresh-b2", 13_000), accounts.tokens())
+        assertEquals("tokens of an account as it was read", tokens, accounts.tokensOf(before))
+    }
+
+    @Test
     fun tokensThatCannotBeOpenedAreReportedAsMissing() = runBlocking {
         accounts.signIn("https://books.example", "reader", "Reader", tokens, "v3.3.0")
         // As after the app's files were carried to another device.
