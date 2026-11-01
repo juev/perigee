@@ -395,6 +395,8 @@ class ServerScreenTest {
         signIn()
         waitForShown("the newest books", hasText(string(R.string.server_shelf_recently_added)) and onHome)
         rule.onNodeWithTag("server-section-home").assertIsSelected()
+        // The shelf's heading comes before its books do.
+        waitForShown("the newest book on its shelf", hasText("Book 03") and onShelfOf("recently-added"))
         rule.onNode(hasText("Book 03") and onShelfOf("recently-added")).assertIsDisplayed()
 
         catalogue()

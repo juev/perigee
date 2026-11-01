@@ -600,20 +600,29 @@ class ServerAreaViewModelTest {
         server.collection("Mine")
         signIn()
         val seven = listed("Listed Title").books.single()
-        server.slow = { if (it == "/collections" || it == "/books/7") 1500 else 0 }
-        model.show(Section.Collections)
-        model.openBook(seven)
+        // Both requests are on their way, held by the server, when the reader signs out.
+        server.hold("/collections")
+        server.hold("/books/7")
+        try {
+            model.show(Section.Collections)
+            model.openBook(seven)
+            arrived(server, "/collections")
+            arrived(server, "/books/7")
 
-        model.signOut()
-        until("signed out") { it.account == null }
-        pass(2000)
+            model.signOut()
+            until("signed out") { it.account == null }
+        } finally {
+            server.release("/collections")
+            server.release("/books/7")
+        }
+        // The answers for the reader before come now, and are let go of.
+        pass(500)
         val state = model.state.value
         assertFalse("no collections of the reader before", state.collections.loaded)
         assertTrue(state.collections.list.isEmpty())
         assertNull(state.opened)
         assertNull(state.detail)
 
-        server.slow = { 0 }
         signIn()
         opened(listed("Listed Title").books.single())
         assertEquals("nothing kept of the reader before is shown as known", 2, server.asked("/books/7").size)
