@@ -351,4 +351,21 @@
     <string name="styles_reset_text">Ваш CSS будет удалён, и книга вернётся к стилю приложения.</string>
     <string name="styles_reset_confirm">Вернуть</string>
     <string name="styles_previous">Вернуть прошлую версию</string>
+    <plurals name="import_added">
+        <item quantity="one">Добавлена %1$d книга</item>
+        <item quantity="few">Добавлено %1$d книги</item>
+        <item quantity="many">Добавлено %1$d книг</item>
+        <item quantity="other">Добавлено %1$d книги</item>
+    </plurals>
+    <string name="share_adding">Добавляем книги…</string>
+    <string name="import_some">Добавлено %1$d из %2$d</string>
+    <string name="import_none">Ничего не добавлено</string>
+    <string name="import_read">Читать</string>
+    <string name="import_close">Закрыть</string>
+    <string name="import_unnamed">Файл без имени</string>
+    <string name="import_failed_no_file">Файл не открылся</string>
+    <string name="import_failed_denied">Приложение, из которого он пришёл, не даёт Perigee его прочитать</string>
+    <string name="import_failed_not_a_book">Такие файлы Perigee не читает</string>
+    <string name="import_failed_unreadable">Книгу не удалось прочитать: возможно, файл повреждён</string>
+    <string name="import_failed_not_copied">Файл не удалось скопировать в приложение</string>
 </resources>

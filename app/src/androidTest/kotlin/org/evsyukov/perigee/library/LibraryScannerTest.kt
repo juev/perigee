@@ -3,6 +3,7 @@ package org.evsyukov.perigee.library
 import android.content.Context
 import android.graphics.BitmapFactory
 import android.graphics.Color
+import android.net.Uri
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import java.io.File
@@ -281,6 +282,31 @@ class LibraryScannerTest {
         assertEquals("What the picked book is about.", book.description)
         // Opening it afterwards, as the reader does, is the same book and leaves all that.
         val opened = library.open(picked, "Picked With A Cover", "Hand Picker")
+        assertEquals(book.id, opened.id)
+        assertTrue(opened.hasCover)
+    }
+
+    @Test
+    fun bookPickedOrSharedIsCopiedUnderItsFingerprintWithItsCoverAuthorAndSeries() = runBlocking<Unit> {
+        val picked = TestBook.write(
+            File(context.cacheDir, "picked-to-copy.fb2"), "Copied With A Cover", author = "Hand Picker",
+            series = "Picked Ones", seriesNumber = 3, cover = TestFolder.cover(0xFF336699.toInt()),
+            about = "What the copied book is about.",
+        )
+        val kept = File(context.cacheDir, "picked-books").apply { deleteRecursively() }
+        // As the system's file dialog or a file manager gives it: by address, under a name of its own.
+        val importer = BookImport(context, library, covers, dir = kept, nameOf = { "Any Name.fb2" }, open = { picked.inputStream() })
+
+        val result = importer.take(Uri.parse("content://documents.example/document/7"))
+
+        val book = books().single()
+        assertEquals(Imported.Kept(FileHash.partialMd5(picked), "Copied With A Cover", File(kept, "${book.id}.fb2").path), result)
+        assertEquals(listOf("Copied With A Cover", "Hand Picker", "Picked Ones", "3", "fb2"), listOf(book.title, book.author, book.series, book.seriesNumber, book.format))
+        assertTrue(book.hasCover)
+        assertTrue(covers.file(book.id).length() > 0)
+        assertEquals("What the copied book is about.", book.description)
+        assertArrayEquals(picked.readBytes(), File(book.path).readBytes())
+        val opened = library.open(File(book.path), "", "")
         assertEquals(book.id, opened.id)
         assertTrue(opened.hasCover)
     }

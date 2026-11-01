@@ -1,36 +1,33 @@
 package org.evsyukov.perigee
 
-import android.net.Uri
+import android.content.Context
 import android.os.Bundle
-import android.provider.OpenableColumns
 import android.view.KeyEvent
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.viewModels
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.repeatOnLifecycle
 import java.io.File
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
-import org.evsyukov.perigee.data.Covers
 import org.evsyukov.perigee.data.Library
 import org.evsyukov.perigee.legal.AboutScreen
 import org.evsyukov.perigee.legal.LicensesScreen
+import org.evsyukov.perigee.library.ImportResults
+import org.evsyukov.perigee.library.ImportViewModel
 import org.evsyukov.perigee.library.LibraryScreen
-import org.evsyukov.perigee.library.describeKeptFile
-import org.evsyukov.perigee.library.unpacked
+import org.evsyukov.perigee.library.SharedBooks
 import org.evsyukov.perigee.opds.OpdsScreen
 import org.evsyukov.perigee.reader.ReaderScreen
 import org.evsyukov.perigee.reader.VolumeKeyHost
@@ -40,14 +37,16 @@ import org.evsyukov.perigee.ui.PerigeeTheme
 
 class MainActivity : ComponentActivity(), VolumeKeyHost {
     override var onVolumeKey: ((down: Boolean) -> Unit)? = null
+    private val imports: ImportViewModel by viewModels()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        // Started to show a share, the app opens the book shared, not the one the reader left.
+        val sharing = savedInstanceState == null && SharedBooks.shares.value.isNotEmpty()
         setContent {
             PerigeeTheme {
                 Surface(Modifier.fillMaxSize()) {
-                    val scope = rememberCoroutineScope()
                     var bookPath by rememberSaveable { mutableStateOf<String?>(null) }
                     // Closing a book that came from a catalog or the server returns there.
                     var catalogs by rememberSaveable { mutableStateOf(false) }
@@ -59,8 +58,25 @@ class MainActivity : ComponentActivity(), VolumeKeyHost {
                     LaunchedEffect(Unit) {
                         if (!ready) {
                             // The app starts on the book the reader left, as long as its file is still there.
-                            bookPath = Library.get(this@MainActivity).lastOpened()?.path?.takeIf { File(it).isFile }
+                            val last = if (sharing) null else lastBook(this@MainActivity)
+                            // A book shared or picked while it was looked up is open already, and stays.
+                            if (!ready) {
+                                bookPath = last
+                                ready = true
+                            }
+                        }
+                    }
+                    LaunchedEffect(Unit) {
+                        imports.toOpen.collect {
+                            bookPath = it
                             ready = true
+                        }
+                    }
+                    // A share is shown once nothing is over this screen: a file being picked, or a page of
+                    // signing in, is left to the reader to finish first.
+                    LaunchedEffect(Unit) {
+                        lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+                            SharedBooks.shares.collect { if (it.isNotEmpty()) SharedBooks.takeAll().forEach(imports::arrived) }
                         }
                     }
                     // What other devices did is asked for when the app comes in sight, and every minute it stays there.
@@ -69,7 +85,7 @@ class MainActivity : ComponentActivity(), VolumeKeyHost {
                     }
                     LaunchedEffect(Unit) { SyncWork.followAccount(this@MainActivity) }
                     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-                        if (uri != null) scope.launch { bookPath = importBook(uri).path }
+                        if (uri != null) imports.take(listOf(uri))
                     }
                     val path = bookPath
                     when {
@@ -94,6 +110,16 @@ class MainActivity : ComponentActivity(), VolumeKeyHost {
                         )
                         else -> ReaderScreen(File(path), onClose = { bookPath = null })
                     }
+                    val imported by imports.results.collectAsStateWithLifecycle()
+                    ImportResults(
+                        imported,
+                        onRead = {
+                            imports.dismiss()
+                            bookPath = it
+                            ready = true
+                        },
+                        onDismiss = imports::dismiss,
+                    )
                 }
             }
         }
@@ -116,17 +142,10 @@ class MainActivity : ComponentActivity(), VolumeKeyHost {
         return super.onKeyUp(keyCode, event)
     }
 
-    /**
-     * The engine opens files by path, so a picked document is copied into the
-     * app's own storage, where it stays until the app is removed.
-     */
-    private suspend fun importBook(uri: Uri): File = withContext(Dispatchers.IO) {
-        val name = contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
-            if (cursor.moveToFirst()) cursor.getString(0) else null
-        } ?: "book"
-        val target = File(File(filesDir, "books").apply { mkdirs() }, File(name).name)
-        contentResolver.openInputStream(uri)!!.use { input -> target.outputStream().use { input.copyTo(it) } }
-        // Read for its cover, authors and series as a book of a folder is; one the engine cannot read is opened all the same.
-        unpacked(target).also { describeKeptFile(this@MainActivity, Library.get(this@MainActivity), Covers.get(this@MainActivity), it) }
+    companion object {
+        /** The file of the book the reader left, null when it is gone; the tests hold the looking up back. */
+        internal var lastBook: suspend (Context) -> String? = { context ->
+            Library.get(context).lastOpened()?.path?.takeIf { File(it).isFile }
+        }
     }
 }

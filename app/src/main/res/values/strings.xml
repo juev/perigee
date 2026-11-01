@@ -340,4 +340,19 @@
     <string name="styles_reset_text">Your CSS is removed and the book is set as the app ships it.</string>
     <string name="styles_reset_confirm">Restore</string>
     <string name="styles_previous">Put the last version back</string>
+    <plurals name="import_added">
+        <item quantity="one">%1$d book added</item>
+        <item quantity="other">%1$d books added</item>
+    </plurals>
+    <string name="share_adding">Adding books…</string>
+    <string name="import_some">%1$d of %2$d added</string>
+    <string name="import_none">Nothing was added</string>
+    <string name="import_read">Read</string>
+    <string name="import_close">Close</string>
+    <string name="import_unnamed">A file without a name</string>
+    <string name="import_failed_no_file">The file could not be opened</string>
+    <string name="import_failed_denied">The app it came from does not let Perigee read it</string>
+    <string name="import_failed_not_a_book">Not a book Perigee reads</string>
+    <string name="import_failed_unreadable">The book could not be read: the file may be damaged</string>
+    <string name="import_failed_not_copied">The file could not be copied into the app</string>
 </resources>
