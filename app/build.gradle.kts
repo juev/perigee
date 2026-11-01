@@ -31,8 +31,8 @@ android {
         applicationId = "org.evsyukov.perigee"
         minSdk = 30
         targetSdk = 36
-        versionCode = 10
-        versionName = "0.1.0-rc10"
+        versionCode = 11
+        versionName = "0.1.0-rc11"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         // The engine is built for these three; a library that also comes for
         // another one must not make the app look installable there.
