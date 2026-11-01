@@ -5,9 +5,6 @@ name: Sharing Back
 # that hides its bars (#138). Not part of CI: run by hand. What a round checks is
 # in .github/scripts/repeat_device_test.py.
 on:
-  # For #138 only: a new workflow cannot be dispatched before it is on main. Remove before merging.
-  push:
-    branches: [hermes/immersive-ci]
   workflow_dispatch:
     inputs:
       rounds:
@@ -31,8 +28,7 @@ env:
   ORG_GRADLE_PROJECT_perigeeAbis: x86_64
   TEST: org.evsyukov.perigee.library.SharedBooksTest#bookSharedWhileAnotherIsReadOpensOnTheSameScreenAndBackLeadsToTheSharingApp
   ROUNDS: ${{ inputs.rounds || '5' }}
-  # The push for #138 runs the test as it was before the fix first. Remove with the push above.
-  BASELINE: ${{ github.event_name == 'push' && '1d52973fea9afe2126a8c29613b9ca0b1cc17cf0' || inputs.baseline }}
+  BASELINE: ${{ inputs.baseline }}
 
 jobs:
   back:

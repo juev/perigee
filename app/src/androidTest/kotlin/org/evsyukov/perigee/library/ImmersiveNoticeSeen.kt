@@ -18,8 +18,9 @@ import org.junit.runners.model.Statement
  * emulator nobody has confirmed it. SystemUI watches the setting and takes the notice down when it
  * turns "confirmed". The setting is the device's, not the app's: the README says where this is read.
  *
- * What is put back is the value as the settings give it, none or a string. They keep the word "null"
- * as no setting at all (`SettingsState.internValue`), so a "null" is put back as none.
+ * What is put back is the effective value, as the settings read it: a string, or null. They turn the
+ * string "null" into a null value (`SettingsState.internValue`), and a null value is put back by
+ * removing the setting.
  */
 class ImmersiveNoticeSeen : TestRule {
     override fun apply(base: Statement, description: Description) = object : Statement() {
