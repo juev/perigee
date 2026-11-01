@@ -253,10 +253,10 @@ class BookOrbit(
     private suspend fun setUpDevice(): DeviceChannel {
         val account = accounts.current() ?: throw SignedOutException()
         if (!supports(account.serverVersion)) return DeviceChannel.Unsupported
-        val key = accounts.deviceKey()
+        val key = accounts.deviceKeyOf(account)
         if (key != null) {
             return when (val state = probe(account, account.deviceUser, key)) {
-                DeviceChannel.PasswordNeeded -> state.also { accounts.saveDevice(account.deviceUser, "") }
+                DeviceChannel.PasswordNeeded -> state.also { accounts.saveDevice(account.deviceUser, "", ofDevice = account.deviceId) }
                 else -> state
             }
         }
@@ -266,7 +266,7 @@ class BookOrbit(
         val named = existing.json()?.optString("username").orEmpty()
         if (named.isNotEmpty()) {
             // The password was the reader's to choose, and the server does not give it back.
-            accounts.saveDevice(named, "")
+            accounts.saveDevice(named, "", ofDevice = account.deviceId)
             return DeviceChannel.PasswordNeeded
         }
         val password = randomHex(16)
@@ -275,7 +275,7 @@ class BookOrbit(
             val created = jwt("POST", "/koreader/credentials", JSONObject().put("username", name).put("password", password))
             when {
                 created.ok -> {
-                    accounts.saveDevice(name, md5(password))
+                    accounts.saveDevice(name, md5(password), ofDevice = account.deviceId)
                     return DeviceChannel.Ready
                 }
                 created.code == 403 -> return DeviceChannel.NotAllowed
@@ -298,7 +298,7 @@ class BookOrbit(
         val key = md5(password)
         val state = probe(account, account.deviceUser, key)
         if (state == DeviceChannel.PasswordNeeded) throw WrongPasswordException()
-        accounts.saveDevice(account.deviceUser, key)
+        accounts.saveDevice(account.deviceUser, key, ofDevice = account.deviceId)
         state
     }
 
@@ -318,7 +318,7 @@ class BookOrbit(
         val reply = jwt("PATCH", "/koreader/credentials", JSONObject().put("password", password))
         if (!reply.ok) throw failure(reply)
         val key = md5(password)
-        accounts.saveDevice(account.deviceUser, key)
+        accounts.saveDevice(account.deviceUser, key, ofDevice = account.deviceId)
         probe(account, account.deviceUser, key)
     }
 
@@ -332,26 +332,38 @@ class BookOrbit(
         }
     }
 
-    override suspend fun books(query: String, page: Int): RemotePage = books(query, page, PAGE_SIZE, readableOnly = true)
+    override suspend fun books(query: String, page: Int): RemotePage = books(CatalogueQuery(text = query), page)
+
+    /**
+     * A page of the catalogue as [query] narrows and orders it, of the books the app reads only.
+     * @param page counted from zero
+     * @throws UnsupportedOnServerException when the server does not take a filter or the order of [query]
+     */
+    suspend fun books(query: CatalogueQuery, page: Int): RemotePage = books(query, page, PAGE_SIZE, readableOnly = true)
 
     /**
      * With [readableOnly], the server leaves out the books with no file the app reads, so that
      * a page and the total count only what can be downloaded.
      */
-    private suspend fun books(query: String, page: Int, size: Int, readableOnly: Boolean = false): RemotePage {
+    private suspend fun books(query: String, page: Int, size: Int, readableOnly: Boolean = false): RemotePage =
+        books(CatalogueQuery(text = query), page, size, readableOnly)
+
+    private suspend fun books(query: CatalogueQuery, page: Int, size: Int, readableOnly: Boolean): RemotePage {
         val body = JSONObject()
             .put("pagination", JSONObject().put("page", page).put("size", size))
-            .put("sort", JSONArray().put(JSONObject().put("field", "title").put("dir", "asc")))
-        if (query.isNotBlank()) body.put("q", query.trim().take(MAX_QUERY))
-        if (readableOnly) body.put("filter", JSONObject(READABLE_FILTER))
+            .put("sort", JSONArray().put(JSONObject().put("field", query.sort.field).put("dir", query.sort.dir)))
+        if (query.text.isNotBlank()) body.put("q", query.text.trim().take(MAX_QUERY))
+        filterOf(query, readableOnly)?.let { body.put("filter", it) }
         val reply = jwt("POST", "/books/query", body)
+        // A field or an order a version of the server does not know is refused as a request it cannot read.
+        if (reply.code == 400 && (query.filtered || query.sort != CatalogueSort.Title)) throw UnsupportedOnServerException("this filter or order")
         if (!reply.ok) throw failure(reply)
         val json = reply.json() ?: throw ServerResponseException(reply.code, "no list of books")
         val items = json.optJSONArray("items") ?: JSONArray()
         return RemotePage((0 until items.length()).mapNotNull { bookOf(items.optJSONObject(it)) }, json.optInt("total"), json.optInt("page", page))
     }
 
-    private fun bookOf(json: JSONObject?): RemoteBook? {
+    internal fun bookOf(json: JSONObject?): RemoteBook? {
         val id = json?.optLong("id") ?: return null
         val files = json.optJSONArray("files") ?: JSONArray()
         return RemoteBook(
@@ -366,11 +378,15 @@ class BookOrbit(
                 RemoteFile(id, file.optLong("id"), file.textOf("format").lowercase(), file.optLong("sizeBytes"))
             },
             hasCover = json.optBoolean("hasCover"),
+            status = json.optJSONObject("readStatus")?.textOf("status").orEmpty(),
         )
     }
 
-    override suspend fun detail(bookId: Long): RemoteBookDetail {
-        val reply = jwt("GET", "/books/$bookId")
+    override suspend fun detail(bookId: Long): RemoteBookDetail = detail(bookId, owner = null)
+
+    /** [detail], asked only while [owner] is signed in, as [session] asks. */
+    internal suspend fun detail(bookId: Long, owner: String?): RemoteBookDetail {
+        val reply = jwt("GET", "/books/$bookId", owner = owner)
         if (!reply.ok) throw failure(reply)
         val json = reply.json() ?: throw ServerResponseException(reply.code, "no book")
         return detailOf(bookId, json)
@@ -392,8 +408,24 @@ class BookOrbit(
             language = json.stringOrNull("language").orEmpty(),
             pageCount = json.intOrNull("pageCount"),
             isbn = json.stringOrNull("isbn13") ?: json.stringOrNull("isbn10").orEmpty(),
+            status = json.optJSONObject("readStatus")?.textOf("status")?.ifEmpty { null } ?: ReadStatuses.UNREAD,
+            rating = ratingOf(json),
+            note = json.stringOrNull("personalNote"),
+            genres = json.optJSONArray("genres")?.let { names -> (0 until names.length()).map { names.optString(it) } }.orEmpty()
+                .filter { it.isNotBlank() },
+            libraryName = json.stringOrNull("libraryName").orEmpty(),
+            files = buildList {
+                json.optJSONArray("files").each { file ->
+                    add(RemoteFile(bookId, file.optLong("id"), file.textOf("format").lowercase(), file.optLong("sizeBytes")))
+                }
+            },
+            hasCover = json.optBoolean("hasCover") || (json.has("coverSource") && !json.isNull("coverSource")),
         )
     }
+
+    /** The reader's stars as the server keeps them, whole; null for none. */
+    internal fun ratingOf(json: JSONObject): Int? =
+        if (json.isNull("rating")) null else json.optDouble("rating").roundToInt().takeIf { it in 1..5 }
 
     override suspend fun cover(book: RemoteBook): ByteArray? {
         if (!book.hasCover) return null
@@ -646,13 +678,14 @@ class BookOrbit(
 
     /** A request with the session's token, asked again with a renewed one when it is not taken. */
     private suspend fun withToken(request: (Pair<String, String>) -> Reply): Reply {
-        var token = access(stale = null)
+        val asked = signedInAs()
+        var token = access(stale = null, owner = asked)
         repeat(2) { attempt ->
             val reply = io { request(token) }
             if (reply.code != 401) return reply
-            if (attempt == 0) token = access(stale = token.second)
+            if (attempt == 0) token = access(stale = token.second, owner = asked)
         }
-        throw signedOut()
+        throw signedOut(asked)
     }
 
     /**
@@ -1042,7 +1075,7 @@ class BookOrbit(
                 val item = items.optJSONObject(i) ?: continue
                 val id = item.optLong("id")
                 if (id !in wanted) continue
-                val rating = if (item.isNull("rating")) null else item.optDouble("rating").roundToInt().takeIf { it in 1..5 }
+                val rating = ratingOf(item)
                 theirs[id] = (item.optJSONObject("readStatus")?.textOf("status") ?: "unread") to rating
             }
             seen += items.length()
@@ -1141,19 +1174,55 @@ class BookOrbit(
         return SyncReport(pagesSent = sent)
     }
 
+    /** What the reader does on the server beyond its list of books: shelves, collections, suggestions, their own marks of a book. */
+    val area: OrbitArea by lazy { OrbitArea(this, accounts, library) }
+
+    /** A request of [OrbitArea] through the reader's session. */
+    internal suspend fun session(method: String, path: String, body: JSONObject? = null, owner: String? = null): Reply =
+        jwt(method, path, body, owner)
+
+    /** A request of [OrbitArea] through the devices' channel, made only while [owner] is signed in. */
+    internal suspend fun channel(method: String, path: String, body: JSONObject? = null, owner: String? = null): Reply {
+        if (owner != null) still(owner)
+        return device(method, path, body)
+    }
+
+    /**
+     * Who is signed in, to tell one reader or server from the next; null for nobody. It is the name the app
+     * calls itself to the server ([Account.deviceId]), made anew at each sign-in, so that signing in again as
+     * the same reader is another one to the requests of the one before.
+     */
+    internal suspend fun signedInAs(): String? = accounts.current()?.deviceId
+
+    /** Goes on only while [owner] is the one signed in: nothing is asked or kept for one reader under another. */
+    internal suspend fun still(owner: String?) {
+        if (signedInAs() != owner) throw AccountChangedException()
+    }
+
+    internal fun sessionFailure(reply: Reply): IOException = failure(reply)
+
+    /** Done between rounds of syncing, never during one: what a round read of a book is not sent over what [block] changed. */
+    internal suspend fun <T> betweenRounds(block: suspend () -> T): T = syncing.withLock { block() }
+
     /** A request with the session's token, renewed first when it has run out or is not taken. */
-    private suspend fun jwt(method: String, path: String, body: JSONObject? = null): Reply {
-        var token = access(stale = null)
+    private suspend fun jwt(method: String, path: String, body: JSONObject? = null, owner: String? = null): Reply {
+        // The reader the request is made for, from start to end: with another signed in meanwhile it is not sent
+        // with their token or to their server, nor are their tokens renewed or dropped for the one before.
+        val asked = owner ?: signedInAs()
+        var token = access(stale = null, owner = asked)
         repeat(2) { attempt ->
+            // Waiting for the token may have outlasted the reader: looked at last thing before the request goes.
+            still(asked)
             val reply = io { Http(token.first).call(method, path, body, bearer(token.second)) }
             if (reply.code != 401) return reply
-            if (attempt == 0) token = access(stale = token.second)
+            if (attempt == 0) token = access(stale = token.second, owner = asked)
         }
-        throw signedOut()
+        throw signedOut(asked)
     }
 
     private suspend fun <T> fetch(path: String, read: (HttpURLConnection) -> T): T {
-        var token = access(stale = null)
+        val asked = signedInAs()
+        var token = access(stale = null, owner = asked)
         repeat(2) { attempt ->
             val result = io {
                 Http(token.first).open("GET", path, bearer(token.second)) { connection ->
@@ -1165,47 +1234,56 @@ class BookOrbit(
                 }
             }
             if (result != null) return result.getOrThrow()
-            if (attempt == 0) token = access(stale = token.second)
+            if (attempt == 0) token = access(stale = token.second, owner = asked)
         }
-        throw signedOut()
+        throw signedOut(asked)
     }
 
     /**
      * The server's address and a token to ask it with. The token is renewed
      * when it is about to run out, or is the one the server just refused.
      */
-    private suspend fun access(stale: String?): Pair<String, String> = renewing.withLock {
-        val account = accounts.current() ?: throw SignedOutException()
-        val tokens = accounts.tokens()?.takeIf { it.refresh.isNotEmpty() } ?: throw SignedOutException()
+    private suspend fun access(stale: String?, owner: String?): Pair<String, String> = renewing.withLock {
+        // Read once, under the lock, which may have been waited for: the address and tokens are of this account.
+        val account = accounts.current()
+        if (owner != null && account?.deviceId != owner) throw AccountChangedException()
+        if (account == null) throw SignedOutException()
+        val tokens = accounts.tokensOf(account)?.takeIf { it.refresh.isNotEmpty() } ?: throw SignedOutException()
         if (tokens.access != stale && tokens.accessExpiresAt - now() > EARLY_MS) return account.url to tokens.access
         val reply = io { Http(account.url).call("POST", "/auth/refresh", JSONObject().put("refreshToken", tokens.refresh)) }
         val renewed = when {
             reply.ok -> reply.json()?.let(::tokensOf) ?: throw ServerResponseException(reply.code, "no tokens")
-            reply.code == 401 || reply.code == 400 -> throw signedOut()
+            reply.code == 401 || reply.code == 400 -> throw signedOut(account.deviceId)
             else -> throw failure(reply)
         }
-        accounts.saveTokens(renewed)
+        // Signing in again does not wait for the renewal: the tokens go to the account they were renewed for, or nowhere.
+        if (!accounts.saveTokens(renewed, ofDevice = account.deviceId)) throw AccountChangedException()
         account.url to renewed.access
     }
 
-    /** The session is beyond renewing: its tokens are dropped, the account stays for the reader to sign in to again. */
-    private suspend fun signedOut(): SignedOutException {
-        accounts.saveTokens(Tokens("", 0, "", 0))
-        return SignedOutException()
+    /**
+     * The session of [owner] is beyond renewing: its tokens are dropped, the account stays for the reader to sign
+     * in to again. Another account signed in meanwhile keeps its own, and this is not its session ending.
+     */
+    private suspend fun signedOut(owner: String?): IOException {
+        if (owner == null) return SignedOutException()
+        return if (accounts.saveTokens(Tokens("", 0, "", 0), ofDevice = owner)) SignedOutException() else AccountChangedException()
     }
 
     /** A request through the devices' channel. */
     private suspend fun device(method: String, path: String, body: JSONObject? = null): Reply {
         val account = accounts.current() ?: throw SignedOutException()
         if (!supports(account.serverVersion)) throw IncompatibleServerException(account.serverVersion)
-        val key = accounts.deviceKey() ?: throw DeviceChannelException(DeviceChannel.PasswordNeeded)
+        // The key of the account read, not of one signed in since: a key never goes to another reader's server.
+        val key = accounts.deviceKeyOf(account) ?: throw DeviceChannelException(DeviceChannel.PasswordNeeded)
         val reply = io { Http(account.url).call(method, path, body, deviceHeaders(account.deviceUser, key)) }
         when {
             reply.ok -> return reply
             reply.code == 401 && "permission" in reply.message -> throw DeviceChannelException(DeviceChannel.NotAllowed)
             reply.code == 401 -> {
-                // The password was changed elsewhere; the reader has to give the new one.
-                accounts.saveDevice(account.deviceUser, "")
+                // The password was changed elsewhere; the reader has to give the new one. It is forgotten for the
+                // account it was of: one signed in while this was on its way keeps its own.
+                if (!accounts.saveDevice(account.deviceUser, "", ofDevice = account.deviceId)) throw AccountChangedException()
                 throw DeviceChannelException(DeviceChannel.PasswordNeeded)
             }
             reply.code == 403 -> throw DeviceChannelException(DeviceChannel.SwitchedOff)
@@ -1238,17 +1316,34 @@ class BookOrbit(
     companion object {
         /** What the app calls itself to the server. */
         const val DEVICE_MODEL = "Perigee"
-        private const val PAGE_SIZE = 50
-        private const val MAX_QUERY = 200
+        internal const val PAGE_SIZE = 50
+        internal const val MAX_QUERY = 200
 
         /**
          * The books with a file, any of theirs, in a format the engine reads. The server takes up to
          * twenty formats in one rule and leaves the ones it does not know unmatched.
          */
-        private val READABLE_FILTER: String = JSONObject()
-            .put("type", "group").put("join", "AND")
-            .put("rules", JSONArray().put(JSONObject().put("type", "rule").put("field", "format").put("operator", "includesAny").put("value", JSONArray(Library.FORMATS))))
-            .toString()
+        private fun readableRule(): JSONObject =
+            JSONObject().put("type", "rule").put("field", "format").put("operator", "includesAny").put("value", JSONArray(Library.FORMATS))
+
+        private fun rule(field: String, operator: String, value: Any): JSONObject =
+            JSONObject().put("type", "rule").put("field", field).put("operator", operator).put("value", value)
+
+        /**
+         * The server's filter for [query], all of its rules to hold; null when nothing narrows it. A
+         * series is matched by part of its name, an author by part of one of theirs, the rest whole.
+         */
+        internal fun filterOf(query: CatalogueQuery, readableOnly: Boolean): JSONObject? {
+            val rules = JSONArray()
+            if (readableOnly) rules.put(readableRule())
+            query.status.trim().ifEmpty { null }?.let { rules.put(rule("readStatus", "includesAny", JSONArray().put(it))) }
+            query.author.trim().ifEmpty { null }?.let { rules.put(rule("author", "includesAny", JSONArray().put(it))) }
+            query.series.trim().ifEmpty { null }?.let { rules.put(rule("series", "contains", it)) }
+            query.genre.trim().ifEmpty { null }?.let { rules.put(rule("genre", "includesAny", JSONArray().put(it))) }
+            query.library.trim().ifEmpty { null }?.let { rules.put(rule("library", "includesAny", JSONArray().put(it))) }
+            if (rules.length() == 0) return null
+            return JSONObject().put("type", "group").put("join", "AND").put("rules", rules)
+        }
         private const val MATCH_BATCH = 500
         private const val MAX_COVER = 4 * 1024 * 1024
 
@@ -1286,7 +1381,7 @@ class BookOrbit(
             return text.removePrefix("#").takeIf { it.length == 6 }?.toIntOrNull(16) ?: NAMED_COLORS.getValue("yellow")
         }
 
-        private inline fun JSONArray?.each(block: (JSONObject) -> Unit) {
+        internal inline fun JSONArray?.each(block: (JSONObject) -> Unit) {
             if (this == null) return
             for (i in 0 until length()) optJSONObject(i)?.let(block)
         }
@@ -1299,7 +1394,7 @@ class BookOrbit(
         private const val SAME_PLACE = 0.001f
 
         /** The server's statuses the app has a word for. */
-        private val STATUSES = mapOf(
+        internal val STATUSES = mapOf(
             "unread" to ReadingStatus.None, "want_to_read" to ReadingStatus.ToRead,
             "reading" to ReadingStatus.Reading, "read" to ReadingStatus.Read,
         )
@@ -1379,10 +1474,10 @@ class BookOrbit(
         private fun randomHex(bytes: Int): String =
             ByteArray(bytes).also(SecureRandom()::nextBytes).joinToString("") { "%02x".format(it) }
 
-        private fun JSONObject.textOf(name: String): String = if (isNull(name)) "" else optString(name)
+        internal fun JSONObject.textOf(name: String): String = if (isNull(name)) "" else optString(name)
 
         /** Null for a value that is absent, null or blank: Android's `optString` answers "" for a JSON null. */
-        private fun JSONObject.stringOrNull(name: String): String? = if (isNull(name)) null else optString(name).ifBlank { null }
+        internal fun JSONObject.stringOrNull(name: String): String? = if (isNull(name)) null else optString(name).ifBlank { null }
 
         /** Null for a number that is absent or null, rather than the nought `optInt` would give. */
         private fun JSONObject.intOrNull(name: String): Int? = if (has(name) && !isNull(name)) optInt(name) else null

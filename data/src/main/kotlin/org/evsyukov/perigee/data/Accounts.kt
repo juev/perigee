@@ -49,22 +49,51 @@ class Accounts internal constructor(private val database: ReadingDatabase, priva
         }
     }
 
-    suspend fun saveTokens(tokens: Tokens) {
-        val sealed = seal(tokens)
-        dao.updateTokens(sealed.first, tokens.accessExpiresAt, sealed.second, tokens.refreshExpiresAt)
+    /** The tokens of [account] as it was read, rather than of the account signed in when they are asked for. */
+    suspend fun tokensOf(account: Account): Tokens? = withContext(Dispatchers.Default) {
+        val access = Secrets.open(account.accessSecret) ?: return@withContext null
+        val refresh = Secrets.open(account.refreshSecret) ?: return@withContext null
+        Tokens(access, account.accessExpiresAt, refresh, account.refreshExpiresAt)
     }
 
-    /** Remembers the user name and key of the channel reading devices sync through. */
-    suspend fun saveDevice(user: String, key: String) {
+    /**
+     * Keeps [tokens]; with [ofDevice], only while the account signed in is still the one that calls itself so
+     * to the server (see [Account.deviceId], made anew at each sign-in), as for tokens renewed for a reader who
+     * was replaced meanwhile.
+     * @return whether they were kept
+     */
+    suspend fun saveTokens(tokens: Tokens, ofDevice: String? = null): Boolean {
+        val sealed = seal(tokens)
+        if (ofDevice == null) {
+            dao.updateTokens(sealed.first, tokens.accessExpiresAt, sealed.second, tokens.refreshExpiresAt)
+            return true
+        }
+        return dao.updateTokensOf(ofDevice, sealed.first, tokens.accessExpiresAt, sealed.second, tokens.refreshExpiresAt) > 0
+    }
+
+    /**
+     * Remembers the user name and key of the channel reading devices sync through; with [ofDevice], only for the
+     * account of that [Account.deviceId], as [saveTokens] does.
+     * @return whether they were remembered
+     */
+    suspend fun saveDevice(user: String, key: String, ofDevice: String? = null): Boolean {
         val secret = withContext(Dispatchers.Default) { Secrets.seal(key) }
-        dao.updateDevice(user, secret)
+        if (ofDevice == null) {
+            dao.updateDevice(user, secret)
+            return true
+        }
+        return dao.updateDeviceOf(ofDevice, user, secret) > 0
     }
 
     /** The key of the devices' channel; null when it is not set up, or cannot be read any more. */
     suspend fun deviceKey(): String? {
         val account = dao.account() ?: return null
-        return withContext(Dispatchers.Default) { Secrets.open(account.deviceSecret) }?.ifEmpty { null }
+        return deviceKeyOf(account)
     }
+
+    /** As [deviceKey], of [account] as it was read. */
+    suspend fun deviceKeyOf(account: Account): String? =
+        withContext(Dispatchers.Default) { Secrets.open(account.deviceSecret) }?.ifEmpty { null }
 
     suspend fun saveServerVersion(version: String) = dao.updateServerVersion(version)
 

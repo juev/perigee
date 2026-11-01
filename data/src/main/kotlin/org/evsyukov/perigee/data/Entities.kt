@@ -83,6 +83,12 @@ data class Book(
      * A file cut off on its way goes on from where the server got to, see [Library.uploadStarted].
      */
     @ColumnInfo(defaultValue = "NULL") val uploadSession: String? = null,
+    /**
+     * When the reader last changed [rating] itself, as [statusChangedAt] is for the status: what the server
+     * confirmed of the rating is taken only while this is as it was when the server was asked. Each change
+     * of the status, the rating and the review counts on from the one before, so two in one millisecond differ.
+     */
+    @ColumnInfo(defaultValue = "0") val ratingChangedAt: Long = 0,
 ) {
     /** The places the reader last jumped from, oldest first: Back returns to the last of them. */
     val jumpedFrom: List<String> get() = jumps.lines().filter { it.isNotEmpty() }
@@ -98,6 +104,9 @@ data class Book(
 
     /** Whether it is the status that the reader changed since the server last heard. */
     val statusUnsent: Boolean get() = statusChangedAt > statePushedAt
+
+    /** Whether it is the rating that the reader changed since the server last heard. */
+    val ratingUnsent: Boolean get() = ratingChangedAt > statePushedAt
 
     /** Whether the reader's review is still to be sent to the server. */
     val reviewUnsent: Boolean get() = reviewChangedAt > reviewPushedAt

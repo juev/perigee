@@ -126,6 +126,37 @@ class MigrationTest {
         }
     }
 
+    @Test
+    fun ratingsNotSentBeforeTheyHadATimeOfTheirOwnStillGo() = runBlocking {
+        helper.createDatabase(NAME, 14).use { db ->
+            // A status or a rating not sent yet, and one the server took.
+            db.execSQL(
+                "INSERT INTO books (id, path, title, author, xpointer, progress, openedAt, serverBookId, serverFileId, rating, " +
+                    "stateChangedAt, statePushedAt, statusChangedAt) VALUES ('waiting', '', 'Waiting', '', NULL, 0, 0, 7, 70, 4, 50, 10, 0)",
+            )
+            db.execSQL(
+                "INSERT INTO books (id, path, title, author, xpointer, progress, openedAt, serverBookId, serverFileId, rating, " +
+                    "stateChangedAt, statePushedAt, statusChangedAt) VALUES ('sent', '', 'Sent', '', NULL, 0, 0, 8, 80, 3, 50, 50, 40)",
+            )
+        }
+
+        val database = Room.databaseBuilder(instrumentation.targetContext, ReadingDatabase::class.java, NAME).build()
+        try {
+            val library = Library(database) { 1000 }
+            val waiting = checkNotNull(library.book("waiting"))
+            assertTrue("which of the two waited is not known, so the rating does", waiting.ratingUnsent)
+            assertEquals(50L, waiting.ratingChangedAt)
+            assertEquals(4, waiting.rating)
+            assertTrue(waiting.stateUnsent)
+            val sent = checkNotNull(library.book("sent"))
+            assertFalse(sent.ratingUnsent)
+            assertFalse(sent.stateUnsent)
+            assertEquals(3, sent.rating)
+        } finally {
+            database.close()
+        }
+    }
+
     private companion object {
         const val NAME = "migration-test.db"
     }

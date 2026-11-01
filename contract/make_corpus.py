@@ -11,6 +11,9 @@ position converter may disagree:
   fb2             a format the server stores positions for but cannot convert
   pdf             a format the app does not read, left out of the server's list
 
+Two of the EPUBs are a series and two share a genre, for the catalogue's
+filters and the books the server lists beside another.
+
 Usage: make_corpus.py <output-dir>
 """
 
@@ -31,6 +34,11 @@ DESCRIPTION = (
     "<p>A book made for the contract tests, with <em>inline</em> markup.</p>"
     "<p>Its second paragraph says <b>nothing</b> more.</p>"
 )
+
+
+# A series of two books and a genre of two, for the catalogue's filters and the books of a series.
+SERIES = "Contract Series"
+GENRE = "Contract Genre"
 
 
 def paragraph(chapter: int, n: int) -> str:
@@ -60,7 +68,10 @@ def chapter_xhtml(chapter: int, css: bool) -> str:
 """
 
 
-def write_epub(path: Path, title: str, *, svg_first: bool = False, media_css: bool = False, description: str = "") -> None:
+def write_epub(
+    path: Path, title: str, *, svg_first: bool = False, media_css: bool = False, description: str = "",
+    series: tuple[str, int] | None = None, genre: str = "",
+) -> None:
     items, spine, files = [], [], {}
     if svg_first:
         files["cover.svg"] = (
@@ -84,6 +95,11 @@ def write_epub(path: Path, title: str, *, svg_first: bool = False, media_css: bo
         items.append(f'<item id="c{c}" href="c{c}.xhtml" media-type="application/xhtml+xml"/>')
         spine.append(f'<itemref idref="c{c}"/>')
     about = f"\n    <dc:description>{html.escape(description, quote=False)}</dc:description>" if description else ""
+    # Calibre's way of naming a series, which the server reads into a book's series and number.
+    if series:
+        about += f'\n    <meta name="calibre:series" content="{series[0]}"/>\n    <meta name="calibre:series_index" content="{series[1]}"/>'
+    if genre:
+        about += f"\n    <dc:subject>{genre}</dc:subject>"
 
     opf = f"""<?xml version="1.0" encoding="UTF-8"?>
 <package xmlns="http://www.idpf.org/2007/opf" version="2.0" unique-identifier="id">
@@ -176,9 +192,9 @@ def main() -> None:
     if len(sys.argv) != 2:
         sys.exit(__doc__)
     out = Path(sys.argv[1])
-    write_epub(out / "plain" / "plain.epub", "Contract Plain", description=DESCRIPTION)
-    write_epub(out / "spine-nonxhtml" / "spine-nonxhtml.epub", "Contract Spine NonXhtml", svg_first=True)
-    write_epub(out / "media-css" / "media-css.epub", "Contract Media Css", media_css=True)
+    write_epub(out / "plain" / "plain.epub", "Contract Plain", description=DESCRIPTION, genre=GENRE)
+    write_epub(out / "spine-nonxhtml" / "spine-nonxhtml.epub", "Contract Spine NonXhtml", svg_first=True, series=(SERIES, 2))
+    write_epub(out / "media-css" / "media-css.epub", "Contract Media Css", media_css=True, series=(SERIES, 1), genre=GENRE)
     write_fb2(out / "fb2" / "contract.fb2", "Contract Fb2")
     write_pdf(out / "pdf" / "contract.pdf", "Contract Pdf")
     print(f"corpus written to {out}")

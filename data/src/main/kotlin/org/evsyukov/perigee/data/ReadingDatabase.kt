@@ -77,10 +77,18 @@ internal interface ReadingDao {
     @Query("UPDATE books SET favorite = :favorite WHERE id = :id")
     suspend fun setFavorite(id: String, favorite: Boolean)
 
-    @Query("UPDATE books SET status = :status, stateChangedAt = :at, statusChangedAt = :at WHERE id = :id")
+    // A change counts on from the one before, even in the same millisecond: what the server confirmed is taken
+    // only while a field's time is as it was when the server was asked, so no two changes may share one.
+    @Query(
+        "UPDATE books SET status = :status, stateChangedAt = MAX(:at, stateChangedAt + 1), " +
+            "statusChangedAt = MAX(:at, stateChangedAt + 1) WHERE id = :id",
+    )
     suspend fun setStatus(id: String, status: ReadingStatus, at: Long)
 
-    @Query("UPDATE books SET rating = :rating, stateChangedAt = :at WHERE id = :id")
+    @Query(
+        "UPDATE books SET rating = :rating, stateChangedAt = MAX(:at, stateChangedAt + 1), " +
+            "ratingChangedAt = MAX(:at, stateChangedAt + 1) WHERE id = :id",
+    )
     suspend fun setRating(id: String, rating: Int?, at: Long)
 
     /** What the server says, unless the reader has said otherwise since and the server has not heard. */
@@ -90,7 +98,7 @@ internal interface ReadingDao {
     @Query("UPDATE books SET statePushedAt = :changedAt WHERE id = :id")
     suspend fun statePushed(id: String, changedAt: Long)
 
-    @Query("UPDATE books SET review = :review, reviewChangedAt = :at WHERE id = :id")
+    @Query("UPDATE books SET review = :review, reviewChangedAt = MAX(:at, reviewChangedAt + 1) WHERE id = :id")
     suspend fun setReview(id: String, review: String?, at: Long)
 
     @Query("UPDATE books SET reviewPushedAt = :changedAt WHERE id = :id")
@@ -99,6 +107,51 @@ internal interface ReadingDao {
     /** The server's review, unless the reader changed theirs since the server last took it. */
     @Query("UPDATE books SET review = :review WHERE id = :id AND reviewChangedAt <= reviewPushedAt")
     suspend fun takeReview(id: String, review: String?)
+
+    /**
+     * A status the server confirmed it set at the reader's asking on its own pages, taken only while the
+     * reader has not changed the status here since [seenStatusAt], when the change was asked for: [status]
+     * when the app has a word for it, the reader's own otherwise. A status changed here before that and not
+     * sent yet is not sent over it any more; a rating not sent yet still is. Answers how many rows took it.
+     */
+    @Query(
+        "UPDATE books SET status = :status, " +
+            "statusChangedAt = CASE WHEN statusChangedAt > statePushedAt THEN 0 ELSE statusChangedAt END " +
+            "WHERE id = :id AND statusChangedAt = :seenStatusAt",
+    )
+    suspend fun statusFromServer(id: String, status: ReadingStatus, seenStatusAt: Long): Int
+
+    /** As [statusFromServer], for a status the app has no word for: the reader's own stays, and is not sent over it. */
+    @Query(
+        "UPDATE books SET statusChangedAt = CASE WHEN statusChangedAt > statePushedAt THEN 0 ELSE statusChangedAt END " +
+            "WHERE id = :id AND statusChangedAt = :seenStatusAt",
+    )
+    suspend fun otherStatusFromServer(id: String, seenStatusAt: Long): Int
+
+    /**
+     * A rating the server confirmed, taken only while the reader has not changed the rating here since
+     * [seenRatingAt], when the change was asked for. A rating changed here before that is no longer to be sent;
+     * a status changed here and not sent yet still is, and keeps the state from being taken for sent.
+     */
+    @Query(
+        "UPDATE books SET rating = :rating, " +
+            "statePushedAt = CASE WHEN statusChangedAt > statePushedAt THEN statePushedAt ELSE MAX(statePushedAt, ratingChangedAt) END " +
+            "WHERE id = :id AND ratingChangedAt = :seenRatingAt",
+    )
+    suspend fun ratingFromServer(id: String, rating: Int?, seenRatingAt: Long): Int
+
+    /**
+     * A review the server confirmed, taken only while the reader has not changed theirs here since [seenReviewAt]:
+     * one written here before that is not sent over it any more, one written since still is.
+     */
+    @Query(
+        "UPDATE books SET review = :review, reviewPushedAt = MAX(reviewPushedAt, :seenReviewAt) " +
+            "WHERE id = :id AND reviewChangedAt = :seenReviewAt",
+    )
+    suspend fun reviewFromServer(id: String, review: String?, seenReviewAt: Long): Int
+
+    @Query("SELECT * FROM books WHERE serverBookId = :serverBookId AND serverFileId IS NOT NULL")
+    suspend fun copiesOf(serverBookId: Long): List<Book>
 
     @Query("UPDATE books SET pushedAt = :movedAt WHERE id = :id")
     suspend fun placePushed(id: String, movedAt: Long)
@@ -220,8 +273,19 @@ internal interface ReadingDao {
     )
     suspend fun updateTokens(access: String, accessExpiresAt: Long, refresh: String, refreshExpiresAt: Long)
 
+    /** As [updateTokens], only while the account signed in is still the one of [deviceId]; answers how many rows took it. */
+    @Query(
+        "UPDATE accounts SET accessSecret = :access, accessExpiresAt = :accessExpiresAt, " +
+            "refreshSecret = :refresh, refreshExpiresAt = :refreshExpiresAt WHERE id = ${Account.SINGLE} AND deviceId = :deviceId",
+    )
+    suspend fun updateTokensOf(deviceId: String, access: String, accessExpiresAt: Long, refresh: String, refreshExpiresAt: Long): Int
+
     @Query("UPDATE accounts SET deviceUser = :user, deviceSecret = :secret WHERE id = ${Account.SINGLE}")
     suspend fun updateDevice(user: String, secret: String)
+
+    /** As [updateDevice], only while the account signed in is still the one of [deviceId]. */
+    @Query("UPDATE accounts SET deviceUser = :user, deviceSecret = :secret WHERE id = ${Account.SINGLE} AND deviceId = :deviceId")
+    suspend fun updateDeviceOf(deviceId: String, user: String, secret: String): Int
 
     @Query("UPDATE accounts SET serverVersion = :version WHERE id = ${Account.SINGLE}")
     suspend fun updateServerVersion(version: String)
@@ -401,18 +465,30 @@ internal class EpubsReadAgain : AutoMigrationSpec {
     }
 }
 
+/**
+ * The rating got a time of its own. Before, a status or rating not sent yet was one change; which of the two it
+ * was is not known, so a book with either waiting is taken to have its rating waiting too, and the rating goes
+ * to the server as it did before: nothing the reader did is taken for sent.
+ */
+internal class RatingsTimedApart : AutoMigrationSpec {
+    override fun onPostMigrate(db: SupportSQLiteDatabase) {
+        db.execSQL("UPDATE books SET ratingChangedAt = stateChangedAt WHERE stateChangedAt > statePushedAt")
+    }
+}
+
 @Database(
     entities = [
         Book::class, Bookmark::class, Quote::class, Folder::class, BookCollection::class, CollectionBook::class,
         Catalog::class, Account::class, RemotePosition::class, PageRead::class,
     ],
-    version = 14,
+    version = 15,
     autoMigrations = [
         AutoMigration(from = 1, to = 2), AutoMigration(from = 2, to = 3), AutoMigration(from = 3, to = 4),
         AutoMigration(from = 4, to = 5), AutoMigration(from = 5, to = 6), AutoMigration(from = 6, to = 7),
         AutoMigration(from = 7, to = 8), AutoMigration(from = 8, to = 9, spec = EpubsReadAgain::class),
         AutoMigration(from = 9, to = 10), AutoMigration(from = 10, to = 11), AutoMigration(from = 11, to = 12),
         AutoMigration(from = 12, to = 13), AutoMigration(from = 13, to = 14),
+        AutoMigration(from = 14, to = 15, spec = RatingsTimedApart::class),
     ],
 )
 internal abstract class ReadingDatabase : RoomDatabase() {

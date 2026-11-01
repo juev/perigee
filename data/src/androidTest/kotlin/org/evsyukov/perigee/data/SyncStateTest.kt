@@ -193,6 +193,148 @@ class SyncStateTest {
         assertEquals(listOf(4), library.pageReadsToSend(10).map { it.page })
     }
 
+    /** A book of the library the server has as its book 7, with nothing waiting to be sent. */
+    private fun synced(name: String): String = runBlocking {
+        val id = opened(name).id
+        library.onServer(id, 7, 70)
+        library.stateSent(id, book(id).stateChangedAt)
+        id
+    }
+
+    @Test
+    fun changesConfirmedByTheServerAreNotUndoneByOlderOnesFromHere() = runBlocking<Unit> {
+        val id = synced("confirmed.fb2")
+
+        // Set here and not sent yet; then set again on the server's page, which the server confirmed.
+        library.setStatus(id, ReadingStatus.Read)
+        assertTrue(library.statusFromServer(book(id), ReadingStatus.ToRead))
+        assertEquals(ReadingStatus.ToRead, book(id).status)
+        assertFalse("the older status from here is not sent over the confirmed one", book(id).statusUnsent)
+
+        // A status the app has no word for, as "on hold", leaves the reader's own here and is not sent over either.
+        library.setStatus(id, ReadingStatus.Reading)
+        assertTrue(library.statusFromServer(book(id), null))
+        assertEquals(ReadingStatus.Reading, book(id).status)
+        assertFalse(book(id).statusUnsent)
+
+        // A rating confirmed by the server leaves nothing to send, unless a status changed here waits.
+        library.setRating(id, 2)
+        assertTrue(library.ratingFromServer(book(id), 4))
+        assertEquals(4, book(id).rating)
+        assertFalse(book(id).stateUnsent)
+        library.setStatus(id, ReadingStatus.Read)
+        assertTrue(library.ratingFromServer(book(id), 5))
+        assertEquals(5, book(id).rating)
+        assertTrue("the status changed here still goes", book(id).statusUnsent)
+
+        // And a status confirmed leaves a rating changed here to go.
+        library.stateSent(id, book(id).stateChangedAt)
+        library.setRating(id, 1)
+        assertTrue(library.statusFromServer(book(id), ReadingStatus.ToRead))
+        assertTrue("the rating changed here still goes", book(id).stateUnsent)
+        assertEquals(1, book(id).rating)
+
+        library.setReview(id, "Written here.")
+        assertTrue(book(id).reviewUnsent)
+        assertTrue(library.reviewFromServer(book(id), "  Written on the server's page.  "))
+        assertEquals("Written on the server's page.", book(id).review)
+        assertFalse("the review from here is not sent over it", book(id).reviewUnsent)
+        assertTrue(library.reviewFromServer(book(id), null))
+        assertNull(book(id).review)
+
+        assertEquals(listOf(id), library.copiesOf(7).map { it.id })
+        assertTrue("a book the server has not is no copy of any of its books", library.copiesOf(8).isEmpty())
+    }
+
+    @Test
+    fun statusChangedHereWhileTheServerWasAskedStaysAndGoes() = runBlocking<Unit> {
+        val id = synced("status-meanwhile.fb2")
+        library.setRating(id, 3)
+        val seen = book(id)
+        // The reader changes the status here while the server is setting another one.
+        library.setStatus(id, ReadingStatus.Read)
+
+        assertFalse("the later status is the reader's", library.statusFromServer(seen, ReadingStatus.ToRead))
+        assertEquals(ReadingStatus.Read, book(id).status)
+        assertTrue("and still goes to the server", book(id).statusUnsent)
+        assertEquals("the stars changed here are untouched", 3, book(id).rating)
+        assertTrue(book(id).stateUnsent)
+
+        assertFalse(library.statusFromServer(seen, null))
+        assertTrue(book(id).statusUnsent)
+    }
+
+    @Test
+    fun ratingChangedHereWhileTheServerWasAskedStaysAndGoes() = runBlocking<Unit> {
+        val id = synced("rating-meanwhile.fb2")
+        val seen = book(id)
+        library.setRating(id, 2)
+
+        assertFalse(library.ratingFromServer(seen, 5))
+        assertEquals("the later stars are the reader's", 2, book(id).rating)
+        assertTrue("and still go to the server", book(id).stateUnsent)
+
+        // Only the status changed here meanwhile: the confirmed stars are taken, and the status still goes.
+        val again = synced("rating-and-status.fb2")
+        val before = book(again)
+        library.setStatus(again, ReadingStatus.Read)
+        assertTrue(library.ratingFromServer(before, 5))
+        assertEquals(5, book(again).rating)
+        assertTrue(book(again).statusUnsent)
+        assertEquals(ReadingStatus.Read, book(again).status)
+    }
+
+    @Test
+    fun reviewWrittenHereWhileTheServerWasAskedStaysAndGoes() = runBlocking<Unit> {
+        val id = synced("review-meanwhile.fb2")
+        library.setReview(id, "Older, from here.")
+        library.reviewSent(id, book(id).reviewChangedAt)
+        val seen = book(id)
+        library.setReview(id, "Later, from here.")
+
+        assertFalse(library.reviewFromServer(seen, "From the server's page."))
+        assertEquals("Later, from here.", book(id).review)
+        assertTrue("it is not taken for sent", book(id).reviewUnsent)
+    }
+
+    @Test
+    fun starsChangedHereAndBackWhileTheServerWasAskedAreStillTheReaders() = runBlocking<Unit> {
+        val id = synced("stars-back.fb2")
+        library.setRating(id, 2)
+        library.stateSent(id, book(id).stateChangedAt)
+        val seen = book(id)
+        // Changed and changed back here meanwhile, and the status too: the same stars, given later.
+        library.setRating(id, 4)
+        library.setRating(id, 2)
+        library.setStatus(id, ReadingStatus.Read)
+
+        assertFalse(library.ratingFromServer(seen, 5))
+        assertEquals(2, book(id).rating)
+        assertTrue("the reader's stars still go", book(id).ratingUnsent)
+        assertTrue(book(id).statusUnsent)
+    }
+
+    @Test
+    fun twoChangesInOneMillisecondAreTwo() = runBlocking<Unit> {
+        val still = Library.inMemory(context) { 5_000 }
+        val file = File(context.cacheDir, "one-millisecond.fb2").apply { writeText("the text of one millisecond") }
+        val id = still.open(file, "one-millisecond.fb2", "").id
+        still.setRating(id, 3)
+        val first = checkNotNull(still.book(id))
+        still.setRating(id, 3)
+        val second = checkNotNull(still.book(id))
+        assertTrue("${second.ratingChangedAt} after ${first.ratingChangedAt}", second.ratingChangedAt > first.ratingChangedAt)
+        assertTrue(second.stateChangedAt >= second.ratingChangedAt)
+        still.setStatus(id, ReadingStatus.Read)
+        val third = checkNotNull(still.book(id))
+        assertTrue(third.statusChangedAt > second.stateChangedAt)
+        assertEquals("the state's time is its last change's", third.statusChangedAt, third.stateChangedAt)
+        still.setReview(id, "One.")
+        val reviewed = checkNotNull(still.book(id)).reviewChangedAt
+        still.setReview(id, "Two.")
+        assertTrue(checkNotNull(still.book(id)).reviewChangedAt > reviewed)
+    }
+
     @Test
     fun anotherServerIsToldEverythingAnew() = runBlocking<Unit> {
         val tokens = Tokens("a", 1, "r", 2)

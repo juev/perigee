@@ -12,6 +12,13 @@ data class RemoteBook(
     val seriesNumber: String,
     val files: List<RemoteFile>,
     val hasCover: Boolean,
+    /**
+     * Whether [files] are the book's: a book the server suggests beside another comes without them, and they
+     * are learnt from the book's page when it is opened.
+     */
+    val filesKnown: Boolean = true,
+    /** The reader's status of the book in the server's own word, as "on_hold"; empty when the server did not say. */
+    val status: String = "",
 )
 
 /** A book as a server tells of it when asked about one. */
@@ -33,6 +40,18 @@ data class RemoteBookDetail(
     val pageCount: Int?,
     /** The ISBN-13 when the server has one, the ISBN-10 otherwise; empty when it has neither. */
     val isbn: String,
+    /** The reader's status in the server's own word, "unread" when they set none; see [ReadStatuses]. */
+    val status: String = ReadStatuses.UNREAD,
+    /** The reader's stars, one to five; null for none. */
+    val rating: Int? = null,
+    /** What the reader wrote of the book; null for nothing. */
+    val note: String? = null,
+    val genres: List<String> = emptyList(),
+    /** The library of the server the book is in; empty when the server does not say. */
+    val libraryName: String = "",
+    /** The book's files, as its line in a list has them: a book suggested beside another is downloaded by these. */
+    val files: List<RemoteFile> = emptyList(),
+    val hasCover: Boolean = false,
 )
 
 /** One file of a book on a server. */
@@ -206,6 +225,24 @@ class IncompatibleServerException(val version: String) : IOException("the server
 
 /** The channel reading devices sync through is not set up, or its key is not taken any more. */
 class DeviceChannelException(val state: DeviceChannel) : IOException("the devices' channel is not ready: $state")
+
+/** The server has no such route: a version of it that does not offer what was asked for. */
+class UnsupportedOnServerException(what: String) : IOException("the server does not offer $what")
+
+/** What was asked about is not on the server, or not any more; [message] is the server's own word on it. */
+class NotOnServerException(message: String) : IOException(message)
+
+/** The server keeps something under that name already, as a collection of the reader's. */
+class NameTakenException(message: String) : IOException(message)
+
+/** The server answered, and did not take the change: as for a rating it keeps locked. */
+class NotSavedException(message: String) : IOException(message)
+
+/** Another reader or server was signed in to while something was being asked for the one before: it is let go of. */
+class AccountChangedException : IOException("another reader or server is signed in now")
+
+/** A collection was made, and the book to go into it was not put there; [collection] is the one made. */
+class NotAddedException(val collection: RemoteCollection, cause: IOException) : IOException(cause.message, cause)
 
 /** The server answered with something other than what was asked for. */
 class ServerResponseException(val code: Int, message: String) : IOException("HTTP $code: $message")

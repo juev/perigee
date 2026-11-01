@@ -58,6 +58,13 @@ jobs:
             app/build/outputs/apk/fdroid/release/*.apk
             app/build/outputs/bundle/playRelease/*.aab
           if-no-files-found: error
+      - name: Export Room schemas for review
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: room-schemas
+          path: data/schemas
+          if-no-files-found: error
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: failure()
         with:

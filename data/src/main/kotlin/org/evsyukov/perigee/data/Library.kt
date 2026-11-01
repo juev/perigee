@@ -273,6 +273,31 @@ class Library internal constructor(internal val database: ReadingDatabase, priva
     /** The review as the server has it, unless the reader changed theirs since the server last took it. */
     suspend fun takeReview(bookId: String, review: String?) = dao.takeReview(bookId, review?.let(::reviewOf))
 
+    /** The books of the library whose files are of the server's book [serverBookId]: one per format downloaded. */
+    suspend fun copiesOf(serverBookId: Long): List<Book> = dao.copiesOf(serverBookId)
+
+    /**
+     * The reader set a book's status on the server's own pages in the app, and the server confirmed it.
+     * [seen] is the book as it was when the change was asked for: a status the reader changed here since is
+     * theirs, later, and stays to be sent. Otherwise [status] is taken when the app has a word for it, the
+     * reader's own stays when it has not, and a status changed here before and not sent yet is not sent over
+     * the confirmed one; a rating changed here still is.
+     * @return whether the book took it
+     */
+    suspend fun statusFromServer(seen: Book, status: ReadingStatus?): Boolean =
+        (if (status == null) dao.otherStatusFromServer(seen.id, seen.statusChangedAt) else dao.statusFromServer(seen.id, status, seen.statusChangedAt)) > 0
+
+    /**
+     * As [statusFromServer], for a rating the server confirmed, null for none: taken while the reader has not
+     * changed the rating here since [seen], whatever they did to the status meanwhile, which still goes.
+     */
+    suspend fun ratingFromServer(seen: Book, rating: Int?): Boolean =
+        dao.ratingFromServer(seen.id, rating?.coerceIn(1, 5), seen.ratingChangedAt) > 0
+
+    /** As [statusFromServer], for a review the server confirmed, null for none: taken while the review here is the one [seen] had. */
+    suspend fun reviewFromServer(seen: Book, review: String?): Boolean =
+        dao.reviewFromServer(seen.id, review?.let(::reviewOf), seen.reviewChangedAt) > 0
+
     /** The reader got further in a book somewhere else; they are to be asked whether to go there. */
     suspend fun offer(position: RemotePosition) = database.withTransaction {
         dao.insert(position)

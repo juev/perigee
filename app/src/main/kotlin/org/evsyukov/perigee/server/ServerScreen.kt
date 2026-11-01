@@ -20,9 +20,10 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -40,15 +41,16 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
@@ -93,16 +95,17 @@ import org.evsyukov.perigee.isPlainHttp
 import org.evsyukov.perigee.library.folderName
 import org.evsyukov.perigee.sync.BookOrbit
 import org.evsyukov.perigee.sync.DeviceChannel
+import org.evsyukov.perigee.sync.ReadStatuses
 import org.evsyukov.perigee.sync.RemoteBook
 import org.evsyukov.perigee.sync.RemoteFile
 import org.evsyukov.perigee.sync.SignInProvider
-import org.evsyukov.perigee.ui.Centred
-import org.evsyukov.perigee.ui.EmptyState
+import org.evsyukov.perigee.ui.READABLE_WIDTH
 import org.evsyukov.perigee.ui.ShelfIcon
 
 /**
- * The bookOrbit server the reader keeps books on. [onOpen] is given the file
- * of a book of the server the reader chose to read; [onClose] leaves for the library.
+ * The bookOrbit server the reader keeps books on: once signed in, its home page's shelves, its catalogue and
+ * the reader's collections, each a part of its own under the top bar. [onOpen] is given the file of a book of
+ * the server the reader chose to read; [onClose] leaves for the library.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -111,55 +114,105 @@ fun ServerScreen(onOpen: (File) -> Unit, onClose: () -> Unit, model: ServerViewM
     var searching by rememberSaveable { mutableStateOf(false) }
     val account = state.account
     val signedIn = account != null && !state.sessionOver
+    val inCollection = state.section == Section.Collections && state.collection != null
 
-    val back = {
+    // Each part keeps its place while another is shown, and while a book's page lies over it.
+    val homeList = rememberLazyListState()
+    val catalogueList = rememberLazyListState()
+    val collectionsList = rememberLazyListState()
+    val collectionBooksList = rememberSaveable(state.collection?.collection?.id, saver = LazyListState.Saver) { LazyListState(0, 0) }
+
+    /** One step back, as the arrow of the top bar goes: the way to the library is always this one. */
+    fun stepBack(): Boolean {
+        val collection = state.collection
         when {
             state.opened != null -> model.closeBook()
             searching -> searching = false
-            state.query.isNotEmpty() -> model.search("")
+            inCollection && collection != null && collection.query.isNotEmpty() -> model.searchCollection("")
+            inCollection -> model.closeCollection()
+            state.section == Section.Catalogue && state.query.isNotEmpty() -> model.search("")
+            else -> return false
+        }
+        return true
+    }
+    val back = { if (!stepBack()) onClose() }
+    // The system's Back returns to the home page first, the part the screen opens with.
+    BackHandler {
+        when {
+            stepBack() -> Unit
+            signedIn && state.section != Section.Home -> model.show(Section.Home)
             else -> onClose()
         }
     }
-    BackHandler(onBack = back)
 
     Scaffold(
         topBar = {
             Column {
                 if (searching) {
                     SearchBar(
+                        hint = stringResource(if (inCollection) R.string.server_collection_search_hint else R.string.server_search_hint),
                         onSearch = {
                             searching = false
-                            model.search(it)
+                            if (inCollection) {
+                                model.searchCollection(it)
+                            } else {
+                                model.show(Section.Catalogue)
+                                model.search(it)
+                            }
                         },
                         onClose = { searching = false },
+                    )
+                    // Where the phrase is looked for: the whole catalogue, or the open collection alone.
+                    Text(
+                        if (inCollection) {
+                            stringResource(R.string.server_scope_collection, state.collection?.collection?.name.orEmpty())
+                        } else {
+                            stringResource(R.string.server_scope_catalogue)
+                        },
+                        Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surface).padding(horizontal = 16.dp, vertical = 6.dp)
+                            .testTag("server-search-scope"),
+                        style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 } else {
                     TopAppBar(
                         title = {
-                            Text(
-                                state.query.ifEmpty { stringResource(R.string.server_title) },
-                                maxLines = 1, overflow = TextOverflow.Ellipsis,
-                            )
+                            val collection = state.collection
+                            val title = when {
+                                inCollection && collection != null -> collection.query.ifEmpty { collection.collection.name }
+                                state.section == Section.Catalogue && state.query.isNotEmpty() -> state.query
+                                else -> stringResource(R.string.server_title)
+                            }
+                            Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         },
                         navigationIcon = {
                             IconButton(onClick = back) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.action_back)) }
                         },
                         actions = {
-                            if (signedIn) {
+                            if (signedIn && (state.section != Section.Collections || inCollection)) {
                                 IconButton(onClick = { searching = true }) { Icon(Icons.Filled.Search, stringResource(R.string.action_search)) }
                             }
                             if (account != null) AccountMenu(account, model::signOut)
                         },
                     )
                 }
-                if (state.loading) LinearProgressIndicator(Modifier.fillMaxWidth().testTag("server-loading"))
+                if (signedIn) Sections(state.section, model::show)
+                val busy = when (state.section) {
+                    Section.Catalogue -> state.loading
+                    Section.Collections -> state.collection?.loading ?: state.collections.loading
+                    Section.Home -> state.loading && state.channel == null
+                }
+                if (signedIn && busy) LinearProgressIndicator(Modifier.fillMaxWidth().testTag("server-loading"))
             }
         },
     ) { padding ->
         when {
             !state.loaded -> Unit
             !signedIn -> SignIn(padding, state, model::signIn, model::signInThroughProvider, model::chooseProvider, model::dismissProviders)
-            else -> Books(padding, state, model, onOpen)
+            else -> when (state.section) {
+                Section.Home -> Home(padding, state, model, homeList)
+                Section.Catalogue -> Catalogue(padding, state, model, onOpen, catalogueList)
+                Section.Collections -> Collections(padding, state, model, onOpen, collectionsList, collectionBooksList)
+            }
         }
     }
 
@@ -185,7 +238,7 @@ fun ServerScreen(onOpen: (File) -> Unit, onClose: () -> Unit, model: ServerViewM
             model.downloadInto(uri.toString(), folderName(context, uri))
         }
     }
-    // The book's page lies over the list, which keeps its place and what it was looked up by underneath.
+    // The book's page lies over the part it was opened from, which keeps its place and what it was looked up by underneath.
     if (signedIn) state.opened?.let { book -> ServerBookPage(book, state, model, onOpen) }
     if (state.asking != null) {
         AlertDialog(
@@ -200,6 +253,29 @@ fun ServerScreen(onOpen: (File) -> Unit, onClose: () -> Unit, model: ServerViewM
             },
         )
     }
+}
+
+/** The tabs of the parts of the screen; on a wide screen they keep to the width the lists below keep to. */
+@Composable
+private fun Sections(section: Section, onShow: (Section) -> Unit) {
+    Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
+        PrimaryTabRow(selectedTabIndex = section.ordinal, modifier = Modifier.widthIn(max = READABLE_WIDTH).testTag("server-sections")) {
+            for (each in Section.entries) {
+                Tab(
+                    selected = each == section,
+                    onClick = { onShow(each) },
+                    text = { Text(stringResource(sectionName(each)), maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                    modifier = Modifier.testTag("server-section-${each.name.lowercase()}"),
+                )
+            }
+        }
+    }
+}
+
+internal fun sectionName(section: Section): Int = when (section) {
+    Section.Home -> R.string.server_section_home
+    Section.Catalogue -> R.string.server_section_catalogue
+    Section.Collections -> R.string.server_section_collections
 }
 
 @Composable
@@ -217,8 +293,26 @@ internal fun failureText(failure: ServerFailure): String = stringResource(
         ServerFailure.SignInExpired -> R.string.server_sign_in_expired
         ServerFailure.SignInRefused -> R.string.server_sign_in_refused
         ServerFailure.NoBrowser -> R.string.server_no_browser
+        ServerFailure.Unsupported -> R.string.server_unsupported_feature
+        ServerFailure.NotFound -> R.string.server_not_found
+        ServerFailure.NameTaken -> R.string.server_name_taken
+        ServerFailure.NotSaved -> R.string.server_not_saved
     },
 )
+
+/** A status in the reader's words; one the app has no name for is shown as the server calls it. */
+@Composable
+internal fun statusName(status: String): String = when (status) {
+    "", ReadStatuses.UNREAD -> stringResource(R.string.server_status_unread)
+    ReadStatuses.WANT_TO_READ -> stringResource(R.string.server_status_want_to_read)
+    ReadStatuses.READING -> stringResource(R.string.server_status_reading)
+    ReadStatuses.ON_HOLD -> stringResource(R.string.server_status_on_hold)
+    ReadStatuses.READ -> stringResource(R.string.server_status_read)
+    ReadStatuses.ABANDONED -> stringResource(R.string.server_status_abandoned)
+    "rereading" -> stringResource(R.string.server_status_rereading)
+    "skimmed" -> stringResource(R.string.server_status_skimmed)
+    else -> status.replace('_', ' ')
+}
 
 @Composable
 private fun AccountMenu(account: Account, onSignOut: () -> Unit) {
@@ -347,49 +441,9 @@ private fun SignIn(
     }
 }
 
-@Composable
-private fun Books(padding: PaddingValues, state: ServerState, model: ServerViewModel, onOpen: (File) -> Unit) {
-    Centred(padding) { inner ->
-        LazyColumn(Modifier.fillMaxSize().testTag("server-books"), contentPadding = inner) {
-            val channel = state.channel
-            if (channel != null && channel != DeviceChannel.Ready) {
-                item("channel") { Channel(channel, state, model::devicePassword, model::newDevicePassword) }
-            }
-            val account = state.account
-            if (channel == DeviceChannel.Ready && account != null) item("sync") { Synced(account, state.unsent) }
-            state.failure?.let { failure ->
-                item("failure") {
-                    Column(
-                        Modifier.fillMaxWidth().padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        Text(failureText(failure), color = MaterialTheme.colorScheme.error, textAlign = TextAlign.Center)
-                        OutlinedButton(onClick = model::retry) { Text(stringResource(R.string.action_retry)) }
-                    }
-                }
-            }
-            if (state.books.isEmpty() && !state.loading && state.failure == null) {
-                item("empty") {
-                    if (state.query.isEmpty()) {
-                        EmptyState(ShelfIcon, stringResource(R.string.catalog_page_empty))
-                    } else {
-                        EmptyState(Icons.Filled.Search, stringResource(R.string.nothing_found), text = stringResource(R.string.nothing_found_for, state.query))
-                    }
-                }
-            }
-            itemsIndexed(state.books, key = { _, book -> book.id }) { index, book ->
-                // Reaching the last line asks for what follows it.
-                if (index == state.books.lastIndex && state.more) LaunchedEffect(state.books.size) { model.more() }
-                BookRow(book, state, model, onOpen, onClick = { model.openBook(book) })
-                HorizontalDivider()
-            }
-        }
-    }
-}
-
 /** How the syncing of reading went last, and what is still to reach the server. */
 @Composable
-private fun Synced(account: Account, unsent: Int) {
+internal fun Synced(account: Account, unsent: Int) {
     val now = System.currentTimeMillis()
     fun ago(at: Long) = DateUtils.getRelativeTimeSpanString(at, now, DateUtils.MINUTE_IN_MILLIS).toString()
     Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp).testTag("server-sync")) {
@@ -414,7 +468,7 @@ private fun Synced(account: Account, unsent: Int) {
 
 /** What stands between the reader and the syncing of their reading, and what they can do about it. */
 @Composable
-private fun Channel(channel: DeviceChannel, state: ServerState, onPassword: (String) -> Unit, onNewPassword: (String) -> Unit) {
+internal fun Channel(channel: DeviceChannel, state: ServerState, onPassword: (String) -> Unit, onNewPassword: (String) -> Unit) {
     Surface(color = MaterialTheme.colorScheme.secondaryContainer, modifier = Modifier.fillMaxWidth().testTag("server-channel")) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             when (channel) {
@@ -450,8 +504,9 @@ private fun Channel(channel: DeviceChannel, state: ServerState, onPassword: (Str
     }
 }
 
+/** A book on a line of a list: its cover, title, authors, series, the reader's status, and its downloads or Read. */
 @Composable
-private fun BookRow(book: RemoteBook, state: ServerState, model: ServerViewModel, onOpen: (File) -> Unit, onClick: () -> Unit) {
+internal fun BookRow(book: RemoteBook, state: ServerState, model: ServerViewModel, onOpen: (File) -> Unit, onClick: () -> Unit) {
     Row(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 16.dp, vertical = 10.dp), verticalAlignment = Alignment.Top) {
         BookCover(book, model, Modifier.padding(end = 12.dp).size(width = 52.dp, height = 76.dp))
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
@@ -463,6 +518,12 @@ private fun BookRow(book: RemoteBook, state: ServerState, model: ServerViewModel
                 val series = if (book.seriesNumber.isEmpty()) book.series else stringResource(R.string.series_line, book.series, book.seriesNumber)
                 Text(
                     series, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis,
+                )
+            }
+            if (book.status.isNotEmpty() && book.status != ReadStatuses.UNREAD) {
+                Text(
+                    statusName(book.status), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary,
                     maxLines = 1, overflow = TextOverflow.Ellipsis,
                 )
             }
@@ -482,8 +543,10 @@ private fun BookRow(book: RemoteBook, state: ServerState, model: ServerViewModel
 }
 
 /** The files of [book] the app reads: one per format, the server's first of each. */
-internal fun readableFiles(book: RemoteBook): List<RemoteFile> =
-    book.files.filter { it.format in Library.FORMATS }.distinctBy { it.format }
+internal fun readableFiles(book: RemoteBook): List<RemoteFile> = readableFiles(book.files)
+
+internal fun readableFiles(files: List<RemoteFile>): List<RemoteFile> =
+    files.filter { it.format in Library.FORMATS }.distinctBy { it.format }
 
 @Composable
 internal fun InLibrary(bookId: String, model: ServerViewModel, onOpen: (File) -> Unit) {
@@ -525,7 +588,7 @@ internal fun BookCover(book: RemoteBook, model: ServerViewModel, modifier: Modif
 }
 
 @Composable
-private fun SearchBar(onSearch: (String) -> Unit, onClose: () -> Unit) {
+private fun SearchBar(hint: String, onSearch: (String) -> Unit, onClose: () -> Unit) {
     var query by remember { mutableStateOf("") }
     val focus = remember { FocusRequester() }
     LaunchedEffect(Unit) { focus.requestFocus() }
@@ -533,7 +596,7 @@ private fun SearchBar(onSearch: (String) -> Unit, onClose: () -> Unit) {
         value = query,
         onValueChange = { query = it },
         singleLine = true,
-        placeholder = { Text(stringResource(R.string.server_search_hint)) },
+        placeholder = { Text(hint) },
         leadingIcon = {
             IconButton(onClick = onClose) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.action_back)) }
         },
@@ -551,3 +614,30 @@ private fun SearchBar(onSearch: (String) -> Unit, onClose: () -> Unit) {
         modifier = Modifier.fillMaxWidth().statusBarsPadding().focusRequester(focus).testTag("server-search"),
     )
 }
+
+/**
+ * A book on a shelf: its cover and title, and whether it is in the library. A tap opens its page, the same
+ * as from a line of a list, with the same downloads.
+ */
+@Composable
+internal fun BookTile(book: RemoteBook, state: ServerState, model: ServerViewModel, onClick: () -> Unit) {
+    Column(
+        Modifier.width(TILE_WIDTH).clip(RoundedCornerShape(6.dp)).clickable(onClick = onClick).padding(4.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        BookCover(book, model, Modifier.size(width = TILE_WIDTH - 8.dp, height = (TILE_WIDTH - 8.dp) * 1.5f))
+        Text(
+            book.title.ifEmpty { stringResource(R.string.server_untitled) }, style = MaterialTheme.typography.bodySmall,
+            maxLines = 2, overflow = TextOverflow.Ellipsis,
+        )
+        // A book suggested beside another comes without files: it is known to be in the library by the server's book.
+        if (book.files.any { state.onDevice[it.id] != null } || book.id in state.onDeviceByBook) {
+            Text(
+                stringResource(R.string.catalog_downloaded), style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.primary, maxLines = 1, overflow = TextOverflow.Ellipsis,
+            )
+        }
+    }
+}
+
+private val TILE_WIDTH = 112.dp

@@ -51,8 +51,8 @@ class FakeOrbit : AutoCloseable {
     /** While set, the list of books is handed out a page at a time, as the real server does; otherwise whole to every asking. */
     var paged = false
 
-    private fun page(body: JSONObject, books: JSONArray): JSONArray {
-        if (!paged) return books
+    private fun page(body: JSONObject, books: JSONArray, always: Boolean = false): JSONArray {
+        if (!paged && !always) return books
         val pagination = body.getJSONObject("pagination")
         val from = pagination.getInt("page") * pagination.getInt("size")
         val part = JSONArray()
@@ -64,23 +64,48 @@ class FakeOrbit : AutoCloseable {
      * The books the query's filter lets through. Of its rules only "has a file in one of these
      * formats" is understood, matched on any of the book's files as the server does.
      */
-    private fun matching(body: JSONObject): JSONArray {
+    private fun matching(body: JSONObject, books: JSONArray = this.books): JSONArray {
         val rules = body.optJSONObject("filter")?.optJSONArray("rules") ?: return books
         val wanted = (0 until rules.length()).map { rules.getJSONObject(it) }
             .filter { it.optString("field") == "format" && it.optString("operator") == "includesAny" }
             .map { rule -> rule.getJSONArray("value").let { formats -> (0 until formats.length()).map(formats::getString).toSet() } }
+        val others = (0 until rules.length()).map { rules.getJSONObject(it) }.filter { it.optString("field") != "format" }
         val found = JSONArray()
         for (i in 0 until books.length()) {
             val book = books.getJSONObject(i)
             val files = book.optJSONArray("files") ?: JSONArray()
             val formats = (0 until files.length()).map { files.getJSONObject(it).optString("format") }
-            if (wanted.all { formats.any(it::contains) }) found.put(book)
+            if (wanted.all { formats.any(it::contains) } && others.all { holds(it, card(book)) }) found.put(book)
         }
         return found
     }
 
+    /** Fields of the catalogue's filter a version of the server does not know, and refuses a query naming. */
+    var unknownFields = emptySet<String>()
+
+    /** Whether [book] holds to one of the rules the server matches by: status, author, series, genre, library. */
+    private fun holds(rule: JSONObject, book: JSONObject): Boolean {
+        fun values() = rule.opt("value").let { if (it is JSONArray) (0 until it.length()).map(it::getString) else listOf(it.toString()) }
+        fun list(name: String) = book.optJSONArray(name)?.let { names -> (0 until names.length()).map(names::getString) }.orEmpty()
+        return when (rule.getString("field")) {
+            "readStatus" -> (book.optJSONObject("readStatus")?.optString("status") ?: "unread") in values()
+            "author" -> values().any { part -> list("authors").any { it.contains(part, ignoreCase = true) } }
+            "series" -> !book.isNull("seriesName") && book.optString("seriesName").contains(values().single(), ignoreCase = true)
+            "genre" -> values().any(list("genres")::contains)
+            "library" -> values().any { it == (if (book.has("libraryName")) book.getString("libraryName") else libraryNames.first()) }
+            else -> true
+        }
+    }
+
     /** What the list of books is answered with instead, while not null. */
     var queryAnswer: Answer? = null
+
+    /** A query naming a field of [unknownFields] is refused, as a version of the server that has not got it refuses it. */
+    private fun refusedQuery(body: JSONObject): Answer? {
+        val rules = body.optJSONObject("filter")?.optJSONArray("rules") ?: return null
+        val named = (0 until rules.length()).map { rules.getJSONObject(it).optString("field") }
+        return if (named.any { it in unknownFields }) error(400, "Invalid filter field") else null
+    }
 
     /** What the books say they are about, as HTML, by book; a book not here has no description. */
     val descriptions = HashMap<Long, String>()
@@ -102,6 +127,24 @@ class FakeOrbit : AutoCloseable {
         for (field in listOf("title", "subtitle", "seriesName", "seriesIndex", "publisher", "publishedYear", "language", "pageCount", "isbn13")) {
             answer.put(field, if (book.has(field)) book.get(field) else JSONObject.NULL)
         }
+        val files = JSONArray()
+        book.optJSONArray("files")?.let { list ->
+            for (i in 0 until list.length()) {
+                val file = list.getJSONObject(i)
+                files.put(
+                    JSONObject().put("id", file.getLong("id")).put("format", file.opt("format") ?: JSONObject.NULL).put("role", file.optString("role", "primary"))
+                        .put("sizeBytes", file.opt("sizeBytes") ?: JSONObject.NULL).put("filename", JSONObject.NULL),
+                )
+            }
+        }
+        val inCollections = JSONArray()
+        for (c in collections.filter { id in it.books && (it.userId == readerId || it.isPublic) }) inCollections.put(JSONObject().put("id", c.id).put("name", c.name))
+        val mine = card(book)
+        answer.put("readStatus", mine.opt("readStatus") ?: JSONObject.NULL).put("rating", mine.opt("rating") ?: JSONObject.NULL)
+            .put("personalNote", reviews[id] ?: JSONObject.NULL).put("genres", book.optJSONArray("genres") ?: JSONArray())
+            .put("libraryId", 1).put("libraryName", if (book.has("libraryName")) book.getString("libraryName") else libraryNames.first())
+            .put("files", files).put("collections", inCollections)
+            .put("coverSource", if (book.optBoolean("hasCover")) "extracted" else JSONObject.NULL)
         return Answer(200, answer.toString())
     }
 
@@ -277,6 +320,9 @@ class FakeOrbit : AutoCloseable {
 
     /** The reader's review by book, as the reader's session sets it; the server keeps none for nothing but white space. */
     val reviews = HashMap<Long, String>()
+
+    /** What writing a note through the session is answered with instead, while not null. */
+    var noteAnswer: Answer? = null
 
     /** Pages read the server took, and how many of them it had been told of before. */
     val pagesRead = ArrayList<JSONObject>()
@@ -487,6 +533,272 @@ class FakeOrbit : AutoCloseable {
         return Answer(201, "{}")
     }
 
+
+    /** The reader's number on the server, as signing in answers it; their collections are made under it. */
+    val readerId = 1L
+
+    /** A book of [books] by its id; null for one the server has not. */
+    private fun bookJson(id: Long): JSONObject? =
+        (0 until books.length()).map { books.getJSONObject(it) }.firstOrNull { it.optLong("id") == id }
+
+    /**
+     * A book as the reader's session answers it: with the status and rating the reader set since, through
+     * either way in, in place of what [books] says.
+     */
+    private fun card(book: JSONObject): JSONObject {
+        val id = book.optLong("id")
+        val copy = JSONObject(book.toString())
+        statuses[id]?.let { copy.put("readStatus", JSONObject().put("status", it).put("source", "manual")) }
+        if (id in ratings) copy.put("rating", ratings[id] ?: JSONObject.NULL)
+        return copy
+    }
+
+    private fun cards(found: JSONArray): JSONArray = JSONArray().apply { for (i in 0 until found.length()) put(card(found.getJSONObject(i))) }
+
+    /** The ids of the books of [books] on each shelf of the home page, by the shelf's type, in the server's order. */
+    val shelves = HashMap<String, List<Long>>()
+
+    /** Shelves the batch says it could not fill. */
+    val failedShelves = HashSet<String>()
+
+    /** The shelves the server has; a version before one has not it at all. */
+    var shelfTypes = setOf("recently-added", "continue-reading", "continue-listening", "want-to-read", "up-next-in-series", "random", "smart-scope")
+
+    /** While false, there is no batch of shelves, as on a server before it: each shelf is asked for alone. */
+    var shelfBatch = true
+
+    /** What the batch of shelves, and one shelf, are answered with instead, while not null. */
+    var shelvesAnswer: Answer? = null
+    var shelfAnswer: Answer? = null
+
+    private fun shelfBooks(type: String, limit: Int): JSONArray = JSONArray().apply {
+        for (id in shelves[type].orEmpty().take(limit)) bookJson(id)?.let { put(card(it)) }
+    }
+
+    private fun shelvesBatch(body: JSONObject): Answer {
+        if (!shelfBatch) return error(404, "Cannot POST /api/v1/dashboard/scrollers/batch")
+        shelvesAnswer?.let { return it }
+        val items = body.getJSONArray("items")
+        if (items.length() !in 1..8) return error(400, "items must contain between 1 and 8 elements")
+        val answered = JSONArray()
+        for (i in 0 until items.length()) {
+            val item = items.getJSONObject(i)
+            val type = item.getString("type")
+            if (type !in shelfTypes) return error(400, "each value in items.type must be one of the following values")
+            val limit = item.getInt("limit")
+            if (limit !in 1..50) return error(400, "limit must not be greater than 50")
+            val failed = type in failedShelves
+            answered.put(JSONObject().put("id", item.getString("id")).put("books", if (failed) JSONArray() else shelfBooks(type, limit)).put("failed", failed))
+        }
+        return Answer(200, JSONObject().put("items", answered).toString())
+    }
+
+    private fun oneShelf(type: String, params: Map<String, String>): Answer {
+        shelfAnswer?.let { return it }
+        if (type !in shelfTypes) return error(400, "Validation failed (enum string is expected)")
+        val limit = params["limit"]?.toIntOrNull() ?: 20
+        // Two shelves count nothing, and the newest counts the month's only: none of it is the length of the answer.
+        val total: Any = if (type == "random" || type == "up-next-in-series") JSONObject.NULL else shelves[type].orEmpty().size
+        return Answer(200, JSONObject().put("books", shelfBooks(type, limit.coerceIn(1, 50))).put("total", total).toString())
+    }
+
+    /** Whether a collection's book is found by a phrase within the collection: by its title, as far as the stand-in goes. */
+    private fun inPhrase(book: JSONObject, q: String) = q.isEmpty() || book.optString("title").contains(q, ignoreCase = true)
+
+    /** What putting a book into a collection, or taking it out, is answered with instead, while not null. */
+    var membershipAnswer: Answer? = null
+
+    /** What a collection's books, queried or listed, are answered with instead, while not null. */
+    var collectionBooksAnswer: Answer? = null
+
+    /** A collection as the server keeps it. */
+    class ServerCollection(
+        val id: Long, var name: String, val userId: Long, var icon: String = "book", var description: String? = null,
+        var isPublic: Boolean = false, var syncToKobo: Boolean = false, val books: MutableList<Long> = ArrayList(),
+    )
+
+    val collections = ArrayList<ServerCollection>()
+    private val collectionIds = AtomicInteger(500)
+
+    /** While false, a collection's books are not queried, as on a server before it: they are only listed. */
+    var collectionQuery = true
+
+    /** What reading the collections, and changing one, is answered with instead, while not null. */
+    var collectionsAnswer: Answer? = null
+    var collectionWriteAnswer: Answer? = null
+
+    /** A collection made on the server, as in the browser: the reader's own unless another reader is named. */
+    fun collection(name: String, vararg bookIds: Long, owner: Long = readerId, public: Boolean = false): ServerCollection =
+        ServerCollection(collectionIds.incrementAndGet().toLong(), name, owner, isPublic = public, books = bookIds.toMutableList()).also { collections += it }
+
+    private fun json(collection: ServerCollection, memberOf: ServerCollection.() -> Int? = { null }) = JSONObject()
+        .put("id", collection.id).put("userId", collection.userId).put("name", collection.name).put("icon", collection.icon)
+        .put("description", collection.description ?: JSONObject.NULL).put("isPublic", collection.isPublic)
+        .put("isOwner", collection.userId == readerId).put("syncToKobo", collection.syncToKobo).put("displayOrder", 0)
+        .put("bookCount", collection.books.count { bookJson(it) != null })
+        .put("createdAt", "2031-01-01T00:00:00.000Z").put("updatedAt", "2031-01-01T00:00:00.000Z")
+        .apply { collection.memberOf()?.let { put("memberCount", it) } }
+
+    private fun collectionRoute(request: Seen, path: String, params: Map<String, String>, body: JSONObject): Answer {
+        val parts = path.removePrefix("/collections").trim('/').split('/').filter { it.isNotEmpty() }
+        if (parts.isEmpty()) {
+            if (request.method == "GET") {
+                collectionsAnswer?.let { return it }
+                val asked = params["bookIds"]?.split(',')?.mapNotNull { it.trim().toLongOrNull() }
+                val list = JSONArray()
+                if (asked == null) {
+                    for (c in collections.filter { it.userId == readerId || it.isPublic }) list.put(json(c))
+                } else {
+                    // Asked with books: the reader's own collections, with how many of those books each has.
+                    for (c in collections.filter { it.userId == readerId }) list.put(json(c) { asked.count { it in this.books } })
+                }
+                return Answer(200, list.toString())
+            }
+            collectionWriteAnswer?.let { return it }
+            val name = body.optString("name").trim()
+            if (name.isEmpty()) return error(400, "name should not be empty")
+            if (body.optString("icon").trim().isEmpty()) return error(400, "Icon is required")
+            if (collections.any { it.userId == readerId && it.name == name }) return error(409, "A collection with this name already exists")
+            val made = ServerCollection(
+                collectionIds.incrementAndGet().toLong(), name, readerId, body.getString("icon").trim(),
+                if (body.has("description")) body.getString("description") else null,
+                body.optBoolean("isPublic", false), body.optBoolean("syncToKobo", false),
+            )
+            collections += made
+            return Answer(201, json(made).toString())
+        }
+        val id = parts[0].toLongOrNull() ?: return error(400, "Validation failed (numeric string is expected)")
+        val collection = collections.firstOrNull { it.id == id } ?: return error(404, "Collection not found")
+        val readable = collection.isPublic || collection.userId == readerId
+        val writable = collection.userId == readerId
+        when {
+            parts.size == 1 && request.method == "GET" -> return if (readable) Answer(200, json(collection).toString()) else error(403, "No access to this collection")
+            parts.size == 2 && parts[1] == "books" && request.method == "GET" -> {
+                collectionBooksAnswer?.let { return it }
+                if (!readable) return error(403, "No access to this collection")
+                val size = params["size"]?.toIntOrNull() ?: 50
+                val page = params["page"]?.toIntOrNull() ?: 0
+                val q = params["q"].orEmpty().trim()
+                val inIt = JSONArray().apply { collection.books.mapNotNull(::bookJson).filter { inPhrase(it, q) }.forEach { put(card(it)) } }
+                val part = JSONArray()
+                for (i in page * size until minOf(inIt.length(), page * size + size)) part.put(inIt.get(i))
+                return Answer(200, JSONObject().put("items", part).put("total", inIt.length()).put("page", page).put("size", size).toString())
+            }
+            parts.size == 3 && parts[2] == "query" -> {
+                if (!collectionQuery) return error(404, "Cannot POST /api/v1/collections/$id/books/query")
+                collectionBooksAnswer?.let { return it }
+                if (!readable) return error(403, "No access to this collection")
+                val q = body.optString("q").trim()
+                val inIt = JSONArray().apply { collection.books.mapNotNull(::bookJson).filter { inPhrase(it, q) }.forEach { put(it) } }
+                val found = matching(body, inIt)
+                return Answer(201, JSONObject().put("items", cards(page(body, found, always = true))).put("total", found.length()).put("page", body.getJSONObject("pagination").getInt("page")).toString())
+            }
+        }
+        collectionWriteAnswer?.let { return it }
+        if (!writable) return error(403, "Cannot modify this collection")
+        return when {
+            parts.size == 1 && request.method == "PATCH" -> {
+                if (body.has("name")) {
+                    val name = body.getString("name").trim()
+                    if (name.isEmpty()) return error(400, "name should not be empty")
+                    if (collections.any { it !== collection && it.userId == readerId && it.name == name }) return error(409, "A collection with this name already exists")
+                    collection.name = name
+                }
+                if (body.has("icon")) collection.icon = body.getString("icon")
+                if (body.has("description")) collection.description = body.getString("description")
+                if (body.has("isPublic")) collection.isPublic = body.getBoolean("isPublic")
+                if (body.has("syncToKobo")) collection.syncToKobo = body.getBoolean("syncToKobo")
+                Answer(200, json(collection).toString())
+            }
+            parts.size == 1 && request.method == "DELETE" -> {
+                collections.remove(collection)
+                Answer(204)
+            }
+            parts.size == 2 && parts[1] == "books" -> {
+                membershipAnswer?.let { return it }
+                val ids = body.getJSONArray("bookIds").let { list -> (0 until list.length()).map(list::getLong) }
+                if (request.method == "POST") ids.filter { it !in collection.books }.forEach(collection.books::add) else collection.books.removeAll(ids.toSet())
+                Answer(if (request.method == "POST") 201 else 200, json(collection).toString())
+            }
+            else -> error(404, "Cannot ${request.method} /api/v1$path")
+        }
+    }
+
+    /** Books like each book, by its id, in the server's order; the books of its author and series come from [books]. */
+    val similar = HashMap<Long, List<Long>>()
+
+    /** While false, the server lists nothing beside a book, as one before it does. */
+    var relatedBooks = true
+
+    /** What the books beside another are answered with instead, while not null. */
+    var relatedAnswer: Answer? = null
+
+    private fun related(id: Long, kind: String): Answer {
+        if (!relatedBooks) return error(404, "Cannot GET /api/v1/books/$id/$kind")
+        relatedAnswer?.let { return it }
+        val book = bookJson(id) ?: return error(404, "Book $id not found")
+        val all = (0 until books.length()).map { books.getJSONObject(it) }
+        fun names(of: JSONObject) = of.optJSONArray("authors")?.let { list -> (0 until list.length()).map(list::getString) }.orEmpty()
+        val chosen = when (kind) {
+            "recommendations" -> similar[id].orEmpty().mapNotNull(::bookJson)
+            "author-books" -> all.filter { it.optLong("id") != id && names(it).any(names(book)::contains) }
+            else -> if (book.isNull("seriesName") || !book.has("seriesName")) emptyList() else all.filter { it.optString("seriesName") == book.optString("seriesName") }
+        }
+        val list = JSONArray()
+        for (other in chosen) {
+            val formats = other.optJSONArray("files")?.let { files -> (0 until files.length()).map { files.getJSONObject(it).optString("format") } }.orEmpty()
+            val entry = JSONObject().put("id", other.getLong("id")).put("title", other.opt("title") ?: JSONObject.NULL).put("coverAspectRatio", "portrait")
+                .put("updatedAt", JSONObject.NULL).put("hasCover", other.optBoolean("hasCover")).put("authors", JSONArray(names(other)))
+                .put("readStatus", statuses[other.getLong("id")]?.let { JSONObject().put("status", it).put("source", "manual") } ?: JSONObject.NULL)
+                .put("isAudiobook", formats.isNotEmpty() && formats.all { it in setOf("m4b", "mp3") })
+                .put("isComic", formats.isNotEmpty() && formats.all { it in setOf("cbz", "cbr") })
+            if (kind == "series-books") entry.put("seriesIndex", other.opt("seriesIndex") ?: JSONObject.NULL)
+            list.put(entry)
+        }
+        return Answer(200, list.toString())
+    }
+
+    /** The statuses the server takes, as 3.3.0 has them. */
+    var knownStatuses = setOf("unread", "want_to_read", "reading", "on_hold", "read", "abandoned")
+
+    /** What setting a status, a rating and a note through the session is answered with instead, while not null. */
+    var statusAnswer: Answer? = null
+    var ratingAnswer: Answer? = null
+
+    /** Whether the reader may set ratings through the session: the server wants them to edit the library's books for it. */
+    var ratingThroughSession = true
+
+    /** While set, the server keeps the books' ratings locked: it answers that it set them, and does not. */
+    var ratingsLocked = false
+
+    private fun setStatus(id: Long, body: JSONObject): Answer {
+        statusAnswer?.let { return it }
+        if (bookJson(id) == null) return error(404, "Book not found")
+        val status = body.optString("status")
+        if (status !in knownStatuses) return error(400, "status must be one of the following values: ${knownStatuses.joinToString()}")
+        statuses[id] = status
+        return Answer(
+            200,
+            JSONObject().put("status", status).put("source", "manual").put("startedAt", JSONObject.NULL).put("finishedAt", JSONObject.NULL)
+                .put("updatedAt", "2031-01-01T00:00:00.000Z").toString(),
+        )
+    }
+
+    private fun setRatings(body: JSONObject): Answer {
+        ratingAnswer?.let { return it }
+        if (!ratingThroughSession) return error(403, "Missing permission: library_edit_metadata")
+        val ids = body.getJSONArray("bookIds").let { list -> (0 until list.length()).map(list::getLong) }
+        if (ids.any { bookJson(it) == null }) return error(404, "Book not found")
+        if (!ratingsLocked) for (id in ids) ratings[id] = if (body.isNull("rating")) null else body.getInt("rating")
+        return Answer(204)
+    }
+
+    /** The libraries the reader sees, by name. */
+    var libraryNames = listOf("Books")
+
+    /** What the list of libraries is answered with instead, while not null. */
+    var librariesAnswer: Answer? = null
+
     private val server = TestServer(::answer)
     val url get() = server.url
     val seen get() = server.seen
@@ -516,8 +828,26 @@ class FakeOrbit : AutoCloseable {
     /** While set, the devices' channel does nothing and says so. */
     var down = false
 
+    /** How long the server takes over a request to a path, in milliseconds: as one that answers late, after the reader moved on. */
+    @Volatile
+    var slow: (String) -> Long = { 0 }
+
+    /** Requests to these paths, without the query, are taken and not answered until the test lets them go. */
+    private val held = java.util.concurrent.ConcurrentHashMap<String, java.util.concurrent.CountDownLatch>()
+
+    /** Holds the answers to requests to [path], as `/books/7/status`, until [release]. */
+    fun hold(path: String) {
+        held[path] = java.util.concurrent.CountDownLatch(1)
+    }
+
+    fun release(path: String) {
+        held.remove(path)?.countDown()
+    }
+
     private fun answer(request: Seen): Answer {
         val path = request.path.removePrefix("/api/v1")
+        held[path.substringBefore('?')]?.await(60, java.util.concurrent.TimeUnit.SECONDS)
+        slow(path.substringBefore('?')).takeIf { it > 0 }?.let { Thread.sleep(it) }
         val device = path.startsWith("/koreader/plugin/") || path.startsWith("/koreader/syncs/")
         if (device && down) return error(503, "Service Unavailable")
         val answer = respond(request)
@@ -629,8 +959,19 @@ class FakeOrbit : AutoCloseable {
             return Answer(201, JSONObject().put("matches", matches).put("libraryVersion", "0123456789abcdef").toString())
         }
         if (request.headers["authorization"]?.removePrefix("Bearer ") !in access) return error(401, "Unauthorized")
+        val route = path.substringBefore('?')
+        val params = path.substringAfter('?', "").split('&').filter { '=' in it }
+            .associate { java.net.URLDecoder.decode(it.substringBefore('='), "UTF-8") to java.net.URLDecoder.decode(it.substringAfter('='), "UTF-8") }
         return when {
             path == "/app-info" -> Answer(200, JSONObject().put("version", version).put("features", JSONArray()).toString())
+            route == "/dashboard/scrollers/batch" && request.method == "POST" -> shelvesBatch(body)
+            route.startsWith("/dashboard/scrollers/") && request.method == "GET" -> oneShelf(route.removePrefix("/dashboard/scrollers/"), params)
+            route == "/collections" || route.startsWith("/collections/") -> collectionRoute(request, route, params, body)
+            route == "/libraries" && request.method == "GET" -> librariesAnswer ?: Answer(200, JSONArray().apply { libraryNames.forEachIndexed { i, name -> put(JSONObject().put("id", i + 1).put("name", name)) } }.toString())
+            Regex("/books/\\d+/(recommendations|author-books|series-books)").matches(route) && request.method == "GET" ->
+                related(route.removePrefix("/books/").substringBefore('/').toLong(), route.substringAfterLast('/'))
+            Regex("/books/\\d+/status").matches(route) && request.method == "PATCH" -> setStatus(route.removePrefix("/books/").substringBefore('/').toLong(), body)
+            route == "/books/bulk-set-rating" && request.method == "POST" -> setRatings(body)
             path == "/uploads/capabilities" -> Answer(
                 200,
                 JSONObject().put("maxFileSizeBytes", maxUploadBytes).put("chunkSizeBytes", chunkBytes)
@@ -659,14 +1000,15 @@ class FakeOrbit : AutoCloseable {
             }
             Regex("/books/\\d+/personal-note").matches(path) && request.method == "PATCH" -> {
                 val id = path.removePrefix("/books/").substringBefore('/').toLong()
-                if (hashOf(id) == null) return error(404, "Book not found")
+                if (hashOf(id) == null && bookJson(id) == null) return error(404, "Book not found")
+                noteAnswer?.let { return it }
                 val note = if (body.isNull("note")) "" else body.getString("note").trim()
                 if (note.isEmpty()) reviews.remove(id) else reviews[id] = note
                 Answer(200, JSONObject().put("id", id).put("personalNote", reviews[id] ?: JSONObject.NULL).toString())
             }
             Regex("/books/\\d+").matches(path) && request.method == "GET" -> detailAnswer ?: detail(path.removePrefix("/books/").toLong())
-            path == "/books/query" -> queryAnswer ?: matching(body).let { found ->
-                Answer(201, JSONObject().put("items", page(body, found)).put("total", total ?: found.length()).put("page", body.getJSONObject("pagination").getInt("page")).toString())
+            path == "/books/query" -> queryAnswer ?: refusedQuery(body) ?: matching(body).let { found ->
+                Answer(201, JSONObject().put("items", cards(page(body, found))).put("total", total ?: found.length()).put("page", body.getJSONObject("pagination").getInt("page")).toString())
             }
             Regex("/books/\\d+/(annotations|bookmarks)(/\\d+)?").matches(path) -> marksOfBook(request, path)
             path.startsWith("/books/files/") -> downloads[path.removePrefix("/books/files/").removeSuffix("/download").toLong()] ?: error(404, "No file")
