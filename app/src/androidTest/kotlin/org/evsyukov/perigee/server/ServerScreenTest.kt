@@ -624,6 +624,8 @@ class ServerScreenTest {
         serverHas(book(7, "Listed Title", 70))
         show(fontScale = 2f)
         signIn()
+        // Signing in only sends the form: the tabs come once the reader is signed in.
+        waitFor("the tabs are shown") { rule.onAllNodesWithTag("server-section-home").fetchSemanticsNodes().isNotEmpty() }
         for (section in Section.entries) {
             val tab = rule.onNodeWithTag("server-section-${section.name.lowercase()}")
             tab.assertHasClickAction()

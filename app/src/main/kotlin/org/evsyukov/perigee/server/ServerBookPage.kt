@@ -154,7 +154,7 @@ internal fun ServerBookPage(book: RemoteBook, state: ServerState, model: ServerV
                         // The same as the book's line in the list, from the same state: a download begun here shows there too.
                         val files = readableFiles(bookFiles)
                         // In the library by a file of its, or, for a book suggested beside another, by the server's book itself.
-                    val inLibrary = files.firstNotNullOfOrNull { state.onDevice[it.id] } ?: state.onDeviceByBook[book.id]
+                        val inLibrary = files.firstNotNullOfOrNull { state.onDevice[it.id] } ?: state.onDeviceByBook[book.id]
                         when {
                             // Reading it leaves the pages, as the library's page is left: the reader goes to the book, not back to it.
                             inLibrary != null -> InLibrary(inLibrary, model) { file ->
