@@ -75,7 +75,8 @@ def setting():
 
 
 def focus():
-    lines = [line.strip() for line in adb("shell", "dumpsys", "window", "windows").splitlines() if "mCurrentFocus" in line]
+    # DisplayContent.dump prints the focus, and `dumpsys window displays` dumps the displays; `windows` lists windows only.
+    lines = [line.strip() for line in adb("shell", "dumpsys", "window", "displays").splitlines() if line.strip().startswith("mCurrentFocus=")]
     return lines[0] if lines else "dumpsys names no focus"
 
 

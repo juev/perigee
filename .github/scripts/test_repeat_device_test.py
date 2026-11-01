@@ -5,6 +5,7 @@ import sys
 import tempfile
 import unittest
 from contextlib import redirect_stdout
+from unittest import mock
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -133,6 +134,30 @@ def samples(*spans):
 
 # The notice holds the focus through the twenty seconds of the wait, then the test closes the apps and reports.
 HELD = samples((0, 10, READER_FOCUS), (10, 32, NOTICE_FOCUS), (32, 35, SENDER_FOCUS))
+
+
+# The end of a display's part of `dumpsys window displays`, as DisplayContent.dump prints it (android16-release).
+DISPLAYS = """\
+  mLayoutSeq=412
+
+  mCurrentFocus=Window{d2375df u0 ImmersiveModeConfirmation}
+  mFocusedApp=ActivityRecord{a4bb045 u0 org.evsyukov.perigee/.MainActivity t12}
+
+"""
+
+
+class FocusTest(unittest.TestCase):
+    def focus(self, dump):
+        with mock.patch.object(repeat_device_test, "adb", return_value=dump) as adb:
+            found = repeat_device_test.focus()
+        adb.assert_called_once_with("shell", "dumpsys", "window", "displays")
+        return found
+
+    def test_the_focus_is_read_from_the_displays(self):
+        self.assertEqual(NOTICE_FOCUS, self.focus(DISPLAYS))
+
+    def test_a_dump_naming_no_focus(self):
+        self.assertEqual("dumpsys names no focus", self.focus("  mLayoutSeq=412\n  mFocusedApp=null\n"))
 
 
 class KnownFailureTest(unittest.TestCase):

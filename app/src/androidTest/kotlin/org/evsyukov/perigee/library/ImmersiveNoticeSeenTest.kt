@@ -57,8 +57,8 @@ class ImmersiveNoticeSeenTest {
 
     @Test
     fun aSettingThereIsPutBackAsItWas() {
-        // "null" is a word here, not the setting gone.
-        for (value in listOf("null", "an earlier value", CONFIRMED)) {
+        // An empty value is one, not the setting gone. The word "null" is not here: the settings keep it as none.
+        for (value in listOf("", "an earlier value", CONFIRMED)) {
             write(value)
 
             assertEquals(value, CONFIRMED, underTheRule())

@@ -17,6 +17,9 @@ import org.junit.runners.model.Statement
  * the input focus, so that a key pressed meanwhile goes to it and not to the screen. On a fresh test
  * emulator nobody has confirmed it. SystemUI watches the setting and takes the notice down when it
  * turns "confirmed". The setting is the device's, not the app's: the README says where this is read.
+ *
+ * What is put back is the value as the settings give it, none or a string. They keep the word "null"
+ * as no setting at all (`SettingsState.internValue`), so a "null" is put back as none.
  */
 class ImmersiveNoticeSeen : TestRule {
     override fun apply(base: Statement, description: Description) = object : Statement() {
@@ -71,17 +74,19 @@ class ImmersiveNoticeSeen : TestRule {
         }
 
         /**
-         * What holds the input as the system tells it, for a wait that ended in vain: the setting, and
-         * the lines of `dumpsys window` and `dumpsys input` that name the focus or the notice, cut short.
+         * What holds the input as the system tells it, for a wait that ended in vain: the setting, the
+         * focus of each display (`dumpsys window displays`: `windows` lists the windows, not the focus),
+         * the notice's window if there is one, and the focus `dumpsys input` names, cut short.
          */
         fun focus(): String {
-            val window = dumpsys("window windows").filter { FOCUS.containsMatchIn(it) }
+            val displays = dumpsys("window displays").filter { it.trim().startsWith("mCurrentFocus=") || it.trim().startsWith("mFocusedApp=") }
+            val notice = dumpsys("window windows").filter { NOTICE in it }.take(NOTICE_LINES)
             val input = dumpsys("input").let { lines ->
                 lines.filterIndexed { i, line ->
                     FOCUS.containsMatchIn(line) || i > 0 && lines[i - 1].trim().let { it == "FocusedApplications:" || it == "FocusedWindows:" }
                 }
             }
-            val lines = (window + input).map { it.trim().take(LINE) }.take(LINES)
+            val lines = (displays + notice + input).map { it.trim().take(LINE) }.take(LINES)
             return "$KEY ${read()?.let { "\"$it\"" }}; ${lines.joinToString(" | ").ifEmpty { "dumpsys names no focus" }}"
         }
 
@@ -90,7 +95,9 @@ class ImmersiveNoticeSeen : TestRule {
                 ParcelFileDescriptor.AutoCloseInputStream(output).bufferedReader().use { it.readLines() }
             }
 
-        private val FOCUS = Regex("mCurrentFocus|mFocusedApp|ImmersiveModeConfirmation|FocusedWindows|FocusedApplications")
+        private const val NOTICE = "ImmersiveModeConfirmation"
+        private val FOCUS = Regex("$NOTICE|FocusedWindows|FocusedApplications")
+        private const val NOTICE_LINES = 4
         private const val LINE = 200
         private const val LINES = 24
     }
