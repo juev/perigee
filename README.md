@@ -6,7 +6,7 @@ Perigee is a working name.
 
 ## Status
 
-Early development. There are no releases yet.
+The app is released as release candidates, published as GitHub pre-releases. They install with [Obtainium](https://github.com/ImranR98/Obtainium) or by hand; see [Installing](#installing).
 
 Works today:
 
@@ -21,13 +21,33 @@ Works today:
 
 - Syncing with bookOrbit: the place you got to, both ways, with a later place read elsewhere offered rather than jumped to; highlights with notes and bookmarks, both ways; status and rating; time spent reading for the server's statistics.
 
-Not there yet: releases in the stores. A spike has shown that exact positions and highlights can be exchanged with bookOrbit for EPUB; see [docs/spikes/position-contract.md](docs/spikes/position-contract.md).
+Not there yet: listings in the stores, F-Droid and Google Play. A spike has shown that exact positions and highlights can be exchanged with bookOrbit for EPUB; see [docs/spikes/position-contract.md](docs/spikes/position-contract.md).
 
 The engine reads EPUB, FB2, FB3, MOBI (not KF8/AZW3), TXT, RTF, DOC, DOCX, ODT, HTML and CHM. The tests cover EPUB and FB2; the other formats have not been checked in Perigee.
 
 ## Requirements
 
 Android 11 or later.
+
+## Installing
+
+The app is installed from the APKs attached to the project's [GitHub releases](https://github.com/juev/perigee/releases). Each release has one APK for each architecture:
+
+| Architecture | Where it runs |
+|---|---|
+| `arm64-v8a` | Phones of the last few years |
+| `armeabi-v7a` | Older 32-bit phones |
+| `x86_64` | Emulators and x86 tablets |
+
+**With Obtainium.** [Obtainium](https://github.com/ImranR98/Obtainium) follows a project's GitHub releases and installs and updates the app from them. Add the repository's address, `https://github.com/juev/perigee`, and choose the APK for the phone's architecture from the table above.
+
+**Pre-releases.** Every release so far is a release candidate: a build that installs and is usable, whose remaining gap is the listings in the stores. The release workflow publishes a tag with a suffix, such as `-rc8`, as a GitHub pre-release; a plain `vX.Y.Z` tag is published as a normal release and becomes the project's Latest. Obtainium leaves a pre-release out of its list unless *Include prereleases* is on in the app's settings there; with the switch off the list is empty, as if the project had published nothing.
+
+**One APK, not three.** With several APKs in one release, Obtainium asks which one to install on every update and cannot update in the background. Set *Filter APKs by Regular Expression* once to the architecture, for example `arm64-v8a`, and the question goes away. *Attempt to filter APKs by CPU architecture* does the same automatically, but it guesses from the file names.
+
+**By hand.** Without a second app, download the APK for the phone's architecture from the release page of the version you want and open it on the phone. Each release also carries `SHA256SUMS`, to check the download against.
+
+The APKs are signed by the release workflow. An APK built by hand is unsigned and does not install, so building from source is not a way to get an installable file.
 
 ## Building
 
