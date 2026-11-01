@@ -8,6 +8,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.view.KeyEvent
 import androidx.activity.ComponentActivity
+import androidx.compose.ui.test.ComposeTimeoutException
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.hasAnyAncestor
@@ -27,7 +28,6 @@ import androidx.test.runner.lifecycle.Stage
 import java.io.File
 import java.util.UUID
 import java.util.concurrent.CountDownLatch
-import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
@@ -107,12 +107,25 @@ class SharedBooksTest {
 
     private fun string(id: Int, vararg args: Any) = context.getString(id, *args)
 
-    private fun waitFor(what: String, done: () -> Boolean) {
-        val deadline = System.currentTimeMillis() + TIMEOUT
-        while (!done()) {
-            if (System.currentTimeMillis() > deadline) throw AssertionError("waited in vain: $what")
-            Thread.sleep(50)
-        }
+    /**
+     * Waits through the rule: while a test of Compose runs, the screens of
+     * every activity are composed on its clock, which only its waiting moves.
+     * A thread that merely sleeps would leave them as they were.
+     */
+    private fun waitFor(what: String, done: () -> Boolean) = try {
+        rule.waitUntil(TIMEOUT, done)
+    } catch (e: ComposeTimeoutException) {
+        throw AssertionError("waited in vain: $what; ${state()}", e)
+    }
+
+    /** Where the apps stand, for a wait that ends in vain. */
+    private fun state(): String {
+        val resumed = activities(Stage.RESUMED).map { it.javaClass.simpleName }
+        val reader = mains(*living).singleOrNull()?.let { main ->
+            reader(main).state.value.let { "the reader has ${it.book?.title}, page ${it.page?.index}, busy ${it.busy}, failed ${it.failed}" }
+        } ?: "no single reader's screen"
+        val ours = books().filter { testName.methodName in it.title }.map { "${it.title} (opened ${it.openedAt})" }
+        return "resumed $resumed; $reader; shares waiting ${SharedBooks.shares.value.size}; this test's books $ours"
     }
 
     private val living = Stage.values().filter { it != Stage.DESTROYED }.toTypedArray()
@@ -171,7 +184,9 @@ class SharedBooksTest {
         waitFor("the next page is shown") { model.state.value.page?.index == before + 1 }
     }
 
-    private fun waitForText(text: String) = rule.waitUntil(TIMEOUT) { rule.onAllNodesWithText(text).fetchSemanticsNodes().isNotEmpty() }
+    /** Waits for the text on any screen; while no screen of the app is up, as between the apps, there is none yet. */
+    private fun waitForText(text: String) =
+        waitFor("\"$text\" is shown") { rule.onAllNodesWithText(text).fetchSemanticsNodes(atLeastOneRootRequired = false).isNotEmpty() }
 
     private fun books(): List<Book> = runBlocking { library.books().first() }
 
@@ -326,8 +341,9 @@ class SharedBooksTest {
         assertSame(main, main())
 
         gate.complete(Unit)
-        assertTrue(lookedUp.await(TIMEOUT, TimeUnit.MILLISECONDS))
-        // What follows the looking up runs on the main thread at once; after it, the screen is settled.
+        // The looking up goes on in the screen's effects, which run as the rule's clock moves.
+        waitFor("the last book is looked up") { lookedUp.count == 0L }
+        // What follows it runs at once; after it, the screen is settled.
         instrumentation.runOnMainSync {}
         rule.waitForIdle()
         assertEquals(title, shown(main))
@@ -360,8 +376,9 @@ class SharedBooksTest {
         assertEquals(1L, lookedUp.count)
 
         gate.complete(Unit)
-        assertTrue(lookedUp.await(TIMEOUT, TimeUnit.MILLISECONDS))
-        // What follows the looking up runs on the main thread at once; after it, the screen is settled.
+        // The looking up goes on in the screen's effects, which run as the rule's clock moves.
+        waitFor("the last book is looked up") { lookedUp.count == 0L }
+        // What follows it runs at once; after it, the screen is settled.
         instrumentation.runOnMainSync {}
         rule.waitForIdle()
         assertEquals(chosen, shown(main))
@@ -402,7 +419,8 @@ class SharedBooksTest {
     fun oneFileThatIsNoBookIsToldAndNothingOpens() {
         runBlocking { library.open(fb2(title("Left Open")), "", "") }
         val before = books().map { it.id }.toSet()
-        val damaged = source("damaged.epub").apply { writeText("not an archive, not a book") }
+        // Empty: what the engine refuses for certain (DescribeTest); other bytes it may read as text.
+        val damaged = source("damaged.epub").apply { writeBytes(ByteArray(0)) }
 
         Sender.send("application/epub+zip", Sender.stage(damaged, "Damaged.epub"))
 
@@ -537,7 +555,8 @@ class SharedBooksTest {
     fun whatCannotBeTakenIsToldAndLeavesNothingBehind() {
         val before = newCopies(emptySet())
         val goodTitle = title("Good Beside Bad")
-        val damaged = source("damaged.epub").apply { writeText("not an archive, not a book") }
+        // Empty: what the engine refuses for certain (DescribeTest); other bytes it may read as text.
+        val damaged = source("damaged.epub").apply { writeBytes(ByteArray(0)) }
 
         Sender.send(
             "application/octet-stream",

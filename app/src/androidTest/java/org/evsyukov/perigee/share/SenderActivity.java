@@ -1,6 +1,7 @@
 package org.evsyukov.perigee.share;
 
 import android.app.Activity;
+import android.content.ClipData;
 import android.content.Intent;
 import android.net.Uri;
 import android.os.Bundle;
@@ -50,7 +51,13 @@ public final class SenderActivity extends Activity {
         } else {
             share.putParcelableArrayListExtra(Intent.EXTRA_STREAM, files);
         }
-        if (asked.getBooleanExtra("grant", true)) share.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+        if (asked.getBooleanExtra("grant", true)) {
+            share.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+        } else {
+            // A share whose stream is not in its clip: the system, which copies the stream into the clip and
+            // grants the right to read it, leaves such an intent as it is, and the right is not granted.
+            share.setClipData(ClipData.newPlainText("", "a share that grants nothing"));
+        }
         startActivity(share);
     }
 
