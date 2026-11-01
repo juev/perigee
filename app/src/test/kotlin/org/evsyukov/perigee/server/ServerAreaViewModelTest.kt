@@ -499,7 +499,8 @@ class ServerAreaViewModelTest {
         runBlocking { library.setRating(hash, 2) }
         until("the stars given here wait to be sent") { 7L in it.unsentOnDevice }
 
-        opened(model.state.value.books.single())
+        // The catalogue comes its own way, apart from what the library says of the book.
+        opened(listed("Kept").books.single())
         model.rate(5)
         assertEquals(5, saved(Personal.Rating).detail?.rating)
         val here = checkNotNull(runBlocking { library.book(hash) })

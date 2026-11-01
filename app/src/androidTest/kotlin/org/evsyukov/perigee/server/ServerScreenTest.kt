@@ -641,9 +641,10 @@ class ServerScreenTest {
         waitFor("the tabs are shown") { rule.onAllNodesWithTag("server-sections").fetchSemanticsNodes().isNotEmpty() }
         val tabs = rule.onNodeWithTag("server-sections").getUnclippedBoundsInRoot()
         val home = rule.onNodeWithTag("server-home").getUnclippedBoundsInRoot()
-        assertTrue("the tabs are narrower than the screen: $tabs within $home", tabs.width < home.width)
+        val tabsWidth = tabs.right - tabs.left
+        assertTrue("the tabs are narrower than the screen: $tabs within $home", tabsWidth < home.right - home.left)
         // The bounds are in the points of the tabs' own density, the tablet's: no wider than lines are kept to.
-        assertTrue("$tabs is $READABLE_WIDTH at most", tabs.width.value <= READABLE_WIDTH.value + 1)
+        assertTrue("$tabs is $READABLE_WIDTH at most", tabsWidth.value <= READABLE_WIDTH.value + 1)
         catalogue()
         waitForShown("the catalogue", hasText("Listed Title") and onShelf)
     }
