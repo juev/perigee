@@ -425,6 +425,62 @@ class ServerViewModelTest {
         listed("Listed Title")
     }
 
+    @Test
+    fun booksPageBringsWhatTheServerSaysOfItOnce() {
+        serverHas(book(7, "Listed Title", 70))
+        server.descriptions[7] = "<p>First of it.</p><p>Second of <em>it</em>.</p>"
+        signIn()
+        val listedBook = listed("Listed Title").books.single()
+
+        model.openBook(listedBook)
+        val state = until("the description has come") { it.detail != null && !it.detailLoading }
+        assertEquals(listedBook, state.opened)
+        assertEquals("the server's own markup, as it came", "<p>First of it.</p><p>Second of <em>it</em>.</p>", state.detail?.description)
+        assertEquals(listOf("Server Author"), state.detail?.authors)
+        // What the server has not is null in its answer, and is not taken for a word or a nought.
+        assertEquals("", state.detail?.subtitle)
+        assertEquals("", state.detail?.series)
+        assertNull(state.detail?.publishedYear)
+        assertNull(state.detail?.pageCount)
+        assertNull(state.detailFailure)
+
+        model.closeBook()
+        val closed = model.state.value
+        assertNull(closed.opened)
+        assertNull(closed.detail)
+        assertFalse(closed.detailLoading)
+
+        model.openBook(listedBook)
+        val again = model.state.value
+        assertEquals("shown at once, from what was kept", state.detail, again.detail)
+        assertFalse(again.detailLoading)
+        assertEquals("the server was asked once", 1, server.asked("/books/7").size)
+    }
+
+    @Test
+    fun booksPageThatCannotBeFilledSaysSoAndCanBeTriedAgain() {
+        serverHas(book(7, "Listed Title", 70))
+        server.descriptions[7] = "<p>About it.</p>"
+        signIn()
+        val shelf = listed("Listed Title").books
+        server.detailAnswer = Answer(500, """{"statusCode":500,"message":"Internal server error"}""")
+
+        model.openBook(shelf.single())
+        val failed = until("the failure is told") { it.detailFailure != null }
+        assertEquals(ServerFailure.Unreachable, failed.detailFailure)
+        assertFalse(failed.detailLoading)
+        assertNull(failed.detail)
+        assertEquals("the list stays as it was", shelf, failed.books)
+        assertNull("the list itself has not failed", failed.failure)
+
+        server.detailAnswer = null
+        model.retryDetail()
+        val state = until("the description has come") { it.detail != null }
+        assertNull(state.detailFailure)
+        assertEquals("<p>About it.</p>", state.detail?.description)
+        assertEquals(2, server.asked("/books/7").size)
+    }
+
     private companion object {
         const val TIMEOUT = 15_000L
     }

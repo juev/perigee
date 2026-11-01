@@ -14,6 +14,7 @@ position converter may disagree:
 Usage: make_corpus.py <output-dir>
 """
 
+import html
 import sys
 import zipfile
 from pathlib import Path
@@ -24,6 +25,12 @@ PARAGRAPHS = 40
 # A fixed timestamp keeps the archives byte-identical between runs, which keeps
 # the partial MD5 the server matches files by stable.
 ZIP_DATE = (2026, 1, 1, 0, 0, 0)
+
+# What the plain book says it is about: HTML, as `dc:description` carries it, escaped in the OPF.
+DESCRIPTION = (
+    "<p>A book made for the contract tests, with <em>inline</em> markup.</p>"
+    "<p>Its second paragraph says <b>nothing</b> more.</p>"
+)
 
 
 def paragraph(chapter: int, n: int) -> str:
@@ -53,7 +60,7 @@ def chapter_xhtml(chapter: int, css: bool) -> str:
 """
 
 
-def write_epub(path: Path, title: str, *, svg_first: bool = False, media_css: bool = False) -> None:
+def write_epub(path: Path, title: str, *, svg_first: bool = False, media_css: bool = False, description: str = "") -> None:
     items, spine, files = [], [], {}
     if svg_first:
         files["cover.svg"] = (
@@ -76,6 +83,7 @@ def write_epub(path: Path, title: str, *, svg_first: bool = False, media_css: bo
         files[f"c{c}.xhtml"] = chapter_xhtml(c, media_css)
         items.append(f'<item id="c{c}" href="c{c}.xhtml" media-type="application/xhtml+xml"/>')
         spine.append(f'<itemref idref="c{c}"/>')
+    about = f"\n    <dc:description>{html.escape(description, quote=False)}</dc:description>" if description else ""
 
     opf = f"""<?xml version="1.0" encoding="UTF-8"?>
 <package xmlns="http://www.idpf.org/2007/opf" version="2.0" unique-identifier="id">
@@ -83,7 +91,7 @@ def write_epub(path: Path, title: str, *, svg_first: bool = False, media_css: bo
     <dc:title>{title}</dc:title>
     <dc:creator>Perigee Contract</dc:creator>
     <dc:language>en</dc:language>
-    <dc:identifier id="id">perigee-contract-{path.stem}</dc:identifier>
+    <dc:identifier id="id">perigee-contract-{path.stem}</dc:identifier>{about}
   </metadata>
   <manifest>
     {chr(10).join(items)}
@@ -168,7 +176,7 @@ def main() -> None:
     if len(sys.argv) != 2:
         sys.exit(__doc__)
     out = Path(sys.argv[1])
-    write_epub(out / "plain" / "plain.epub", "Contract Plain")
+    write_epub(out / "plain" / "plain.epub", "Contract Plain", description=DESCRIPTION)
     write_epub(out / "spine-nonxhtml" / "spine-nonxhtml.epub", "Contract Spine NonXhtml", svg_first=True)
     write_epub(out / "media-css" / "media-css.epub", "Contract Media Css", media_css=True)
     write_fb2(out / "fb2" / "contract.fb2", "Contract Fb2")

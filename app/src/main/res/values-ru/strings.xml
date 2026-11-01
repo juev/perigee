@@ -242,6 +242,12 @@
     <string name="server_not_allowed">Вашей учётной записи на сервере это не разрешено.</string>
     <string name="server_untitled">Без названия</string>
     <string name="server_search_hint">Найти на сервере</string>
+    <plurals name="server_book_pages">
+        <item quantity="one">%1$d страница</item>
+        <item quantity="few">%1$d страницы</item>
+        <item quantity="many">%1$d страниц</item>
+        <item quantity="other">%1$d страницы</item>
+    </plurals>
     <string name="server_channel_password_needed">Чтение синхронизируется под именем KOReader, которое у вас уже есть на сервере: %1$s. Введите его пароль — тот, что задан в настройках KOReader на сервере.</string>
     <string name="server_channel_password">Пароль синхронизации KOReader</string>
     <string name="server_channel_password_wrong">Сервер не принимает этот пароль.</string>

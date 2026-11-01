@@ -9,6 +9,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.browser.customtabs.CustomTabsIntent
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -113,6 +114,7 @@ fun ServerScreen(onOpen: (File) -> Unit, onClose: () -> Unit, model: ServerViewM
 
     val back = {
         when {
+            state.opened != null -> model.closeBook()
             searching -> searching = false
             state.query.isNotEmpty() -> model.search("")
             else -> onClose()
@@ -183,6 +185,8 @@ fun ServerScreen(onOpen: (File) -> Unit, onClose: () -> Unit, model: ServerViewM
             model.downloadInto(uri.toString(), folderName(context, uri))
         }
     }
+    // The book's page lies over the list, which keeps its place and what it was looked up by underneath.
+    if (signedIn) state.opened?.let { book -> ServerBookPage(book, state, model, onOpen) }
     if (state.asking != null) {
         AlertDialog(
             onDismissRequest = model::dismissAsking,
@@ -199,7 +203,7 @@ fun ServerScreen(onOpen: (File) -> Unit, onClose: () -> Unit, model: ServerViewM
 }
 
 @Composable
-private fun failureText(failure: ServerFailure): String = stringResource(
+internal fun failureText(failure: ServerFailure): String = stringResource(
     when (failure) {
         ServerFailure.BadAddress -> R.string.server_bad_address
         ServerFailure.NotAServer -> R.string.server_not_a_server
@@ -376,7 +380,7 @@ private fun Books(padding: PaddingValues, state: ServerState, model: ServerViewM
             itemsIndexed(state.books, key = { _, book -> book.id }) { index, book ->
                 // Reaching the last line asks for what follows it.
                 if (index == state.books.lastIndex && state.more) LaunchedEffect(state.books.size) { model.more() }
-                BookRow(book, state, model, onOpen)
+                BookRow(book, state, model, onOpen, onClick = { model.openBook(book) })
                 HorizontalDivider()
             }
         }
@@ -447,8 +451,8 @@ private fun Channel(channel: DeviceChannel, state: ServerState, onPassword: (Str
 }
 
 @Composable
-private fun BookRow(book: RemoteBook, state: ServerState, model: ServerViewModel, onOpen: (File) -> Unit) {
-    Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp), verticalAlignment = Alignment.Top) {
+private fun BookRow(book: RemoteBook, state: ServerState, model: ServerViewModel, onOpen: (File) -> Unit, onClick: () -> Unit) {
+    Row(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 16.dp, vertical = 10.dp), verticalAlignment = Alignment.Top) {
         BookCover(book, model, Modifier.padding(end = 12.dp).size(width = 52.dp, height = 76.dp))
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Text(book.title.ifEmpty { stringResource(R.string.server_untitled) }, style = MaterialTheme.typography.titleSmall, maxLines = 3, overflow = TextOverflow.Ellipsis)
@@ -482,7 +486,7 @@ internal fun readableFiles(book: RemoteBook): List<RemoteFile> =
     book.files.filter { it.format in Library.FORMATS }.distinctBy { it.format }
 
 @Composable
-private fun InLibrary(bookId: String, model: ServerViewModel, onOpen: (File) -> Unit) {
+internal fun InLibrary(bookId: String, model: ServerViewModel, onOpen: (File) -> Unit) {
     val scope = rememberCoroutineScope()
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         Text(stringResource(R.string.catalog_downloaded), style = MaterialTheme.typography.bodySmall)
@@ -491,7 +495,7 @@ private fun InLibrary(bookId: String, model: ServerViewModel, onOpen: (File) -> 
 }
 
 @Composable
-private fun DownloadLine(book: RemoteBook, file: RemoteFile, fetched: Fetched?, model: ServerViewModel) {
+internal fun DownloadLine(book: RemoteBook, file: RemoteFile, fetched: Fetched?, model: ServerViewModel) {
     val format = file.format.uppercase()
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         when (fetched) {
@@ -509,7 +513,7 @@ private fun DownloadLine(book: RemoteBook, file: RemoteFile, fetched: Fetched?, 
 }
 
 @Composable
-private fun BookCover(book: RemoteBook, model: ServerViewModel, modifier: Modifier) {
+internal fun BookCover(book: RemoteBook, model: ServerViewModel, modifier: Modifier) {
     val picture by produceState<ImageBitmap?>(null, book.id) { value = model.cover(book) }
     val shape = RoundedCornerShape(4.dp)
     val shown = picture

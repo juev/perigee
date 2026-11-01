@@ -81,6 +81,30 @@ class FakeOrbit : AutoCloseable {
 
     /** What the list of books is answered with instead, while not null. */
     var queryAnswer: Answer? = null
+
+    /** What the books say they are about, as HTML, by book; a book not here has no description. */
+    val descriptions = HashMap<Long, String>()
+
+    /** What a book asked about alone is answered with instead, while not null. */
+    var detailAnswer: Answer? = null
+
+    /**
+     * A book of [books] as the server tells of it when asked about it alone: authors are objects
+     * here, and what the list does not carry is null unless the book in [books] has it.
+     */
+    private fun detail(id: Long): Answer {
+        val book = (0 until books.length()).map { books.getJSONObject(it) }.firstOrNull { it.optLong("id") == id }
+            ?: return error(404, "Book not found")
+        val names = book.optJSONArray("authors") ?: JSONArray()
+        val authors = JSONArray()
+        for (i in 0 until names.length()) authors.put(JSONObject().put("id", i + 1).put("name", names.getString(i)).put("sortName", names.getString(i)))
+        val answer = JSONObject().put("id", id).put("authors", authors).put("description", descriptions[id] ?: JSONObject.NULL)
+        for (field in listOf("title", "subtitle", "seriesName", "seriesIndex", "publisher", "publishedYear", "language", "pageCount", "isbn13")) {
+            answer.put(field, if (book.has(field)) book.get(field) else JSONObject.NULL)
+        }
+        return Answer(200, answer.toString())
+    }
+
     val downloads = HashMap<Long, Answer>()
 
     /** Whether the reader may put books into libraries, the largest file taken, and the libraries there are. */
@@ -640,6 +664,7 @@ class FakeOrbit : AutoCloseable {
                 if (note.isEmpty()) reviews.remove(id) else reviews[id] = note
                 Answer(200, JSONObject().put("id", id).put("personalNote", reviews[id] ?: JSONObject.NULL).toString())
             }
+            Regex("/books/\\d+").matches(path) && request.method == "GET" -> detailAnswer ?: detail(path.removePrefix("/books/").toLong())
             path == "/books/query" -> queryAnswer ?: matching(body).let { found ->
                 Answer(201, JSONObject().put("items", page(body, found)).put("total", total ?: found.length()).put("page", body.getJSONObject("pagination").getInt("page")).toString())
             }

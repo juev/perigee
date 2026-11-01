@@ -130,6 +130,28 @@ class AccountContractTest {
     }
 
     @Test
+    fun booksDescriptionIsTheServersOwnHtml() = runBlocking<Unit> {
+        val orbit = device().orbit
+        val books = orbit.books("", 0).books
+        val plain = books.first { it.title == "Contract Plain" }
+
+        val detail = orbit.detail(plain.id)
+        assertEquals(plain.id, detail.id)
+        assertEquals("Contract Plain", detail.title)
+        // Named in objects here and in plain names in the list: the same people all the same.
+        assertTrue(detail.authors.isNotEmpty())
+        assertEquals(plain.authors, detail.authors)
+        // The corpus gives the book a description in HTML, which the server keeps as it is for the app to flatten.
+        val about = checkNotNull(detail.description) { "the server has no description of ${plain.title}" }
+        assertTrue(about, "A book made for the contract tests" in about)
+        assertTrue(about, "Its second paragraph" in about)
+        assertTrue(about, "<em>inline</em>" in about)
+
+        // A book without one says so rather than failing.
+        assertNull(orbit.detail(books.first { it.title == "Contract Media Css" }.id).description)
+    }
+
+    @Test
     fun tokenThatRanOutIsRenewedWithoutTheReader() = runBlocking<Unit> {
         val device = device()
         val before = checkNotNull(device.accounts.tokens())

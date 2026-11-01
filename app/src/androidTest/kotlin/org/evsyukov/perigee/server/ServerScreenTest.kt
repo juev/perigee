@@ -3,14 +3,24 @@ package org.evsyukov.perigee.server
 import androidx.activity.ComponentActivity
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.ui.test.ComposeTimeoutException
+import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.click
+import androidx.compose.ui.test.hasAnyAncestor
+import androidx.compose.ui.test.hasContentDescription
+import androidx.compose.ui.test.hasTestTag
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performImeAction
+import androidx.compose.ui.test.performScrollToKey
 import androidx.compose.ui.test.performTextReplacement
+import androidx.compose.ui.test.performTouchInput
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import java.io.File
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -31,6 +41,7 @@ import org.evsyukov.perigee.sync.FakeOrbit
 import org.json.JSONArray
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Rule
@@ -211,6 +222,110 @@ class ServerScreenTest {
         rule.onNodeWithText(string(R.string.catalog_read)).performClick()
         waitFor("the book is opened") { opened != null }
         assertEquals(book.path, opened?.path)
+    }
+
+    private val onPage = hasAnyAncestor(hasTestTag("server-book-page"))
+    private val onShelf = hasAnyAncestor(hasTestTag("server-books"))
+
+    private fun shown(matcher: SemanticsMatcher) = rule.onAllNodes(matcher).fetchSemanticsNodes().isNotEmpty()
+
+    private fun waitForShown(what: String, matcher: SemanticsMatcher) = waitFor("$what is shown") { shown(matcher) }
+
+    private fun pageIsOpen() = rule.onAllNodesWithTag("server-book-page").fetchSemanticsNodes().isNotEmpty()
+
+    /** Taps the book's line on its cover, away from the buttons on it, and waits for the book's page. */
+    private fun openPageOf(title: String) {
+        rule.onNode(hasText(title) and onShelf).performTouchInput { click(percentOffset(0.1f, 0.5f)) }
+        waitFor("the page of $title is open") { pageIsOpen() }
+    }
+
+    private fun closePage() {
+        rule.onNode(hasContentDescription(string(R.string.action_back)) and onPage).performClick()
+        waitFor("the page is closed") { !pageIsOpen() }
+    }
+
+    @Test
+    fun tapOnABookOpensItsPageAndTheWayBackReturnsToTheSamePlace() {
+        serverHas(*(1..30).map { book(it.toLong(), "Book %02d".format(it), it * 10L) }.toTypedArray())
+        server.descriptions[25] = "<p>First of it.</p><p>Second of <em>it</em>.</p>"
+        show()
+        signIn()
+        waitForText("Book 01")
+        // The stand-in server finds every book by any phrase.
+        rule.onNodeWithContentDescription(string(R.string.action_search)).performClick()
+        rule.onNodeWithTag("server-search").performTextReplacement("tale")
+        rule.onNodeWithTag("server-search").performImeAction()
+        waitFor("the books found are listed") { model.state.value.let { it.query == "tale" && !it.loading && it.books.size == 30 } }
+        rule.onNodeWithTag("server-books").performScrollToKey(25L)
+
+        openPageOf("Book 25")
+        waitForShown("the description", hasText("Second of it.") and onPage)
+        rule.onNode(hasText("First of it.") and onPage).assertIsDisplayed()
+        rule.onNode(hasText("Book 25") and onPage).assertIsDisplayed()
+        rule.onNode(hasText("Server Author") and onPage).assertIsDisplayed()
+
+        closePage()
+        rule.onNodeWithText("tale").assertIsDisplayed()
+        rule.onNode(hasText("Book 25") and onShelf).assertIsDisplayed()
+        rule.onNode(hasText("Book 01") and onShelf).assertDoesNotExist()
+        assertEquals("the list keeps all it had", 30, model.state.value.books.size)
+    }
+
+    @Test
+    fun bookWithNoDescriptionSaysSo() {
+        serverHas(book(7, "Listed Title", 70))
+        show()
+        signIn()
+        waitForText("Listed Title")
+
+        openPageOf("Listed Title")
+        waitForShown("that the book says nothing of itself", hasText(string(R.string.book_no_description)) and onPage)
+    }
+
+    @Test
+    fun downloadBegunOnThePageShowsOnTheLineAndTheBookIsReadFromThePage() {
+        serverHas(book(7, "Listed Title", 70))
+        server.downloads[70] = Answer(200, bookFile.readBytes(), "application/x-fictionbook+xml", mapOf("Content-Disposition" to "attachment; filename=\"listed.fb2\""))
+        show()
+        signIn()
+        waitForText("Listed Title")
+
+        openPageOf("Listed Title")
+        waitForShown("the download", hasText(string(R.string.catalog_download, "FB2")) and onPage)
+        rule.onNode(hasText(string(R.string.catalog_download, "FB2")) and onPage).performClick()
+        waitForShown("the book in the library on the page", hasText(string(R.string.catalog_downloaded)) and onPage)
+        waitForShown("the book in the library on its line", hasText(string(R.string.catalog_downloaded)) and onShelf)
+        val book = runBlocking { library.books().first().single() }
+
+        rule.onNode(hasText(string(R.string.catalog_read)) and onPage).performClick()
+        waitFor("the book is opened") { opened != null }
+        // The reader goes to the book, as from the library's own page: the page is left, not kept behind the reader.
+        waitFor("the page is closed") { !pageIsOpen() }
+        assertEquals(book.path, opened?.path)
+    }
+
+    @Test
+    fun pageThatCannotBeFilledSaysSoAndLeavesTheListUsable() {
+        serverHas(book(7, "Listed Title", 70), book(8, "Other Title", 80))
+        server.descriptions[7] = "<p>About it.</p>"
+        show()
+        signIn()
+        waitForText("Other Title")
+        server.detailAnswer = Answer(500, """{"statusCode":500,"message":"Internal server error"}""")
+
+        openPageOf("Listed Title")
+        waitForShown("the failure", hasText(string(R.string.server_unreachable)) and onPage)
+        rule.onNode(hasText(string(R.string.action_retry)) and onPage).assertIsDisplayed()
+        assertTrue("the list is there behind the page", shown(hasText("Other Title") and onShelf))
+        assertNull("the list itself has not failed", model.state.value.failure)
+
+        server.detailAnswer = null
+        rule.onNode(hasText(string(R.string.action_retry)) and onPage).performClick()
+        waitForShown("the description", hasText("About it.") and onPage)
+
+        closePage()
+        openPageOf("Other Title")
+        waitForShown("that the other book says nothing of itself", hasText(string(R.string.book_no_description)) and onPage)
     }
 
     private companion object {

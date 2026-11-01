@@ -31,6 +31,7 @@ import org.evsyukov.perigee.sync.NotAServerException
 import org.evsyukov.perigee.sync.NotAllowedException
 import org.evsyukov.perigee.sync.PasswordLoginDisabledException
 import org.evsyukov.perigee.sync.RemoteBook
+import org.evsyukov.perigee.sync.RemoteBookDetail
 import org.evsyukov.perigee.sync.RemoteFile
 import org.evsyukov.perigee.sync.SignInCancelledException
 import org.evsyukov.perigee.sync.SignInExpiredException
@@ -117,6 +118,12 @@ data class ServerState(
     val asking: Pair<RemoteBook, RemoteFile>? = null,
     /** How many books have something the reader did in them still to reach the server. */
     val unsent: Int = 0,
+    /** The book whose page is open; null while the list alone is shown. */
+    val opened: RemoteBook? = null,
+    /** What the server told of [opened]; null until it has. */
+    val detail: RemoteBookDetail? = null,
+    val detailLoading: Boolean = false,
+    val detailFailure: ServerFailure? = null,
 )
 
 /** The bookOrbit server: signing in to it, looking through its books, downloading them into the library. */
@@ -141,6 +148,10 @@ class ServerViewModel(
     private var page = 0
     private val pictures = LruCache<Long, ImageBitmap>(64)
 
+    /** What the server told of a book, kept while the screen lives: a page opened again asks nothing. */
+    private val details = HashMap<Long, RemoteBookDetail>()
+    private var detailing: Job? = null
+
     init {
         viewModelScope.launch {
             var signedInTo: Any? = Unit
@@ -152,6 +163,9 @@ class ServerViewModel(
                     return@collect
                 }
                 signedInTo = identity
+                // Another server numbers its books its own way.
+                detailing?.cancel()
+                details.clear()
                 val over = account != null && accounts.tokens()?.refresh.isNullOrEmpty()
                 _state.update {
                     ServerState(
@@ -382,6 +396,41 @@ class ServerViewModel(
             _state.update { it.copy(sessionOver = true, books = emptyList(), more = false) }
         } else {
             _state.update { it.copy(failure = failureOf(e)) }
+        }
+    }
+
+    /** Opens the page of [book]; what the server tells of it is asked for once while the screen lives. */
+    fun openBook(book: RemoteBook) {
+        val known = details[book.id]
+        _state.update { it.copy(opened = book, detail = known, detailLoading = false, detailFailure = null) }
+        if (known == null) askDetail(book)
+    }
+
+    /** Asks the server again for the book whose page is open, as after it could not be reached. */
+    fun retryDetail() {
+        _state.value.opened?.let(::askDetail)
+    }
+
+    fun closeBook() {
+        detailing?.cancel()
+        _state.update { it.copy(opened = null, detail = null, detailFailure = null, detailLoading = false) }
+    }
+
+    private fun askDetail(book: RemoteBook) {
+        detailing?.cancel()
+        _state.update { it.copy(detailLoading = true, detailFailure = null) }
+        detailing = viewModelScope.launch {
+            try {
+                val detail = orbit.detail(book.id)
+                details[book.id] = detail
+                // The reader may have closed the page, or opened another, while this was on the way.
+                _state.update { if (it.opened?.id == book.id) it.copy(detail = detail, detailLoading = false) else it }
+            } catch (e: SignedOutException) {
+                _state.update { it.copy(opened = null, detail = null, detailLoading = false) }
+                failed(e)
+            } catch (e: IOException) {
+                _state.update { if (it.opened?.id == book.id) it.copy(detailLoading = false, detailFailure = failureOf(e)) else it }
+            }
         }
     }
 
