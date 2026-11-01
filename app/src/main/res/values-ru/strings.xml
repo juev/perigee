@@ -325,6 +325,7 @@
     <string name="about_author">Автор</string>
     <string name="about_source">Исходный код</string>
     <string name="action_licenses">Лицензии</string>
+    <string name="about_open_failed">На этом телефоне нет приложения, чтобы открыть этот адрес</string>
     <string name="licenses_title">Лицензии</string>
     <string name="licenses_gpl">GNU General Public License, версия 3</string>
     <string name="action_view_grid">Показать сеткой обложек</string>
