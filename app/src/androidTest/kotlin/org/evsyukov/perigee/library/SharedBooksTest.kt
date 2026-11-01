@@ -177,6 +177,21 @@ class SharedBooksTest {
 
     private fun waitForBook(activity: MainActivity, title: String) = waitFor("the reader shows $title") { shown(activity) == title }
 
+    /**
+     * The system's Back, pressed once the screen can take it: settled, and its window holding the
+     * input focus. Being in front is not enough: a window of the system may hold the focus for a
+     * while, as the notice it shows over a screen that hides its bars, and a key goes to that window.
+     */
+    private fun pressBack(activity: MainActivity) {
+        rule.waitForIdle()
+        waitFor("the reader's screen has the input focus") {
+            var focused = false
+            instrumentation.runOnMainSync { focused = activity.hasWindowFocus() }
+            focused
+        }
+        instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_BACK)
+    }
+
     private fun turn(activity: MainActivity) {
         val model = reader(activity)
         val before = model.state.value.page!!.index
@@ -291,9 +306,9 @@ class SharedBooksTest {
 
         // Back closes the book, then leaves the app: the sharing app, in its own task, is where it was.
         val resumes = Sender.resumes()
-        instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_BACK)
+        pressBack(main)
         waitFor("the book is closed") { reader(main).state.value.book == null }
-        instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_BACK)
+        pressBack(main)
         waitFor("the sharing app is back") { Sender.resumes() > resumes }
         assertTrue(Sender.alive())
     }
