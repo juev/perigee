@@ -309,20 +309,33 @@ int main(int argc, char** argv) {
     props->setInt(PROP_FONT_MONOSPACE_SCALE, monospaceScale);
     props->setInt(PROP_EMBEDDED_FONTS, embeddedFonts == "on" ? 1 : 0);
     view.propsApply(props);
-    const perigee::FaceSize faceSize =
-        sameSize == "on" ? perigee::sizeOfFace(lString8(face.c_str()), size, weight) : perigee::FaceSize{size, lString8()};
-    view.setFontSize(faceSize.em);
     view.setPageMargins(lvRect(0, 0, 0, 0));
     view.setVisiblePageCount(1, false);
-    const std::string stylesheetName = css;
     const std::string extraCss = extraCssWith(userCss);
-    lString8 stylesheet;
-    if (!LVLoadStylesheetFile(Utf8ToUnicode((data + "/" + css).c_str()), stylesheet)) {
+    lString8 base;
+    if (!LVLoadStylesheetFile(Utf8ToUnicode((data + "/" + css).c_str()), base)) {
         std::fprintf(stderr, "gaps: cannot read %s/%s\n", data.c_str(), css.c_str());
         return 1;
     }
-    stylesheet << "\r\n" << extraCss.c_str() << "\r\n" << faceSize.css;
-    view.setStyleSheet(stylesheet, false);
+    base << "\r\n" << extraCss.c_str();
+    // The size of the face the book's text is drawn in, the reader's while the document is not loaded;
+    // setSize sets one and says whether it differs from the size set before.
+    auto sizeFor = [&](ldomDocument* doc, const std::string& picked) {
+        return sameSize == "on" ? perigee::sizeOfDrawnFace(doc, lString8(picked.c_str()), size, weight)
+                                : perigee::FaceSize{size, lString8(), lString8(picked.c_str())};
+    };
+    perigee::FaceSize faceSize = sizeFor(nullptr, face);
+    auto setSize = [&](const perigee::FaceSize& next, bool force) {
+        const bool same = next.em == faceSize.em && next.css == faceSize.css;
+        faceSize = next;
+        if (same && !force) return false;
+        view.setFontSize(next.em);
+        lString8 stylesheet = base;
+        stylesheet << "\r\n" << next.css;
+        view.setStyleSheet(stylesheet, false);
+        return true;
+    };
+    setSize(faceSize, true);
     view.Resize(width, height);
 
     // NativeEngine.load
@@ -337,32 +350,37 @@ int main(int argc, char** argv) {
     // --kerning replaces it, as in create.
     props->setInt(PROP_FONT_KERNING, kerning);
     view.propsApply(props);
+    // Loaded, the elements have their styles and name the face the book's text is drawn in.
+    setSize(sizeFor(view.getDocument(), face), false);
     auto started = std::chrono::steady_clock::now();
     view.Render();
+    // The app's check, for a book read back from its cache; this tool keeps none, so it lays out again only
+    // when the face read before the layout is not the one the layout draws.
+    if (setSize(sizeFor(view.getDocument(), face), false)) view.Render();
     auto rendered = std::chrono::steady_clock::now();
     // The rows of the paragraph log after this marker are the paragraphs planned again while drawing.
     if (FILE* log = perigeeGapsParagraphLog()) std::fprintf(log, "#draw\n");
     // What NativeEngine.applySettings does when the reader picks another face in an open book.
     if (!switchFace.empty()) {
         auto asked = std::chrono::steady_clock::now();
-        const perigee::FaceSize next = sameSize == "on" ? perigee::sizeOfFace(lString8(switchFace.c_str()), size, weight)
-                                                        : perigee::FaceSize{size, lString8()};
+        // The styles are still those of the face picked first: a book drawn in it is drawn in the one picked now.
+        const bool readersFace = perigee::drawnFace(view.getDocument()).face == face.c_str();
+        const perigee::FaceSize next = sizeFor(readersFace ? nullptr : view.getDocument(), switchFace);
         auto measured = std::chrono::steady_clock::now();
         props = LVCreatePropsContainer();
         props->setString(PROP_FONT_FACE, switchFace.c_str());
         view.propsApply(props);
-        view.setFontSize(next.em);
-        lString8 css;
-        LVLoadStylesheetFile(Utf8ToUnicode((data + "/" + stylesheetName).c_str()), css);
-        css << "\r\n" << extraCss.c_str() << "\r\n" << next.css;
-        view.setStyleSheet(css, false);
+        setSize(next, false);
         view.Render();
+        const int layouts = setSize(sizeFor(view.getDocument(), switchFace), false) ? 2 : 1;
+        if (layouts == 2) view.Render();
         auto laidOut = std::chrono::steady_clock::now();
         auto us = [](std::chrono::steady_clock::duration d) {
             return static_cast<long>(std::chrono::duration_cast<std::chrono::microseconds>(d).count());
         };
-        std::printf("switch to %s: measuring %ld us, laying out %ld ms, %d pages\n", switchFace.c_str(), us(measured - asked),
-                    us(laidOut - measured) / 1000, view.getPageCount());
+        std::printf("switch to %s: measuring %ld us, laying out %ld ms, %d pages, em %d px for %s, %d layout%s\n",
+                    switchFace.c_str(), us(measured - asked), us(laidOut - measured) / 1000, view.getPageCount(), faceSize.em,
+                    faceSize.face.c_str(), layouts, layouts == 1 ? "" : "s");
         return 0;
     }
 
@@ -419,9 +437,14 @@ int main(int argc, char** argv) {
                 lookahead.c_str(), paragraph.c_str(), antialias.c_str(), hinting, kerning, fractional, monospaceScale,
                 embeddedFonts.c_str(), pages);
     {
-        LVFontRef font = perigee::regularFont(lString8(face.c_str()), faceSize.em, weight, faceSize.em);
-        std::printf("size: em %d px (asked %d, drawn %d), x-height %.2f px, caps %.2f px, font height %d px%s%s\n", faceSize.em, size,
-                    view.getFontSize(), font->getExtraMetric(font_metric_x_height, false) / 64.0,
+        // The face the size is worked out for, reached as the book reaches it when the book carries it.
+        const perigee::DrawnFace drawn = perigee::drawnFace(view.getDocument());
+        const bool own = drawn.face == faceSize.face;
+        LVFontRef font = perigee::regularFont(faceSize.face, faceSize.em, weight, faceSize.em, own ? drawn.documentId : -1,
+                                              own ? drawn.docFragmentIdx : -1);
+        std::printf("size: em %d px (asked %d, drawn %d) for %s, text drawn in %s, x-height %.2f px, caps %.2f px, "
+                    "font height %d px%s%s\n", faceSize.em, size, view.getFontSize(), faceSize.face.c_str(),
+                    drawn.face.empty() ? "nothing" : drawn.face.c_str(), font->getExtraMetric(font_metric_x_height, false) / 64.0,
                     font->getExtraMetric(font_metric_cap_height, false) / 64.0, font->getHeight(),
                     faceSize.css.empty() ? "" : ", ", faceSize.css.empty() ? "" : "line height set by the rule");
     }
