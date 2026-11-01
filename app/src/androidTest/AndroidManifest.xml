@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The test package as another app sharing files with Perigee: a file manager under a user ID of its own, whose
+     files Perigee may read only with the right granted by the share. Part of the test package only. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Held by no other app: the files are read through a grant or not at all. -->
+    <permission android:name="${applicationId}.READ_SENT" android:protectionLevel="signature" />
+
+    <application>
+        <!-- Open to be called, for the tests to put files in; reading them takes the permission above or a grant. -->
+        <provider
+            android:name="org.evsyukov.perigee.share.SenderProvider"
+            android:authorities="${applicationId}.sender"
+            android:exported="true"
+            android:grantUriPermissions="true"
+            android:readPermission="${applicationId}.READ_SENT" />
+        <activity
+            android:name="org.evsyukov.perigee.share.SenderActivity"
+            android:exported="true" />
+    </application>
+</manifest>

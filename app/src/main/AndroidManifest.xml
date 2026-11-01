@@ -23,6 +23,37 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+        <!-- Book files shared from a file manager or another app, one or several. The activity stays over the
+             app that shared them, in its task, while they are copied, then brings the app's own task to the
+             front as it is; an empty affinity keeps it out of that task when a share starts a task of its own.
+             The types are those of the formats the engine reads, and the zip and the unnamed binary type many
+             file managers give an FB2, an FB2 in an archive or a format the system does not know. No text type:
+             plain text and links shared from other apps are not books. Each file is checked once it comes. -->
+        <activity
+            android:name=".library.ShareActivity"
+            android:excludeFromRecents="true"
+            android:exported="true"
+            android:taskAffinity=""
+            android:theme="@android:style/Theme.Translucent.NoTitleBar">
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <action android:name="android.intent.action.SEND_MULTIPLE" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="application/epub+zip" />
+                <data android:mimeType="application/x-fictionbook+xml" />
+                <data android:mimeType="application/x-fictionbook" />
+                <data android:mimeType="application/x-zip-compressed-fb2" />
+                <data android:mimeType="application/x-mobipocket-ebook" />
+                <data android:mimeType="application/rtf" />
+                <data android:mimeType="application/msword" />
+                <data android:mimeType="application/vnd.openxmlformats-officedocument.wordprocessingml.document" />
+                <data android:mimeType="application/vnd.oasis.opendocument.text" />
+                <data android:mimeType="application/vnd.ms-htmlhelp" />
+                <data android:mimeType="application/x-chm" />
+                <data android:mimeType="application/zip" />
+                <data android:mimeType="application/octet-stream" />
+            </intent-filter>
+        </activity>
         <!-- Where an OIDC provider sends the reader back: the one address the server takes from its native clients. -->
         <activity
             android:name=".server.SignInRedirectActivity"

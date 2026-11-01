@@ -7,8 +7,44 @@ Requirement R4 of `plan.md`. The library works with no network and no account. W
 - **Folders.** The reader picks folders through the system's folder dialog (Storage Access Framework); the app keeps access to them across restarts, to read and to write: writing is what lets the reader delete a book there. Folders added before the app asked to write are read only until the reader picks them again. Every folder is looked through together with the folders inside it.
 - **Downloads.** Books downloaded from catalogs go into the folder the reader chose for them, which is one of the folders above, or into the app's storage; see `opds.md`.
 - **Single files.** "Open a book" picks one file from anywhere. It is copied into the app's storage and listed like the rest.
+- **Shared files.** A file manager or any other app shares one book or several with the app through its "Share" menu. They are copied into the app's storage the same way; see "Books shared from other apps".
 
 A file is a book when its name ends in one of `Library.FORMATS`: `epub`, `fb2`, `fb2.zip`, `fb3`, `mobi`, `prc`, `pdb`, `txt`, `rtf`, `doc`, `docx`, `odt`, `html`, `htm`, `chm`. Other files are passed by.
+
+## Books shared from other apps
+
+The app takes `ACTION_SEND` (one file) and `ACTION_SEND_MULTIPLE` (several) in `ShareActivity`, an activity for that alone; the reader's screen, `MainActivity`, takes no share itself. Nothing else is needed: no folder, no access to the folder the file lies in, no permission to the device's storage, no account.
+
+**Which shares offer the app.** The share menu lists the app for these types: `application/epub+zip`, `application/x-fictionbook+xml`, `application/x-fictionbook`, `application/x-zip-compressed-fb2`, `application/x-mobipocket-ebook`, `application/rtf`, `application/msword`, the Word and OpenDocument text types, the two CHM types, `application/zip` and `application/octet-stream`. Many file managers know no type for an FB2 or for a format of an older reader and give the binary type; an FB2 in an archive comes as `application/zip`. So the app is also offered for any zip or unnamed binary file, and takes only the books among them. Several files of different types come under a type they share, such as `application/*`, which the system matches against the same list. No text type is listed: plain text and links shared from a browser or a messenger are not books, and the app is not offered for them; TXT and HTML books come in through "Open a book" or a folder. PDF is not a format the engine reads, and the app is not offered for it.
+
+**One file** that becomes a book is opened in the reader at once, whatever screen was shown. **Several files** are taken in one after another and are not opened: a list shows each book that joined the library with a "Read" button, and each file that did not with the reason. The list is shown over whatever screen there is, whatever shelf, sorting or search the library has; closing it leaves the library as it was. One file that did not become a book is shown the same way. A file that fails does not stop the rest.
+
+**What is checked.** Only `content://` addresses are read, through the system's `ContentResolver` and the right to read that comes with the share. A file is a book when the name its app gives it ends as one of `Library.FORMATS` does (with no name given, the address's last part is taken), and the engine reads it (`Engine.describe`). The reasons a file is not taken, in English and Russian:
+
+- the file could not be opened — no file came with the share, its app gave no stream, or the address is not `content://`;
+- the app it came from does not let the app read it — the right to read is gone;
+- not a book the app reads — its name ends otherwise;
+- the book could not be read — the engine cannot read the file;
+- the file could not be copied — reading broke off half way, or the app's storage could not be written.
+
+**How it is kept.** The file shared is only read; it is never moved, changed or deleted. It is copied to a name of its own in `files/books/` (`.import-…`) and read there; only a whole copy that the engine read is kept, as `files/books/<fingerprint>.<format>`, the way a book of a folder is copied for reading. An FB2 in an archive is kept as the FB2 inside, known by its fingerprint ("A book in an archive"). Two different books that came under one name are two files. A book the library has already keeps its row and everything the reader left in it — the place, bookmarks, quotes, status, collections — and is read from the copy the app has; that copy is not written again, so a book that is open stays as it is. "Open a book" takes a picked file the same way (`BookImport`).
+
+When anything fails, the copy is removed before the reason is shown, and the library is as it was; so is a cover read from the file, unless it is the cover of a book the library has. A copy left by an app that died while copying is removed with the other files no book is read from, an hour after it was last written (see "Opening a book"); the hour also keeps a copy being made from being removed by a look through the folders.
+
+**Where the files are copied.** `ShareActivity` is shown over the app that shared the files, in that app's task, with a sign that books are being added and a Cancel button, while it copies them; the system gives the right to read a shared file to the activity it is shared with, and the right lasts while that activity does. The copying is held by the activity's model: it goes on while the activity is made anew, and begins again if the app died meanwhile and the system brings the activity back. Cancel, or Back, ends the activity, calls the copying off and removes the part copied; that is not a failure to show. The copying waits for an app slow to give its file only as long as it is not called off. An app that hangs when it is asked for the file's name, or for the file, keeps the import waiting until it answers: the app cannot be made to. Files are copied off the main thread, one after another in the order they came.
+
+**How the reader sees them.** Once the files are taken in, what became of them is handed to the reader's screen and `ShareActivity` ends:
+
+- **The app is running.** Its task is brought to the front as it is (`ActivityManager.AppTask.moveToFront`): no activity in it is closed and no second reader's screen is made. When the reader's screen is in front, the shared book opens there, on whatever screen the app showed; a book being read is closed as when another is opened from the library, and keeps its place. When something is over it — the system's dialog for picking a file, or the browser's page for signing in to the server — that stays in front and is left to the reader; the share waits and is shown once the reader's screen is in front again.
+- **The app is not running.** It is started on the shared book, not on the book the reader left, in a task of its own, with the intent the launcher starts it with: the launcher brings that task back rather than making another.
+
+What is handed over is kept in memory only (`SharedBooks`): the books are in the library as soon as they are taken in, and if the app is closed by the system before the reader's screen shows them, what is lost is that one is opened, or that the list is shown. A book shared, or picked, while the app is starting and looks up the book the reader left is opened, and the book the reader left is not opened over it.
+
+**Back and tasks.** The app that shared the files stays in its own task, as it was. In Perigee, Back does what it always does: from a book to the library, from the library out of the app; out of the app, the reader is back where they were before, as a rule in the app that shared the files. `ShareActivity` is not listed among the recent apps; Perigee's own task is, once.
+
+`SharedFiles.kt` reads the intent: the files are taken from `EXTRA_STREAM`, or from the clip when an app puts them only there; the system copies the stream into the clip as well, and a file found in both is taken once. An extra of another kind, or one that cannot be unparcelled, counts as no file.
+
+"Open with" (`ACTION_VIEW`) is not taken.
 
 ## Looking through a folder
 
@@ -87,8 +123,12 @@ Room database `reading.db`, version 2 (`data/schemas`): `books` gained the docum
 - `:app` `LibraryViewModelTest` (JVM) — deleting a book: in the app's storage, in a folder, a folder only read, a book synced first, one with changes the server could not be told of.
 - `:app` `ListingTest` (JVM) — shelves, groups, search and sorting.
 - `:app` `LibraryScreenTest` — the screen: empty library, shelves, favourites, statuses, search, authors, collections, opening a book from a folder.
+- `:app` `BookImportTest` (JVM) — a picked or shared file: kept under its fingerprint, the file shared only read, two books of one name, a book shared again with its place and marks, an FB2 in an archive, a file of another kind, a name that climbs out of the folder, an address that is not `content://`, a damaged file, no stream, a file gone, no right to read, reading broken off, storage that cannot be written, a copy that cannot be put in place, copying called off; nothing left behind each time, and the cover of a book the library has kept.
+- `:app` `SharedFilesTest` (JVM) — which files an intent shares: the stream, the clip, both, several, none, an extra of another kind.
+- `:app` `SharedBooksTest` — sharing through the system from another app: the test package shares its own files (`SenderActivity`, `SenderProvider`, in the test package only), in a process and under a user ID of its own, and Perigee reads them only with the right the share grants. The share menu's types; one book with the app closed, opened rather than the book left, in a task the launcher brings back, not taken again when the screen is made anew; one book while another is read, reaching the same screen, the first keeping its place, Back leading to the library and then to the app that shared it; a share while a stand-in for the file dialog is over the reader's screen, which stays and is shown the book only after it closes; a share while the book left is being looked up; a book shared again; one file that is no book; a share without the right to read; the right taken back half way; the share made anew while copying; a share called off while the other app is slow; several books with the Reading shelf shown, an EPUB, an FB2 in an archive, two of one name, read from the list; every kind of failure in one share; a copy that cannot be put in place, with its cover.
+- `:app` `LibraryScannerTest` also checks that a picked file is copied under its fingerprint and read for its cover, authors, series and description.
 
-The tests reach folders as plain directories. The system's folder dialog and its documents were checked by hand on the emulator only.
+The tests reach folders as plain directories. The system's folder dialog and its documents were checked by hand on the emulator only. No file manager is installed on the test emulator: the share menu is checked by asking the system which activities take each type.
 
 ## List, grid and a book's page
 
