@@ -1199,7 +1199,7 @@ class BookOrbit(
         if (signedInAs() != owner) throw AccountChangedException()
     }
 
-    internal fun refusal(reply: Reply): IOException = failure(reply)
+    internal fun sessionFailure(reply: Reply): IOException = failure(reply)
 
     /** Done between rounds of syncing, never during one: what a round read of a book is not sent over what [block] changed. */
     internal suspend fun <T> betweenRounds(block: suspend () -> T): T = syncing.withLock { block() }

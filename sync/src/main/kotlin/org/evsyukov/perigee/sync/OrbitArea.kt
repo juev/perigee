@@ -47,7 +47,7 @@ class OrbitArea internal constructor(private val orbit: BookOrbit, private val a
             // No batch on this server, or one that refuses a list naming a shelf it does not have.
             reply.code == 404 || reply.code == 400 -> kinds.associateWith { shelf(it, limit, who) }
             reply.code >= 500 -> kinds.associateWith { Shelf.Failed }
-            else -> throw orbit.refusal(reply)
+            else -> throw orbit.sessionFailure(reply)
         }
     }
 
@@ -64,7 +64,7 @@ class OrbitArea internal constructor(private val orbit: BookOrbit, private val a
             // A shelf this version has no word for is refused as a value it cannot parse.
             reply.code == 404 || reply.code == 400 -> Shelf.Unsupported
             reply.code >= 500 -> Shelf.Failed
-            else -> throw orbit.refusal(reply)
+            else -> throw orbit.sessionFailure(reply)
         }
     }
 
@@ -360,7 +360,7 @@ class OrbitArea internal constructor(private val orbit: BookOrbit, private val a
         reply.code == 404 -> NotOnServerException(reply.message.ifEmpty { "not found" })
         reply.code == 409 -> NameTakenException(reply.message)
         reply.code == 400 -> NotSavedException(reply.message)
-        else -> orbit.refusal(reply)
+        else -> orbit.sessionFailure(reply)
     }
 
     companion object {
