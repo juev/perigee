@@ -369,6 +369,32 @@ class BookOrbit(
         )
     }
 
+    override suspend fun detail(bookId: Long): RemoteBookDetail {
+        val reply = jwt("GET", "/books/$bookId")
+        if (!reply.ok) throw failure(reply)
+        val json = reply.json() ?: throw ServerResponseException(reply.code, "no book")
+        return detailOf(bookId, json)
+    }
+
+    /** The answer is the book itself; its authors are named in objects here, not in plain names as in the list. */
+    private fun detailOf(bookId: Long, json: JSONObject): RemoteBookDetail {
+        val authors = json.optJSONArray("authors") ?: JSONArray()
+        return RemoteBookDetail(
+            id = json.optLong("id", bookId),
+            title = json.textOf("title"),
+            subtitle = json.stringOrNull("subtitle").orEmpty(),
+            authors = (0 until authors.length()).mapNotNull { authors.optJSONObject(it)?.textOf("name") }.filter { it.isNotBlank() },
+            series = json.textOf("seriesName"),
+            seriesNumber = json.textOf("seriesIndex"),
+            description = json.stringOrNull("description"),
+            publisher = json.stringOrNull("publisher").orEmpty(),
+            publishedYear = json.intOrNull("publishedYear"),
+            language = json.stringOrNull("language").orEmpty(),
+            pageCount = json.intOrNull("pageCount"),
+            isbn = json.stringOrNull("isbn13") ?: json.stringOrNull("isbn10").orEmpty(),
+        )
+    }
+
     override suspend fun cover(book: RemoteBook): ByteArray? {
         if (!book.hasCover) return null
         return try {
@@ -1354,6 +1380,12 @@ class BookOrbit(
             ByteArray(bytes).also(SecureRandom()::nextBytes).joinToString("") { "%02x".format(it) }
 
         private fun JSONObject.textOf(name: String): String = if (isNull(name)) "" else optString(name)
+
+        /** Null for a value that is absent, null or blank: Android's `optString` answers "" for a JSON null. */
+        private fun JSONObject.stringOrNull(name: String): String? = if (isNull(name)) null else optString(name).ifBlank { null }
+
+        /** Null for a number that is absent or null, rather than the nought `optInt` would give. */
+        private fun JSONObject.intOrNull(name: String): Int? = if (has(name) && !isNull(name)) optInt(name) else null
 
         /** The words of a list, in lower case. */
         private fun JSONArray?.words(): Set<String> {

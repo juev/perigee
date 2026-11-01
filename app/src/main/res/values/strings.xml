@@ -238,6 +238,11 @@
     <string name="server_not_allowed">Your account on the server is not allowed to do this.</string>
     <string name="server_untitled">Untitled</string>
     <string name="server_search_hint">Find on the server</string>
+    <plurals name="server_book_pages">
+        <item quantity="one">%1$d page</item>
+        <item quantity="other">%1$d pages</item>
+    </plurals>
+    <string name="server_book_isbn" translatable="false">ISBN %1$s</string>
     <string name="server_channel_password_needed">Reading is synced under the KOReader user name you have on the server, %1$s. Enter its password, as set in the server\'s KOReader settings.</string>
     <string name="server_channel_password">KOReader sync password</string>
     <string name="server_channel_password_wrong">The server does not accept this password.</string>

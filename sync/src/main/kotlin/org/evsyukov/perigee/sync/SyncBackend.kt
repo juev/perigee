@@ -14,6 +14,27 @@ data class RemoteBook(
     val hasCover: Boolean,
 )
 
+/** A book as a server tells of it when asked about one. */
+data class RemoteBookDetail(
+    val id: Long,
+    val title: String,
+    /** Empty when the server has none. */
+    val subtitle: String,
+    val authors: List<String>,
+    val series: String,
+    val seriesNumber: String,
+    /** The server's own HTML, as it gave it; null when the book has none. */
+    val description: String?,
+    /** Empty when the server does not say. */
+    val publisher: String,
+    val publishedYear: Int?,
+    /** Empty when the server does not say. */
+    val language: String,
+    val pageCount: Int?,
+    /** The ISBN-13 when the server has one, the ISBN-10 otherwise; empty when it has neither. */
+    val isbn: String,
+)
+
 /** One file of a book on a server. */
 data class RemoteFile(
     val bookId: Long,
@@ -41,6 +62,13 @@ interface SyncBackend {
      * @param page counted from zero
      */
     suspend fun books(query: String, page: Int): RemotePage
+
+    /**
+     * What the server tells of one book, its description among it; one request. It asks for
+     * nothing beyond what listing the server's books does.
+     * @throws IOException when the server cannot be reached or refuses
+     */
+    suspend fun detail(bookId: Long): RemoteBookDetail
 
     /** The cover of a book, small; null when it has none. */
     suspend fun cover(book: RemoteBook): ByteArray?
