@@ -1,0 +1,68 @@
+name: Diagnostic APK
+
+# A build of the app that installs beside the usual one, to look into a problem
+# on a device (#147). It runs on the branch where it is worked out and by hand;
+# it is signed with the debug key and is never released.
+on:
+  push:
+    branches: [hermes/glyph-settings-investigation]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: diagnostic-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NDK_VERSION: 28.2.13676358
+  CMAKE_VERSION: 3.31.6
+  APPLICATION_ID: org.evsyukov.perigee.diagnostic
+  APK: app/build/outputs/apk/fdroid/debug/app-fdroid-debug.apk
+
+jobs:
+  build:
+    name: Build and check the diagnostic APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          submodules: recursive
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: temurin
+          java-version: 21
+      - name: Install the NDK and CMake
+        run: |
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "ndk;$NDK_VERSION" "cmake;$CMAKE_VERSION" "platforms;android-36"
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: engine/.deps
+          key: engine-deps-${{ hashFiles('engine/src/main/cpp/cmake/deps.cmake') }}
+      - uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
+      # A broken check must not pass for a wrong package or fail for a right one.
+      - name: Test the script that checks the APK
+        run: python3 -m unittest discover -s .github/scripts -p test_apk_identity.py
+      # Two ABIs: a phone and the x86_64 emulator.
+      - name: Build the diagnostic APK
+        run: ./gradlew :app:assembleFdroidDebug -PperigeeDiagnostics=true -PperigeeAbis=arm64-v8a,x86_64
+      # The id is read from the APK itself: the usual app here means the option was ignored.
+      - name: Check the application id
+        run: python3 .github/scripts/apk_identity.py --apk "$APK" --application-id "$APPLICATION_ID"
+      - name: Name the APK
+        run: cp "$APK" "$RUNNER_TEMP/perigee-diagnostic.apk"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: diagnostic-apk
+          path: ${{ runner.temp }}/perigee-diagnostic.apk
+          if-no-files-found: error
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: failure()
+        with:
+          name: build-reports
+          path: |
+            */build/reports
+          if-no-files-found: ignore
