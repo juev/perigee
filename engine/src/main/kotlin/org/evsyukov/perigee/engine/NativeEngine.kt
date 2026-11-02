@@ -5,7 +5,15 @@ import android.graphics.Bitmap
 internal object NativeEngine {
     init {
         System.loadLibrary("perigee_engine")
+        EngineTrace.loaded()
     }
+
+    /** Turns the reports of [stage] on or off; see [EngineTrace]. */
+    external fun setTracing(on: Boolean)
+
+    /** Called by the library at the stages of laying out and drawing while tracing is on. */
+    @JvmStatic
+    fun stage(stage: Int, a: Int, b: Int) = EngineTrace.stage(stage, a, b)
 
     /** DOM version crengine assigns to newly opened books; xpointers depend on it. */
     external fun domVersion(): Int

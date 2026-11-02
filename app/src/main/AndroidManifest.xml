@@ -9,7 +9,7 @@
         android:usesCleartextTraffic="true"
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher"
-        android:label="@string/app_name"
+        android:label="${perigeeLabel}"
         android:supportsRtl="true"
         android:theme="@style/Theme.Perigee">
         <!-- A turned screen is laid out again by Compose in the same activity: making the activity anew
@@ -54,9 +54,11 @@
                 <data android:mimeType="application/octet-stream" />
             </intent-filter>
         </activity>
-        <!-- Where an OIDC provider sends the reader back: the one address the server takes from its native clients. -->
+        <!-- Where an OIDC provider sends the reader back: the one address the server takes from its native clients.
+             Off in the diagnostic build, so that installing it beside the app does not take the app's sign-in. -->
         <activity
             android:name=".server.SignInRedirectActivity"
+            android:enabled="${perigeeSignInRedirect}"
             android:exported="true"
             android:noHistory="true"
             android:theme="@android:style/Theme.Translucent.NoTitleBar">
@@ -67,5 +69,13 @@
                 <data android:scheme="bookorbit" android:host="oauth2-callback" />
             </intent-filter>
         </activity>
+        <!-- Starts the trace of the diagnostic build with the process; not even made in any other build. -->
+        <provider
+            android:name=".diagnostics.DiagnosticsStartup"
+            android:authorities="${applicationId}.diagnostics"
+            android:enabled="${perigeeDiagnostics}"
+            android:exported="false">
+            <meta-data android:name="sourceSha" android:value="${perigeeSourceSha}" />
+        </provider>
     </application>
 </manifest>

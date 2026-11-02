@@ -6,6 +6,11 @@ plugins {
 // The same list as in :engine.
 val abis = (findProperty("perigeeAbis") as String?)?.split(",") ?: listOf("arm64-v8a", "armeabi-v7a", "x86_64")
 
+// -PperigeeDiagnostics=true makes the debug build the diagnostic one: an app of its own beside the usual
+// one, which keeps a trace of what it did and saves it on request (docs/specs/reader.md). Release builds
+// take no notice of it.
+val diagnostics = findProperty("perigeeDiagnostics") == "true"
+
 // The Play build is signed with the upload key when one is given, as the release
 // workflow and scripts/build-release-macos.sh do. Without it the bundle is unsigned.
 val uploadKeystore: String? = providers.environmentVariable("PERIGEE_UPLOAD_KEYSTORE").orNull
@@ -37,6 +42,13 @@ android {
         // The engine is built for these three; a library that also comes for
         // another one must not make the app look installable there.
         ndk { abiFilters += abis }
+        // What the diagnostic build changes in the manifest, as every other build has it.
+        manifestPlaceholders += mapOf(
+            "perigeeLabel" to "@string/app_name",
+            "perigeeSignInRedirect" to "true",
+            "perigeeDiagnostics" to "false",
+            "perigeeSourceSha" to "unknown",
+        )
     }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
@@ -65,6 +77,18 @@ android {
     }
     // Room, WorkManager, Compose and the engine bring their own rules for R8.
     buildTypes {
+        if (diagnostics) {
+            getByName("debug") {
+                applicationIdSuffix = ".diagnostic"
+                versionNameSuffix = "-diagnostic"
+                manifestPlaceholders += mapOf(
+                    "perigeeLabel" to "Perigee Diagnostics",
+                    "perigeeSignInRedirect" to "false",
+                    "perigeeDiagnostics" to "true",
+                    "perigeeSourceSha" to providers.environmentVariable("GITHUB_SHA").getOrElse("unknown"),
+                )
+            }
+        }
         getByName("release") {
             isMinifyEnabled = true
             isShrinkResources = true

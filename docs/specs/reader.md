@@ -207,6 +207,58 @@ Measured on the emulator (`shareding_api36`) on a 500-paragraph generated Russia
 
 While a book is on screen the reader keeps the screen on (`FLAG_KEEP_SCREEN_ON`) for the time chosen in "Keep the screen on": as the system sets, 2, 5, 10 or 20 minutes, or while the book is open; 10 minutes by default, as ReadEra keeps it ten minutes longer than the system does. Every touch and every new page, volume keys included, start the time again (`keepScreenOn`). When it runs out the flag is cleared and the system timeout takes over, so the screen goes off that much later. Leaving the book or the app clears the flag.
 
+## Diagnostic build
+
+A separate build for finding out why the app closes on a device (#147). It is not a fix and changes nothing in other builds.
+
+### Building it
+
+```sh
+./gradlew :app:assembleFdroidDebug -PperigeeDiagnostics=true -PperigeeAbis=arm64-v8a,x86_64
+```
+
+The APK is `app/build/outputs/apk/fdroid/debug/app-fdroid-debug.apk`. The workflow `Diagnostic APK` (`.github/workflows/diagnostic.yml`) builds it on demand only (run by hand, `workflow_dispatch`), checks it, runs `DiagnosticTraceTest` on the JVM and `DiagnosticBuildTest` on an emulator, and uploads `diagnostic-apk` (the APK as `perigee-diagnostic.apk`, its package, label, source commit and `apksigner`'s full output in `perigee-diagnostic.txt`, its SHA-256) and, when found, `diagnostic-symbols` (the unstripped arm64-v8a `libperigee_engine.so` with the same build ID as the one in the APK). The tests' results are kept as `diagnostic-test-reports` whether they pass or fail.
+
+The property changes the debug build only; release builds and builds without it stay as they are. With it, the debug build:
+
+- is `org.evsyukov.perigee.diagnostic`, version name with `-diagnostic`, labelled "Perigee Diagnostics", debuggable and signed with the usual debug key. It installs beside the usual app and has a library, settings and files of its own; nothing of the usual app is read, copied or deleted;
+- has the sign-in address activity (`bookorbit://oauth2-callback`) turned off, so that the usual app keeps the sign-in. Books are opened from files;
+- starts a trace with its process (`DiagnosticsStartup`, a provider the manifest enables in this build only), whatever starts the process: the launcher, a share, a sync or the system after a crash;
+- shows, in About, what to do and a "Save diagnostics" action.
+
+### Trace
+
+Kept in `noBackupFilesDir/diagnostics` and mirrored to the system log under the tag `PerigeeDiag`. A process run is a session; the last four are kept, so a crash, the service the system starts again and the activity opened after it are all there. A session keeps its latest 256 KiB in two parts of 128 KiB, each starting with the session's header; all sessions together stay within 1 MiB. An event is one line of printable ASCII of at most 512 bytes: sequence number, monotonic nanoseconds, thread id and name, event, `key=value` fields. Each line is written straight to the file, so it outlives a process that aborts right after. The writing takes time of its own: the timing it records is not the timing without it. A file that cannot be written stops the trace for the rest of the run, the report says so, and nothing is thrown into the app.
+
+The header names the process (PID, start time), the build (package, version, source commit) and the device (maker, model, Android version, SDK, OS build, ABI). The events:
+
+| Event | Where |
+|---|---|
+| `process.start`, `activity.create`, `activity.destroy` | process and main activity |
+| `prefs.request` | a setting changed: smoothing and hinting before and after, font family and size |
+| `reader.open`, `reader.relayout`, `reader.relayout.shown`, `page.shown` | the reader's model |
+| `book.apply` (branch `laid_out`, `painted` or `copy_shown`), `book.applied`, `book.spare`, `bitmap.alloc`, `page.drawn` | `BookReader` |
+| `doc.open`, `doc.apply`, `doc.applied` (the engine's hinting), `doc.repaint`, `doc.render`, `doc.rendered`, `doc.close` | `EngineDocument` |
+| `native.apply.begin`, `.props` (the font manager's smoothing and hinting modes), `.laid_out`, `.end` | `applySettings` in the native library |
+| `native.render.locked` (bitmap size), `.laid_out`, `.drawn`, `.unlocked` | `renderPage` in the native library |
+| `compose.bind`, `compose.dispose` | the page's bitmap enters or leaves the composition |
+
+A bitmap is named by its identity hash in all of them. `compose.bind` means the bitmap is in the composition, not that a frame with it reached the screen. The native stages reach the trace through `NativeEngine.stage`, called only while tracing is on; an exception it raises is cleared and one pending before is left alone. Fields are numbers, modes and names the app makes; the font family, device and version are cut to letters, digits and `._-:`. The trace holds no book text, title or path, no xpointer, no settings as a whole, no CSS, no account or address, and no exception messages. Nothing is sent anywhere.
+
+### Saving
+
+About → Save diagnostics opens the system's picker for a new text file and writes the report there off the main thread: the trace's state, the app's last eight process exits as `ActivityManager` recorded them (PID, reason, status, importance, time, process name; no description or trace of the exit), and the sessions kept. A place that cannot be written says so, and the action can be tried again.
+
+### Using it
+
+1. Install the diagnostic APK beside the usual app.
+2. In the reading settings, pick the font and font size the usual app has.
+3. Open the same book from a file.
+4. Turn smoothing off, then on.
+5. If the app closes, open it once more, then About → Save diagnostics, and send the file.
+
+No other logs of the phone are needed.
+
 ## Tests
 
 The engine is covered by instrumented tests in `engine/src/androidTest`, run with `./gradlew :engine:connectedDebugAndroidTest`:
