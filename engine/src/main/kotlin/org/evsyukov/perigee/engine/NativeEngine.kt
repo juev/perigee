@@ -49,7 +49,7 @@ internal object NativeEngine {
         width: Int, height: Int,
         boldWordStarts: Boolean,
         antialiasing: Boolean, hinting: Int, ligatures: Boolean, fractionalPositioning: Int,
-        monospaceSizePercent: Int, embeddedFonts: Boolean,
+        monospaceSizePercent: Int,
     )
 
     /** Returns false when the file cannot be opened. */
@@ -60,6 +60,9 @@ internal object NativeEngine {
 
     /** The hinting mode the font manager draws with, for every book: 0 none, 1 the font's own, 2 autohint. */
     external fun hintingMode(): Int
+
+    /** The commonest face of the book's first blocks of text, `perigee::drawnFace`; empty without a book. */
+    external fun drawnFace(handle: Long): String
 
     /** Writes the parsed and laid out book to the engine's cache; small files are skipped. */
     external fun saveCache(handle: Long)

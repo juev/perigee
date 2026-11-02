@@ -153,7 +153,7 @@ internal fun SettingsSheet(
                     onChange { it.copy(fontFace = chosen) }
                 }
                 // A book that names a font of its own: the reader decides which one is read.
-                Toggle(R.string.setting_override_book_font, prefs.overrideBookFont) { on ->
+                Toggle(R.string.setting_override_book_font, prefs.overrideBookFont, "override-book-font") { on ->
                     onChange { it.copy(overrideBookFont = on) }
                 }
                 TextButton(onClick = onFontTrial, modifier = Modifier.testTag("font-trial-open")) {
@@ -255,7 +255,6 @@ internal fun SettingsSheet(
                     onLess = { onChange { it.copy(monospaceSizePercent = stepped(it.monospaceSizePercent, -1, ReaderPrefs.MONOSPACE_SIZES)) } },
                     onMore = { onChange { it.copy(monospaceSizePercent = stepped(it.monospaceSizePercent, 1, ReaderPrefs.MONOSPACE_SIZES)) } },
                 )
-                Toggle(R.string.setting_embedded_fonts, prefs.embeddedFonts, "embedded-fonts") { on -> onChange { it.copy(embeddedFonts = on) } }
 
                 Choice(
                     R.string.setting_tap_scheme, prefs.tapScheme, TapScheme.entries,

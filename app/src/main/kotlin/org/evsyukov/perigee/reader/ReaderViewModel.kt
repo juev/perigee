@@ -849,7 +849,6 @@ class ReaderViewModel internal constructor(
                 fractionalPositioning = prefs.fractionalPositioning.coerceIn(ReaderPrefs.FRACTIONAL_STEPS),
                 monospaceSizePercent = prefs.monospaceSizePercent
                     .coerceIn(ReaderPrefs.MONOSPACE_SIZES.first, ReaderPrefs.MONOSPACE_SIZES.last),
-                embeddedFonts = prefs.embeddedFonts,
                 lineSpacingPercent = prefs.lineSpacingPercent,
                 marginHorizontal = side + overdraw,
                 // A strip left clear above the page, as under a camera cutout, is margin already: only what

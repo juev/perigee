@@ -98,7 +98,7 @@ class EngineDocument private constructor(
             settings.hyphenation, settings.footnotes, settings.twoPages,
             settings.colors.text, settings.colors.background, renderDpi, width, height, settings.boldWordStarts,
             settings.antialiasing, settings.hinting.engine, settings.ligatures, settings.fractionalPositioning,
-            settings.monospaceSizePercent, settings.embeddedFonts,
+            settings.monospaceSizePercent,
         )
         NativeEngine.setGamma(settings.gamma)
         colors = settings.colors
@@ -118,6 +118,12 @@ class EngineDocument private constructor(
 
     /** Whether the book's text is shaped in full, ligatures and all, as its script needs. */
     internal val fullShaping: Boolean get() = NativeEngine.kerningMode(checked()) == 3
+
+    /**
+     * The face the book's own text is drawn in, the one its size is worked out for (`face_size.h`): a font the
+     * book carries is named by its `@font-face` family. Empty before a book is laid out.
+     */
+    internal val drawnFace: String get() = NativeEngine.drawnFace(checked())
 
     /** Text between two xpointers, or null when either does not resolve in this book. */
     fun textBetween(start: String, end: String): String? = NativeEngine.textBetween(checked(), start, end)
