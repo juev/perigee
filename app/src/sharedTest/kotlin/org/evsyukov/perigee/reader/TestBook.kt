@@ -14,6 +14,7 @@ internal object TestBook {
     /**
      * @param author first and last name
      * @param cover a PNG file
+     * @param note the text of a note the first paragraph of the book cites, from the notes body
      */
     fun write(
         file: File,
@@ -23,6 +24,7 @@ internal object TestBook {
         seriesNumber: Int = 0,
         cover: ByteArray? = null,
         about: String? = null,
+        note: String? = null,
     ): File {
         val sequence = series?.let { """<sequence name="$it" number="$seriesNumber"/>""" }.orEmpty()
         val coverPage = if (cover != null) """<coverpage><image l:href="#cover.png"/></coverpage>""" else ""
@@ -30,7 +32,11 @@ internal object TestBook {
             """<binary id="cover.png" content-type="image/png">${Base64.encodeToString(it, Base64.NO_WRAP)}</binary>"""
         }.orEmpty()
         val sections = (1..3).joinToString("\n") { chapter ->
-            val lead = if (chapter == 2) "<p>The $RARE_WORD of this chapter is found nowhere else.</p>" else ""
+            val lead = when {
+                chapter == 2 -> "<p>The $RARE_WORD of this chapter is found nowhere else.</p>"
+                chapter == 1 && note != null -> """<p>This paragraph cites a note<a l:href="#n1" type="note">1</a>.</p>"""
+                else -> ""
+            }
             val body = (1..60).joinToString("\n") { n ->
                 "<p>Chapter $chapter, paragraph $n. " +
                     "The quick brown fox jumps over the lazy dog while the engine lays out this line. ".repeat(3) +
@@ -38,6 +44,8 @@ internal object TestBook {
             }
             "<section><title><p>Chapter $chapter</p></title>\n$lead\n$body\n</section>"
         }
+        // A body of its own after the text; nothing at all for a book without a note.
+        val notes = note?.let { "\n<body name=\"notes\"><section id=\"n1\"><title><p>1</p></title><p>$it</p></section></body>" }.orEmpty()
         file.writeText(
             """<?xml version="1.0" encoding="UTF-8"?>
 <FictionBook xmlns="http://www.gribuser.ru/xml/fictionbook/2.0" xmlns:l="http://www.w3.org/1999/xlink">
@@ -47,7 +55,7 @@ internal object TestBook {
 </title-info></description>
 <body>
 $sections
-</body>
+</body>$notes
 $binary
 </FictionBook>""",
         )

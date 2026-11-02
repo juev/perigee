@@ -26,6 +26,9 @@ class EngineFeaturesTest {
     // The size at which the first line of the test book holds "quick brown fox jumps" whole.
     private val roomyLine = base.copy(fontSize = 26)
 
+    // Notes at the size of the main text, where the default sets them compact.
+    private val fullNotes = base.copy(fullSizeFootnotes = true)
+
     @Before
     fun registerTestFont() {
         runBlocking { Engine.registerFonts(context, TestBooks.fonts(context)) }
@@ -311,10 +314,17 @@ class EngineFeaturesTest {
 
     @Test
     fun fb2NoteReferenceKeepsItsOwnSize() {
-        // fb2.css sets the reference at 70 %; the note size must not reach it.
-        val full = open(TestBooks.epub(dir)).use { it.locate(TestBooks.LINK_TEXT).second.width() }
-        val reference = open(TestBooks.fb2(dir)).use { it.locate(TestBooks.LINK_TEXT).second.width() }
-        assertTrue("the reference is $reference px wide, $full px at full size", reference < full * 3 / 4)
+        // fb2.css sets the reference at 70 %; neither note size may reach it.
+        for (notes in listOf(base, fullNotes)) {
+            val full = open(TestBooks.epub(dir), notes).use { it.locate(TestBooks.LINK_TEXT).second.width() }
+            val reference = open(TestBooks.fb2(dir), notes).use { it.locate(TestBooks.LINK_TEXT).second.width() }
+            assertTrue("the reference is $reference px wide, $full px at full size; $notes", reference < full * 3 / 4)
+            assertEquals(
+                "and as wide whatever size the notes are",
+                open(TestBooks.fb2(dir)).use { it.locate(TestBooks.LINK_TEXT).second.width() },
+                reference,
+            )
+        }
     }
 
     // FB2 notes kept their paragraphs together before the setting was kept out
@@ -322,13 +332,157 @@ class EngineFeaturesTest {
     @Test
     fun footnoteParagraphsTakeNoParagraphSpacing() {
         val file = TestBooks.epub(dir, longNote = true)
-        fun gap(spacing: Int) = open(file, roomyLine.copy(paragraphSpacingPercent = spacing)).use { doc ->
-            val (firstHit, first) = doc.locate("zebras")
-            val (secondHit, second) = doc.locate(TestBooks.NOTE_SECOND_WORD)
-            assertEquals("the note is on one page, or the distance means nothing", firstHit.page, secondHit.page)
-            second.top - first.top
+        for (full in listOf(false, true)) {
+            fun gap(spacing: Int) = open(file, roomyLine.copy(paragraphSpacingPercent = spacing, fullSizeFootnotes = full)).use { doc ->
+                val (firstHit, first) = doc.locate("zebras")
+                val (secondHit, second) = doc.locate(TestBooks.NOTE_SECOND_WORD)
+                assertEquals("the note is on one page, or the distance means nothing", firstHit.page, secondHit.page)
+                second.top - first.top
+            }
+            assertEquals("from the first paragraph of the note to the second, full size $full", gap(0), gap(100))
         }
-        assertEquals("from the first paragraph of the note to the second", gap(0), gap(100))
+    }
+
+    // --- footnotes at the size of the main text
+
+    /** Where the [occurrence]th match of [word] is drawn, on the page it falls on. */
+    private fun EngineDocument.word(word: String, occurrence: Int = 0): Rect {
+        val hit = search(word)[occurrence]
+        assertTrue(goToPage(hit.page))
+        return rects(hit.range.start, hit.range.end).first()
+    }
+
+    /**
+     * The book laid out from its bytes and these settings alone: a copy under a name the engine's cache has no
+     * entry for ([TestBooks.uncachedCopy]), opened with the cache off, which keeps the engine from writing one.
+     */
+    private fun <T> fresh(file: File, settings: EngineSettings, block: (EngineDocument) -> T): T =
+        TestBooks.uncachedCopy(context, file) { copy ->
+            EngineDocument.open(context, copy, WIDTH, HEIGHT, settings, DENSITY, cacheable = false).use(block)
+        }
+
+    /** [TestBooks.NOTE_WORD] in the text of a book whose text sets no size of its own: the word at the reader's size. */
+    private fun inText(plain: File) = fresh(plain, base) { it.word(TestBooks.NOTE_WORD, 0) }
+
+    /** The same word in the first note. */
+    private fun inNote(file: File, settings: EngineSettings) = fresh(file, settings) { it.word(TestBooks.NOTE_WORD, 1) }
+
+    private fun assertReadersSize(what: String, text: Rect, note: Rect) {
+        assertEquals("$what: the word is as wide as in the text ($note against $text)", text.width().toFloat(), note.width().toFloat(), 1f)
+        assertEquals("$what: its line is as high ($note against $text)", text.height().toFloat(), note.height().toFloat(), 1f)
+    }
+
+    @Test
+    fun epubNotesCanBeSetAtTheSizeOfTheText() =
+        notesAtTheSizeOfTheText(TestBooks.notesEpub(dir), TestBooks.notesEpub(dir, styled = true))
+
+    @Test
+    fun fb2NotesCanBeSetAtTheSizeOfTheText() =
+        notesAtTheSizeOfTheText(TestBooks.notesFb2(dir), TestBooks.notesFb2(dir, styled = true))
+
+    private fun notesAtTheSizeOfTheText(plain: File, styled: File) {
+        val text = inText(plain)
+        // The book's own smaller sizes reach compact notes: the styled book is the case it is meant to be.
+        assertTrue("the styled book sizes its notes down", inNote(styled, base).width() < inNote(plain, base).width())
+        for (file in listOf(plain, styled)) {
+            val compact = inNote(file, base)
+            assertTrue(
+                "${file.name}: compact notes stay smaller than the text: $compact against $text",
+                compact.width() < text.width() * 9 / 10 && compact.height() < text.height() * 9 / 10,
+            )
+            // Neither a smaller ancestor, nor the book's rules for the note and its paragraphs, nor an inline
+            // style, nor a root the book scales, makes a note asked for at the size of the text smaller.
+            assertReadersSize(file.name, text, inNote(file, fullNotes))
+        }
+    }
+
+    @Test
+    fun notesKeptInTheFlowTakeTheSizeAsWell() {
+        for ((plain, styled) in listOf(
+            TestBooks.notesEpub(dir) to TestBooks.notesEpub(dir, styled = true),
+            TestBooks.notesFb2(dir) to TestBooks.notesFb2(dir, styled = true),
+        )) {
+            val inFlow = fullNotes.copy(footnotes = false)
+            assertReadersSize("${styled.name} without footnotes", inText(plain), inNote(styled, inFlow))
+            assertTrue(inNote(styled, base.copy(footnotes = false)).width() < inText(plain).width() * 9 / 10)
+        }
+    }
+
+    @Test
+    fun aLongNoteAtTheSizeOfTheTextKeepsAllItsText() {
+        for ((plain, long) in listOf(
+            TestBooks.notesEpub(dir) to TestBooks.notesEpub(dir, styled = true, long = true),
+            TestBooks.notesFb2(dir) to TestBooks.notesFb2(dir, styled = true, long = true),
+        )) {
+            val text = inText(plain)
+            val compactEnd = fresh(long, base) { it.word(TestBooks.NOTE_LAST_WORD) }
+            fresh(long, fullNotes) { doc ->
+                val start = doc.search(TestBooks.NOTE_WORD)[1]
+                val end = doc.search(TestBooks.NOTE_LAST_WORD).single()
+                assertTrue("${long.name}: the note ends where it began or later", end.page >= start.page)
+                // Every line of the note is laid out on a page and can be reached there: none is dropped to fit.
+                val lines = doc.search(TestBooks.NOTE_SECOND_WORD)
+                assertEquals("${long.name}: the long paragraph says it ${TestBooks.LONG_NOTE_REPEATS} times", TestBooks.LONG_NOTE_REPEATS, lines.size)
+                for (hit in lines) {
+                    assertTrue(doc.goToPage(hit.page))
+                    assertTrue("${long.name}: ${hit.range.start} is on page ${hit.page}", doc.rects(hit.range.start, hit.range.end).isNotEmpty())
+                }
+                assertReadersSize("${long.name}, first line", text, doc.word(TestBooks.NOTE_WORD, 1))
+                // The last word is not in the text, so its width has nothing to match: its line is as high as a
+                // line of the text, and the word itself larger than in the compact note.
+                val fullEnd = doc.word(TestBooks.NOTE_LAST_WORD)
+                assertEquals("${long.name}, last line as high as the text ($fullEnd against $text)", text.height().toFloat(), fullEnd.height().toFloat(), 1f)
+                assertTrue("${long.name}, last word larger than compact: $fullEnd against $compactEnd", compactEnd.width() < fullEnd.width() * 9 / 10)
+            }
+        }
+    }
+
+    @Test
+    fun noteSizeChangedOnTheOpenBookIsWhatAFreshOpeningGives() {
+        for (file in listOf(TestBooks.notesEpub(dir, styled = true), TestBooks.notesFb2(dir, styled = true))) {
+            // The first page cites the first note and shows it at its bottom.
+            fun freshly(settings: EngineSettings) = fresh(file, settings) { it.render() to it.word(TestBooks.NOTE_WORD, 1) }
+            val (compactPage, compactNote) = freshly(base)
+            val (fullPage, fullNote) = freshly(fullNotes)
+            assertFalse("${file.name}: the page that cites the note changes with its size", compactPage.sameAs(fullPage))
+            fresh(file, base) { doc ->
+                for ((settings, page, note) in listOf(Triple(fullNotes, fullPage, fullNote), Triple(base, compactPage, compactNote))) {
+                    doc.apply(settings)
+                    assertTrue(doc.goToPage(0))
+                    assertTrue("${file.name}: the open book draws what a fresh one does, $settings", doc.render().sameAs(page))
+                    assertEquals("${file.name}: and sets the note as large", note, doc.word(TestBooks.NOTE_WORD, 1))
+                }
+            }
+        }
+    }
+
+    @Test
+    fun aCachedLayoutIsKeptApartWithCompactAndFullSizeNotes() {
+        // A book new to the cache, large enough for the engine to keep it there.
+        val file = TestBooks.notesFb2(dir, stamp = System.nanoTime().toString())
+        assertTrue("${file.length()} bytes", file.length() >= 30_000)
+        val cache = File(context.cacheDir, "crengine")
+        fun entries() = cache.list().orEmpty().filter { it.startsWith("${file.name}.") && it.endsWith(".cr3") }.toSet()
+        val before = entries()
+        val place = fresh(file, base) { checkNotNull(it.xpointerOfPage(it.pageCount / 2)) }
+        fun shown(doc: EngineDocument): Triple<Int, Int, Bitmap> {
+            assertTrue(doc.goToXPointer(place))
+            return Triple(doc.currentPage, doc.pageCount, doc.render())
+        }
+        // The book itself, with the cache on: it is read from and written to the entry the engine keeps for it.
+        fun withCache(settings: EngineSettings) =
+            EngineDocument.open(context, file, WIDTH, HEIGHT, settings, DENSITY).use { doc -> shown(doc).also { doc.saveCache() } }
+        withCache(base)
+        assertTrue("the engine keeps an entry for the book: ${entries()}", (entries() - before).isNotEmpty())
+        // Whether a reopening is read from that entry or laid out again is not seen from here: what is checked
+        // is that reopening with the entry there, after each change of size, shows what the book laid out afresh shows.
+        for (settings in listOf(fullNotes, base, fullNotes)) {
+            val (cachedIndex, cachedCount, cached) = withCache(settings)
+            val (freshIndex, freshCount, freshPage) = fresh(file, settings, ::shown)
+            assertEquals("the place falls on the same page, $settings", freshIndex, cachedIndex)
+            assertEquals(freshCount, cachedCount)
+            assertTrue("the page reopened is the one laid out afresh, $settings", cached.sameAs(freshPage))
+        }
     }
 
     // --- layout settings

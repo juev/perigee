@@ -255,6 +255,10 @@ internal fun SettingsSheet(
                     onLess = { onChange { it.copy(monospaceSizePercent = stepped(it.monospaceSizePercent, -1, ReaderPrefs.MONOSPACE_SIZES)) } },
                     onMore = { onChange { it.copy(monospaceSizePercent = stepped(it.monospaceSizePercent, 1, ReaderPrefs.MONOSPACE_SIZES)) } },
                 )
+                // Off, notes are compact; on, they take the size of the text and more of the page.
+                Toggle(R.string.setting_full_size_footnotes, prefs.fullSizeFootnotes, "full-size-footnotes") { on ->
+                    onChange { it.copy(fullSizeFootnotes = on) }
+                }
 
                 Choice(
                     R.string.setting_tap_scheme, prefs.tapScheme, TapScheme.entries,

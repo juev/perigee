@@ -475,20 +475,41 @@ class ReaderScreenTest {
 
     @Test
     fun footnotesCanUseTheMainTextSize() {
+        // The first page cites a note, which the engine sets at its bottom.
+        book = TestBook.write(File(activity.cacheDir, "screen-test.fb2"), title = title, note = "A note of a few words about zebras on the plain.")
         show()
         waitForBook()
+        val compactPage = model().state.value.page!!
+        assertEquals(0, compactPage.index)
         openMenu()
         rule.onNodeWithContentDescription(string(R.string.action_settings)).performClick()
         waitForTag("settings")
         rule.waitForIdle()
         // Footnotes stay compact unless the reader asks for them at the size of the main text.
+        rule.onNodeWithText(string(R.string.setting_full_size_footnotes)).performScrollTo().assertIsDisplayed()
+        assertFalse(model().prefs.value.fullSizeFootnotes)
         val fullSize = rule.onNodeWithTag("full-size-footnotes")
         fullSize.performScrollTo().assertIsOff().performClick()
         // The switch shows the stored value once it comes back.
         rule.waitUntil(TIMEOUT) { rule.onAllNodes(hasTestTag("full-size-footnotes") and isOn()).fetchSemanticsNodes().isNotEmpty() }
-        fullSize.assertIsOn().performClick()
+        fullSize.assertIsOn()
+        assertTrue("the model has it", model().prefs.value.fullSizeFootnotes)
+        assertTrue("it is stored", runBlocking { preferences.prefs.first() }.fullSizeFootnotes)
+        // The book is laid out again with it: the page that cites the note is drawn anew, at the same place.
+        waitFor("the page is drawn with the note at the size of the text") {
+            model().state.value.let { !it.busy && it.page?.bitmap?.sameAs(compactPage.bitmap) == false }
+        }
+        assertEquals(0, shownPage())
+
+        fullSize.performClick()
         rule.waitUntil(TIMEOUT) { rule.onAllNodes(hasTestTag("full-size-footnotes") and isOff()).fetchSemanticsNodes().isNotEmpty() }
         fullSize.assertIsOff()
+        assertFalse("compact again in the model", model().prefs.value.fullSizeFootnotes)
+        assertFalse("and in the store", runBlocking { preferences.prefs.first() }.fullSizeFootnotes)
+        waitFor("the page is drawn as it was with compact notes") {
+            model().state.value.let { !it.busy && it.page?.bitmap?.sameAs(compactPage.bitmap) == true }
+        }
+        assertEquals(0, shownPage())
     }
 
     @Test

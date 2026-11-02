@@ -15,6 +15,7 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotSame
@@ -357,6 +358,75 @@ class BookReaderTest {
         assertEquals("a layout change keeps the position", page.xpointer, reader.position)
         val next = reader.turn(1)
         assertEquals("turning moves it", next.xpointer, reader.position)
+    }
+
+    /**
+     * A book opened afresh at [place] shows what [shown] shows: a copy the engine's cache has no entry for
+     * ([TestBooks.uncachedCopy]), opened with the cache off, so it is laid out from its bytes alone.
+     */
+    private suspend fun assertFreshOpeningShows(file: File, settings: EngineSettings, place: String, shown: Page) =
+        withContext(Engine.thread) {
+            TestBooks.uncachedCopy(context, file) { copy ->
+                EngineDocument.open(context, copy, WIDTH, HEIGHT, settings, DENSITY, cacheable = false).use { doc ->
+                    assertTrue(doc.goToXPointer(place))
+                    assertEquals("${file.name}: the page of the place", doc.currentPage, shown.index)
+                    assertEquals("${file.name}: the pages of the book", doc.pageCount, shown.pageCount)
+                    assertEquals("${file.name}: the top of that page", doc.xpointer(), shown.xpointer)
+                    val page = Bitmap.createBitmap(WIDTH, HEIGHT, Bitmap.Config.ARGB_8888).also { doc.renderPage(it) }
+                    assertTrue("${file.name}: the page drawn", page.sameAs(shown.bitmap))
+                }
+            }
+        }
+
+    @Test
+    fun noteSizeChangedOnTheOpenBookKeepsThePlaceAndShowsWhatAFreshOpeningShows() = runBlocking(Dispatchers.Default) {
+        val compact = EngineSettings()
+        val full = compact.copy(fullSizeFootnotes = true)
+        for (file in listOf(TestBooks.notesEpub(dir), TestBooks.notesFb2(dir))) {
+            val reader = BookReader.open(context, file, WIDTH, HEIGHT, compact, densityDpi = DENSITY)
+            try {
+                val before = reader.goToPage(reader.current().pageCount / 2)
+                val place = reader.position
+                val enlarged = reader.apply(full)
+                assertTrue("${file.name}: notes at the size of the text take more room", enlarged.pageCount > before.pageCount)
+                assertEquals("${file.name}: the page shown holds the place read", reader.read { it.pageOf(place) }, enlarged.index)
+                assertFreshOpeningShows(file, full, place, enlarged)
+
+                // Back to compact notes, from a place of its own in the full-size layout.
+                reader.turn(1)
+                val placeInFull = reader.position
+                val compacted = reader.apply(compact)
+                assertEquals("${file.name}: the page shown holds that place", reader.read { it.pageOf(placeInFull) }, compacted.index)
+                assertFreshOpeningShows(file, compact, placeInFull, compacted)
+            } finally {
+                reader.close()
+            }
+        }
+    }
+
+    @Test
+    fun turningTheScreenWithFullSizeNotesKeepsThePlace() = runBlocking(Dispatchers.Default) {
+        val full = EngineSettings(fullSizeFootnotes = true)
+        val reader = BookReader.open(context, TestBooks.notesEpub(dir), WIDTH, HEIGHT, full, densityDpi = DENSITY)
+        try {
+            val start = reader.goToPage(5)
+            // A copy laid out for the other orientation with compact notes is not the one for full-size notes.
+            reader.prepareSpare(Layout(EngineSettings(twoPages = true), HEIGHT, WIDTH))
+            val wide = Layout(full.copy(twoPages = true), HEIGHT, WIDTH)
+            assertFalse(reader.hasSpare(wide))
+            reader.prepareSpare(wide)
+            assertTrue(reader.hasSpare(wide))
+
+            val turned = reader.apply(wide.settings, wide.width, wide.height)
+            assertEquals("turning the screen does not move the place", start.xpointer, reader.position)
+            val pageOfPlace = checkNotNull(reader.read { it.pageOf(start.xpointer) })
+            assertEquals(pageOfPlace - pageOfPlace % 2, turned.index)
+            val back = reader.apply(full, WIDTH, HEIGHT)
+            assertEquals(start.index, back.index)
+            assertEquals(start.xpointer, back.xpointer)
+        } finally {
+            reader.close()
+        }
     }
 
     @Test

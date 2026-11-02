@@ -182,6 +182,178 @@ $sections
         }
     }
 
+    /** Occurs twice in a book of [notesEpub] or [notesFb2]: in the first paragraph of the text, then in its first note. */
+    const val NOTE_WORD = "zebras"
+
+    /** The last word of the first note when the note is a long one. */
+    const val NOTE_LAST_WORD = "quaggas"
+
+    /** The first paragraph of a book with notes: the same word in the text as in the note it cites. */
+    private const val NOTE_LEAD = "Striped $NOTE_WORD graze in this paragraph of the text,"
+
+    /** Every sixth paragraph of a chapter cites a note of its own, so the size of notes moves the pages of the whole book. */
+    private fun citesNote(n: Int) = n % 6 == 0
+
+    private fun noteText(chapter: Int, n: Int) =
+        "Note $chapter.$n tells of the striped horses of the plain, kept under the text that cites it. ".repeat(2)
+
+    /** The first note, a long one ending in [NOTE_LAST_WORD] when [long]. */
+    private fun firstNote(long: Boolean): List<String> =
+        listOf(NOTE) + if (long) listOf(NOTE_MORE.repeat(LONG_NOTE_REPEATS / 4) + "Then come the $NOTE_LAST_WORD.") else emptyList()
+
+    /** How many times the long first note says [NOTE_SECOND_WORD]: [NOTE_MORE] says it four times. */
+    const val LONG_NOTE_REPEATS = 32
+
+    /**
+     * Three chapters whose paragraphs cite notes marked as EPUB 3 footnotes, linked from the text and kept at
+     * the end of each chapter. [styled] gives the book a linked stylesheet of its own that sizes the notes
+     * down, on an ancestor of them, on the notes themselves and on their paragraphs, besides an inline style
+     * on the first note; it also sets its root at 62.5 % and its body back at 1.6 rem, as books often do.
+     */
+    fun notesEpub(dir: File, styled: Boolean = false, long: Boolean = false): File {
+        val file = File(dir, "notes${if (styled) "-styled" else ""}${if (long) "-long" else ""}.epub")
+        val link = if (styled) """<link rel="stylesheet" type="text/css" href="style.css"/>""" else ""
+        val chapters = (1..CHAPTERS).map { c ->
+            val lead = if (c == 1) """<p>$NOTE_LEAD <a epub:type="noteref" href="#n1">$LINK_TEXT</a> leads to a note.</p>""" else ""
+            val body = (1..PARAGRAPHS).joinToString("\n") { n ->
+                val ref = if (citesNote(n)) """ <a epub:type="noteref" href="#n$c-$n">[$c.$n]</a>""" else ""
+                "<p>${paragraph(c, n)}$ref</p>"
+            }
+            val first = if (c == 1) {
+                val inline = if (styled) " style=\"font-size: 50%\"" else ""
+                """<aside epub:type="footnote" id="n1"$inline>${firstNote(long).joinToString("") { "<p>$it</p>" }}</aside>"""
+            } else {
+                ""
+            }
+            val asides = first + (1..PARAGRAPHS).filter(::citesNote).joinToString("\n") { n ->
+                """<aside epub:type="footnote" id="n$c-$n"><p>${noteText(c, n)}</p></aside>"""
+            }
+            val notes = if (styled) "<div class=\"notes\">$asides</div>" else asides
+            "c$c.xhtml" to """<?xml version="1.0" encoding="UTF-8"?>
+<html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops"><head><title>Chapter $c</title>$link</head>
+<body><h1>Chapter $c</h1>
+$lead
+$body
+$notes
+</body></html>"""
+        }
+        val css = """html { font-size: 62.5%; }
+body { font-size: 1.6rem; }
+.notes { font-size: 60%; }
+aside { font-size: 0.7em; }
+aside p { font-size: 0.8em; }
+"""
+        val manifest = chapters.indices.joinToString("\n") { """<item id="c${it + 1}" href="c${it + 1}.xhtml" media-type="application/xhtml+xml"/>""" } +
+            if (styled) "\n" + """<item id="css" href="style.css" media-type="text/css"/>""" else ""
+        val spine = chapters.indices.joinToString("\n") { """<itemref idref="c${it + 1}"/>""" }
+        val opf = """<?xml version="1.0" encoding="UTF-8"?>
+<package xmlns="http://www.idpf.org/2007/opf" version="2.0" unique-identifier="id">
+  <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
+    <dc:title>Perigee Notes Book</dc:title>
+    <dc:creator>Test Author</dc:creator>
+    <dc:language>en</dc:language>
+    <dc:identifier id="id">perigee-notes-epub</dc:identifier>
+  </metadata>
+  <manifest>
+$manifest
+  </manifest>
+  <spine>
+$spine
+  </spine>
+</package>"""
+        return zipEpub(file, listOf("content.opf" to opf) + chapters + if (styled) listOf("style.css" to css) else emptyList())
+    }
+
+    /**
+     * The book of [notesEpub] as FB2, the notes in the notes body. [styled] nests the notes in a section of
+     * their own, which the compact size compounds over, and gives the book a stylesheet that sizes the notes
+     * body and its paragraphs down. A [stamp] makes the file differ from every other, as a book new to the
+     * engine's cache does.
+     */
+    fun notesFb2(dir: File, styled: Boolean = false, long: Boolean = false, stamp: String? = null): File {
+        val name = if (stamp != null) "notes-cached" else "notes${if (styled) "-styled" else ""}${if (long) "-long" else ""}"
+        val sections = (1..CHAPTERS).joinToString("\n") { c ->
+            val lead = if (c == 1) """<p>$NOTE_LEAD <a l:href="#n1" type="note">$LINK_TEXT</a> leads to a note.</p>""" else ""
+            val body = (1..PARAGRAPHS).joinToString("\n") { n ->
+                val ref = if (citesNote(n)) """ <a l:href="#n$c-$n" type="note">[$c.$n]</a>""" else ""
+                "<p>${paragraph(c, n)}$ref</p>"
+            }
+            "<section><title><p>Chapter $c</p></title>\n$lead\n$body\n</section>"
+        }
+        val notes = """<section id="n1"><title><p>1</p></title>${firstNote(long).joinToString("") { "<p>$it</p>" }}</section>""" +
+            (1..CHAPTERS).joinToString("\n") { c ->
+                (1..PARAGRAPHS).filter(::citesNote).joinToString("\n") { n ->
+                    """<section id="n$c-$n"><title><p>$c.$n</p></title><p>${noteText(c, n)}</p></section>"""
+                }
+            }
+        val stylesheet = if (styled) {
+            """<stylesheet type="text/css">body[name="notes"] { font-size: 60%; } body[name="notes"] p { font-size: 0.8em; }</stylesheet>"""
+        } else {
+            ""
+        }
+        val notesBody = if (styled) "<section><title><p>Notes</p></title>$notes</section>" else notes
+        return File(dir, "$name.fb2").apply {
+            writeText(
+                """<?xml version="1.0" encoding="UTF-8"?>
+<FictionBook xmlns="http://www.gribuser.ru/xml/fictionbook/2.0" xmlns:l="http://www.w3.org/1999/xlink">
+$stylesheet
+<description><title-info>
+  <author><first-name>Test</first-name><last-name>Author</last-name></author>
+  <book-title>Perigee Notes Book${stamp?.let { " $it" }.orEmpty()}</book-title><lang>en</lang>
+</title-info></description>
+<body>
+$sections
+</body>
+<body name="notes">
+$notesBody
+</body>
+</FictionBook>""",
+            )
+        }
+    }
+
+    /**
+     * Hands [block] a copy of [book], the same bytes under a name of its own, and deletes it afterwards. The
+     * engine finds a cached layout by the file's name, CRC and flags, and looks for one even when it is told not
+     * to write any (`cacheable = false`), so a reference opened under the book's own name could be read from the
+     * entry under test. Only references are opened under this name, always with the cache off, so the engine
+     * never has an entry for it. The name stays under 25 characters, which the engine would shorten.
+     */
+    fun <T> uncachedCopy(context: Context, book: File, block: (File) -> T): T {
+        val copy = File(File(context.cacheDir, "uncached-books").apply { mkdirs() }, "uncached-ref.${book.extension}")
+        book.copyTo(copy, overwrite = true)
+        return try {
+            block(copy)
+        } finally {
+            copy.delete()
+        }
+    }
+
+    /** An EPUB of [entries] besides the mimetype and the container, which point to `content.opf`. */
+    private fun zipEpub(file: File, entries: List<Pair<String, String>>): File {
+        ZipOutputStream(file.outputStream()).use { zip ->
+            val mimetype = "application/epub+zip".toByteArray()
+            zip.putNextEntry(ZipEntry("mimetype").apply {
+                method = ZipEntry.STORED
+                size = mimetype.size.toLong()
+                compressedSize = size
+                crc = CRC32().apply { update(mimetype) }.value
+            })
+            zip.write(mimetype)
+            zip.closeEntry()
+            val container = """<?xml version="1.0"?>
+<container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
+  <rootfiles><rootfile full-path="content.opf" media-type="application/oebps-package+xml"/></rootfiles>
+</container>"""
+            for ((name, text) in listOf("META-INF/container.xml" to container) + entries) {
+                zip.putNextEntry(ZipEntry(name))
+                zip.write(text.toByteArray())
+                zip.closeEntry()
+            }
+        }
+        return file
+    }
+
     /** PT Serif from the test assets: the same glyphs on every device, unlike the system fonts. */
     fun fonts(context: Context): List<File> {
         val assets = InstrumentationRegistry.getInstrumentation().context.assets

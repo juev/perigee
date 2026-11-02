@@ -82,6 +82,8 @@ data class ReaderPrefs(
     val fractionalPositioning: Int = 0,
     /** Code and preformatted text in percent of the size the engine gives it, one of [MONOSPACE_SIZES]. */
     val monospaceSizePercent: Int = 100,
+    /** Footnotes at the size of the main text; off keeps them compact, smaller than the text. */
+    val fullSizeFootnotes: Boolean = false,
     val lineSpacingPercent: Int = 120,
     val alignment: Alignment = Alignment.Justify,
     val hyphenation: Boolean = true,
@@ -182,6 +184,7 @@ class ReaderPreferences private constructor(private val store: DataStore<Prefere
             ligatures = p[LIGATURES] ?: d.ligatures,
             fractionalPositioning = p[FRACTIONAL_POSITIONING] ?: d.fractionalPositioning,
             monospaceSizePercent = p[MONOSPACE_SIZE] ?: d.monospaceSizePercent,
+            fullSizeFootnotes = p[FULL_SIZE_FOOTNOTES] ?: d.fullSizeFootnotes,
             lineSpacingPercent = p[LINE_SPACING] ?: d.lineSpacingPercent,
             alignment = p[ALIGNMENT].enumOr(d.alignment),
             hyphenation = p[HYPHENATION] ?: d.hyphenation,
@@ -222,6 +225,7 @@ class ReaderPreferences private constructor(private val store: DataStore<Prefere
         p[LIGATURES] = v.ligatures
         p[FRACTIONAL_POSITIONING] = v.fractionalPositioning
         p[MONOSPACE_SIZE] = v.monospaceSizePercent
+        p[FULL_SIZE_FOOTNOTES] = v.fullSizeFootnotes
         p[LINE_SPACING] = v.lineSpacingPercent
         p[ALIGNMENT] = v.alignment.name
         p[HYPHENATION] = v.hyphenation
@@ -265,6 +269,8 @@ class ReaderPreferences private constructor(private val store: DataStore<Prefere
         private val LIGATURES = booleanPreferencesKey("ligatures")
         private val FRACTIONAL_POSITIONING = intPreferencesKey("fractional_positioning")
         private val MONOSPACE_SIZE = intPreferencesKey("monospace_size_percent")
+        // Absent in an installation from before the choice: it reads as compact, as notes were then.
+        private val FULL_SIZE_FOOTNOTES = booleanPreferencesKey("full_size_footnotes")
         // "embedded_fonts", the switch for the fonts a book carries, is no longer read: those fonts are always
         // allowed, and a false an older version stored must not turn them off. The name is not to be reused.
         private val LINE_SPACING = intPreferencesKey("line_spacing")
