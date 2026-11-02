@@ -6,6 +6,7 @@ import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import java.io.File
@@ -48,23 +49,30 @@ class ReaderPreferencesTest {
             .newInstance(store)
 
     @Test
-    fun theBooksOwnFontsSwitchedOffByAnOlderVersionReadsAsAFreshInstall() = runBlocking<Unit> {
+    fun theBooksOwnFontsSwitchedOffByAnOlderVersionAreBackAndTheOtherSettingsKept() = runBlocking<Unit> {
         val installed = preferences(store(fresh)).prefs.first()
         assertEquals("a fresh install reads the defaults", ReaderPrefs(), installed)
 
-        // As an older version left it: the reader had switched the book's own fonts off.
+        // As an older version left it: the reader had switched the book's own fonts off, the override off as
+        // well, and set a line spacing of their own.
         val old = store(file)
-        old.edit { it[booleanPreferencesKey("embedded_fonts")] = false }
+        old.edit {
+            it[booleanPreferencesKey("embedded_fonts")] = false
+            it[booleanPreferencesKey("override_book_font")] = false
+            it[intPreferencesKey("line_spacing")] = 150
+        }
         val upgraded = preferences(old)
-        assertEquals("the old switch is not read", installed, upgraded.prefs.first())
+        val kept = installed.copy(overrideBookFont = false, lineSpacingPercent = 150)
+        assertEquals("the old switch is not read, the rest is", kept, upgraded.prefs.first())
 
         // A setting changed since writes everything again; the old value does not come back with it.
         upgraded.update { it.copy(fontSize = it.fontSize + 1) }
-        assertEquals(installed.copy(fontSize = installed.fontSize + 1), upgraded.prefs.first())
+        val changed = kept.copy(fontSize = kept.fontSize + 1)
+        assertEquals(changed, upgraded.prefs.first())
 
         // The app started again: a new store reads the same file.
         jobs.removeAt(jobs.lastIndex).cancelAndJoin()
         val restarted = preferences(store(file)).prefs.first()
-        assertEquals("after a restart as well", installed.copy(fontSize = installed.fontSize + 1), restarted)
+        assertEquals("after a restart as well", changed, restarted)
     }
 }

@@ -14,6 +14,8 @@ import androidx.compose.ui.graphics.toPixelMap
 import androidx.compose.ui.test.ComposeTimeoutException
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsOff
+import androidx.compose.ui.test.assertIsOn
 import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.click
@@ -450,9 +452,18 @@ class ReaderScreenTest {
         rule.onNodeWithContentDescription(string(R.string.action_settings)).performClick()
         waitForTag("settings")
         rule.waitForIdle()
-        // The reader's face over the book's stays a choice, on by default.
+        // The reader's face over the book's stays a choice, on by default, and the switch still turns it off and on.
         rule.onNodeWithText(string(R.string.setting_override_book_font)).performScrollTo().assertIsDisplayed()
         assertTrue(ReaderPrefs().overrideBookFont)
+        val overrideSwitch = rule.onNodeWithTag("override-book-font")
+        overrideSwitch.performScrollTo().assertIsOn().performClick()
+        rule.waitUntil(TIMEOUT) { !model().prefs.value.overrideBookFont }
+        overrideSwitch.assertIsOff()
+        assertFalse("off is stored", runBlocking { preferences.prefs.first() }.overrideBookFont)
+        overrideSwitch.performClick()
+        rule.waitUntil(TIMEOUT) { model().prefs.value.overrideBookFont }
+        overrideSwitch.assertIsOn()
+        assertTrue("on again is stored", runBlocking { preferences.prefs.first() }.overrideBookFont)
         // The fonts a book carries are always there for it: nothing in the settings, in either language, turns them off.
         rule.onAllNodesWithTag("embedded-fonts").assertCountEquals(0)
         rule.onAllNodesWithText("The book's own fonts").assertCountEquals(0)

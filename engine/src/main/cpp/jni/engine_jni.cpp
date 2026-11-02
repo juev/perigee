@@ -457,7 +457,7 @@ Java_org_evsyukov_perigee_engine_NativeEngine_applySettings(
         jboolean hyphenation, jboolean footnotes, jboolean twoPages, jint textColor, jint backgroundColor,
         jint renderDpi, jint width, jint height, jboolean boldWordStarts,
         jboolean antialiasing, jint hinting, jboolean ligatures, jint fractionalPositioning,
-        jint monospaceSizePercent, jboolean embeddedFonts) {
+        jint monospaceSizePercent) {
     traceStage(env, Stage::ApplyBegin, antialiasing ? 1 : 0, hinting);
     LVDocView* view = viewOf(handle);
     // A new layout moves page boundaries; the reader stays where they were.
@@ -477,9 +477,9 @@ Java_org_evsyukov_perigee_engine_NativeEngine_applySettings(
     props->setInt(PROP_LANDSCAPE_PAGES, twoPages ? 2 : 1);
     props->setInt(PROP_RENDER_DPI, renderDpi);
     // How the glyphs are drawn. Smoothing, hinting, kerning, sub-pixel placement and the monospace scale are
-    // kept by the font manager, one for every book, as the gamma of setGamma is; the book's own fonts are a
-    // flag of the document. They come here rather than in a call of their own because most of them re-break
-    // lines, and this is the path that lays the book out again and returns to the place.
+    // kept by the font manager, one for every book, as the gamma of setGamma is. They come here rather than in
+    // a call of their own because most of them re-break lines, and this is the path that lays the book out
+    // again and returns to the place.
     const int antialiasMode = antialiasing ? 2 : 0;
     // Setting the mode empties the glyph cache even when it is the one in use.
     if (fontMan->GetAntialiasMode() != antialiasMode) props->setInt(PROP_FONT_ANTIALIASING, antialiasMode);
@@ -489,7 +489,9 @@ Java_org_evsyukov_perigee_engine_NativeEngine_applySettings(
     props->setInt(PROP_FONT_KERNING, kerningFor(language, ligatures));
     props->setInt(PROP_FONT_FRACTIONAL_POSITIONING, fractionalPositioning);
     props->setInt(PROP_FONT_MONOSPACE_SCALE, monospaceSizePercent);
-    props->setInt(PROP_EMBEDDED_FONTS, embeddedFonts ? 1 : 0);
+    // The fonts a book carries are always there for its CSS to pick (issue #149); whether the reader's face is
+    // drawn over them is the override rule of the stylesheet. A flag of the document, taken when it is loaded.
+    props->setInt(PROP_EMBEDDED_FONTS, 1);
     view->propsApply(props);
     traceStage(env, Stage::ApplyProps, fontMan->GetAntialiasMode(), static_cast<jint>(fontMan->GetHintingMode()));
     view->setTextColor(0x000000);
@@ -515,8 +517,8 @@ Java_org_evsyukov_perigee_engine_NativeEngine_applySettings(
 
     if (loaded) {
         view->Render();
-        // The guess fails when the settings change the face drawn: the override turned on or off, the book's
-        // own fonts allowed or not. The size is put right then, at the cost of a second layout.
+        // The guess fails when the settings change the face drawn: the override turned on or off. The size is put
+        // right then, at the cost of a second layout.
         if (applySize(view, sizing, perigee::sizeOfDrawnFace(doc, face, fontSize, fontWeight))) view->Render();
         if (!position.isNull()) view->goToBookmark(position);
         traceStage(env, Stage::ApplyLaidOut);
@@ -573,6 +575,13 @@ JNIEXPORT jint JNICALL
 Java_org_evsyukov_perigee_engine_NativeEngine_hintingMode(JNIEnv*, jobject) {
     // The font manager's, not a view's: the mode the glyphs are drawn with.
     return static_cast<jint>(fontMan->GetHintingMode());
+}
+
+JNIEXPORT jstring JNICALL
+Java_org_evsyukov_perigee_engine_NativeEngine_drawnFace(JNIEnv* env, jobject, jlong handle) {
+    // The face the size is worked out for, read from the styles of the last layout. A book may name its fonts
+    // in any script, so the name goes through toJava rather than as modified UTF-8.
+    return toJava(env, Utf8ToUnicode(perigee::drawnFace(viewOf(handle)->getDocument()).face));
 }
 
 JNIEXPORT void JNICALL

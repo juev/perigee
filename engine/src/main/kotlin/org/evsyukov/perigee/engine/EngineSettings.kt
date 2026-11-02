@@ -72,8 +72,6 @@ data class EngineSettings(
     val fractionalPositioning: Int = 0,
     /** Size of code and preformatted text in percent of the size the engine gives it; 100 is what the app has always done. */
     val monospaceSizePercent: Int = 100,
-    /** Fonts a book carries may be drawn with, the engine's embedded fonts 1; on is what the app has always done. */
-    val embeddedFonts: Boolean = true,
     /** Footnotes at the bottom of the page that refers to them. */
     val footnotes: Boolean = true,
     /** Two pages side by side; meant for landscape tablets. */

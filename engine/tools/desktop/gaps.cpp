@@ -7,7 +7,8 @@
 // one; with --png every drawn page is also saved as an 8-bit
 // grayscale PGM, with --text the text of every page goes to a file. --antialias, --hinting, --kerning,
 // --fractional, --monospace-scale and --embedded-fonts change how the glyphs are drawn (issue #122); left
-// out, they are what the app sets today.
+// out, they are what the app sets today. The app has no setting for the last one since issue #149 and always
+// allows a book's own fonts: --embedded-fonts off is for measuring only.
 
 #include <cerrno>
 #include <chrono>

@@ -12,7 +12,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 
 /**
- * The six settings of how the letters are drawn reach the engine, and changing any of them keeps the
+ * The five settings of how the letters are drawn reach the engine, and changing any of them keeps the
  * reading position. Most of them are kept by the engine's font manager for every book, so each test puts
  * the defaults back before it closes the book: the next test must not inherit a monochrome page.
  */
@@ -43,7 +43,6 @@ class GlyphDrawingTest {
             "ligatures" to settings.copy(ligatures = true),
             "sub-pixel placement" to settings.copy(fractionalPositioning = 3),
             "code size" to settings.copy(monospaceSizePercent = 140),
-            "no book fonts" to settings.copy(embeddedFonts = false),
         )
         for ((name, changed) in changes) {
             doc.apply(changed)

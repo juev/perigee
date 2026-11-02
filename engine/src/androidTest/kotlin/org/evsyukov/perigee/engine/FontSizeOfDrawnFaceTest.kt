@@ -12,7 +12,6 @@ import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 import kotlin.math.abs
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -44,8 +43,8 @@ class FontSizeOfDrawnFaceTest {
     private val carried: File by lazy {
         epub(
             "letters-carried-face.epub",
-            """@font-face { font-family: "Book Serif"; src: url(fonts/$CARRIED_FONT); }
-body { font-family: "Book Serif", serif; }""",
+            """@font-face { font-family: "$CARRIED_FAMILY"; src: url(fonts/$CARRIED_FONT); }
+body { font-family: "$CARRIED_FAMILY", serif; }""",
             carry = true,
         )
     }
@@ -71,9 +70,9 @@ body { font-family: "Book Serif", serif; }""",
     fun aBookThatCarriesItsFaceDrawsOnePageWhateverIsPicked() {
         val literata = page(carried, "Literata")
         assertEquals("the page with Roboto picked is the page with Literata picked", literata, page(carried, "Roboto"))
-        assertNotEquals(
-            "and it is the book's face that is drawn: $literata", literata, page(carried, "Literata", embeddedFonts = false),
-        )
+        // The engine names a font a book carries by the family its @font-face gives, not by the one in the file.
+        val drawn = EngineDocument.open(context, carried, WIDTH, HEIGHT, ownFace("Literata"), RENDER_DPI).use { it.drawnFace }
+        assertEquals("and it is the book's face that is drawn", CARRIED_FAMILY, drawn)
     }
 
     @Test
@@ -110,12 +109,12 @@ body { font-family: "Book Serif", serif; }""",
 
     private fun commonest(values: List<Int>): Int = values.groupingBy { it }.eachCount().maxBy { it.value }.key
 
+    /** [face] picked with the override off: the book keeps a face of its own. */
+    private fun ownFace(face: String) = EngineSettings(fontFace = face, fontSize = SIZE, overrideBookFont = false)
+
     /** The first page, with the override off, as the book draws it. */
-    private fun page(book: File, face: String, embeddedFonts: Boolean = true): Int =
-        EngineDocument.open(
-            context, book, WIDTH, HEIGHT,
-            EngineSettings(fontFace = face, fontSize = SIZE, overrideBookFont = false, embeddedFonts = embeddedFonts), RENDER_DPI,
-        ).use(::hash)
+    private fun page(book: File, face: String): Int =
+        EngineDocument.open(context, book, WIDTH, HEIGHT, ownFace(face), RENDER_DPI).use(::hash)
 
     private fun hash(doc: EngineDocument): Int {
         val page = Bitmap.createBitmap(WIDTH, HEIGHT, Bitmap.Config.ARGB_8888)
@@ -188,6 +187,9 @@ $font
     private companion object {
         val PICKS = listOf("Literata", "PT Sans", "Roboto")
         const val CARRIED_FONT = "PT_Serif-Web-Regular.ttf"
+
+        /** The family the book declares its font under; the file itself names PT Serif, which the app ships too. */
+        const val CARRIED_FAMILY = "Book Serif"
 
         // As in FaceSizeTest: 18 dp on the owner's 560 dpi phone, whose render DPI is 336.
         const val SIZE = 63

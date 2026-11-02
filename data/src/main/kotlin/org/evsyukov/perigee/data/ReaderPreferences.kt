@@ -82,8 +82,6 @@ data class ReaderPrefs(
     val fractionalPositioning: Int = 0,
     /** Code and preformatted text in percent of the size the engine gives it, one of [MONOSPACE_SIZES]. */
     val monospaceSizePercent: Int = 100,
-    /** Fonts a book carries may be drawn with. */
-    val embeddedFonts: Boolean = true,
     val lineSpacingPercent: Int = 120,
     val alignment: Alignment = Alignment.Justify,
     val hyphenation: Boolean = true,
@@ -184,7 +182,6 @@ class ReaderPreferences private constructor(private val store: DataStore<Prefere
             ligatures = p[LIGATURES] ?: d.ligatures,
             fractionalPositioning = p[FRACTIONAL_POSITIONING] ?: d.fractionalPositioning,
             monospaceSizePercent = p[MONOSPACE_SIZE] ?: d.monospaceSizePercent,
-            embeddedFonts = p[EMBEDDED_FONTS] ?: d.embeddedFonts,
             lineSpacingPercent = p[LINE_SPACING] ?: d.lineSpacingPercent,
             alignment = p[ALIGNMENT].enumOr(d.alignment),
             hyphenation = p[HYPHENATION] ?: d.hyphenation,
@@ -225,7 +222,6 @@ class ReaderPreferences private constructor(private val store: DataStore<Prefere
         p[LIGATURES] = v.ligatures
         p[FRACTIONAL_POSITIONING] = v.fractionalPositioning
         p[MONOSPACE_SIZE] = v.monospaceSizePercent
-        p[EMBEDDED_FONTS] = v.embeddedFonts
         p[LINE_SPACING] = v.lineSpacingPercent
         p[ALIGNMENT] = v.alignment.name
         p[HYPHENATION] = v.hyphenation
@@ -269,7 +265,8 @@ class ReaderPreferences private constructor(private val store: DataStore<Prefere
         private val LIGATURES = booleanPreferencesKey("ligatures")
         private val FRACTIONAL_POSITIONING = intPreferencesKey("fractional_positioning")
         private val MONOSPACE_SIZE = intPreferencesKey("monospace_size_percent")
-        private val EMBEDDED_FONTS = booleanPreferencesKey("embedded_fonts")
+        // "embedded_fonts", the switch for the fonts a book carries, is no longer read: those fonts are always
+        // allowed, and a false an older version stored must not turn them off. The name is not to be reused.
         private val LINE_SPACING = intPreferencesKey("line_spacing")
         private val ALIGNMENT = stringPreferencesKey("alignment")
         private val HYPHENATION = booleanPreferencesKey("hyphenation")

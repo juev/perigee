@@ -11,6 +11,7 @@ import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 
@@ -25,6 +26,10 @@ import org.junit.runner.RunWith
  *
  * What was drawn is read from the page itself: a book that names a face, with the override on, must
  * draw exactly what a book naming no face draws — same face, same text, same page.
+ *
+ * A font the book carries is always there for its stylesheet (issue #149): with the override off it is
+ * the face drawn, read from the engine by the family the book declares it under, and on the page against
+ * the same book without the file. The font is PT Serif from the test assets (OFL, `assets/fonts/OFL.txt`).
  */
 @RunWith(AndroidJUnit4::class)
 class FaceOverBookCssTest {
@@ -41,6 +46,15 @@ class FaceOverBookCssTest {
 
     /** The same book with nothing about faces: what the reader's choice draws when nothing contests it. */
     private val plain: File by lazy { epub("no-font-family.epub", null) }
+
+    /** A book that carries its face and names it from a linked stylesheet, with a block of code. */
+    private val carried: File by lazy { epub("carries-its-face.epub", CARRIED_CSS, carry = true, code = true) }
+
+    /** The same book without the font file: its stylesheet names a face nothing provides. */
+    private val lacking: File by lazy { epub("names-a-face-it-lacks.epub", CARRIED_CSS, code = true) }
+
+    /** A book naming no face, with the same code. */
+    private val plainWithCode: File by lazy { epub("no-font-family-with-code.epub", null, code = true) }
 
     @Test
     fun theFaceChosenBeatsAListThatEndsInAGeneric() = assertTheChosenFaceIsDrawn(listed)
@@ -71,6 +85,48 @@ class FaceOverBookCssTest {
         }
     }
 
+    /** With the override off, the face drawn is the font the book carries, not a face the engine falls back to. */
+    @Test
+    fun aFontTheBookCarriesIsDrawnWithTheOverrideOff() {
+        val (face, ownPage) = open(carried, ownFace).use { it.drawnFace to hash(it) }
+        assertEquals("the font the book carries, by the family its @font-face gives", CARRIED_FAMILY, face)
+        // Without the file the same stylesheet falls back to another face, as before.
+        val (fallback, fallbackPage) = open(lacking, ownFace).use { it.drawnFace to hash(it) }
+        assertNotEquals("a book without the file draws another face", CARRIED_FAMILY, fallback)
+        assertNotEquals("and another page: $ownPage", ownPage, fallbackPage)
+    }
+
+    /** With the override on, the reader's face is drawn over the font the book carries, and code keeps its own. */
+    @Test
+    fun theFaceChosenBeatsAFontTheBookCarries() {
+        val (face, chosen) = open(carried, chosenFace).use { it.drawnFace to hash(it) }
+        assertEquals(LITERATA, face)
+        assertEquals(
+            "the page a book that carries nothing draws, its code included",
+            open(plainWithCode, chosenFace).use(::hash), chosen,
+        )
+    }
+
+    /**
+     * The override switched on and off on the open book. Each change keeps the place at the top of the page
+     * shown before it, and the page is the one a book opened afresh with the new settings shows at that place.
+     */
+    @Test
+    fun theOverrideSwitchedOnAnOpenBookThatCarriesItsFaceKeepsThePlace() = open(carried, ownFace).use { doc ->
+        assertTrue(doc.goToPage(doc.pageCount / 2))
+        for ((settings, face) in listOf(chosenFace to LITERATA, ownFace to CARRIED_FAMILY)) {
+            val place = doc.xpointer()
+            doc.apply(settings)
+            assertEquals(face, doc.drawnFace)
+            assertEquals("the page shown holds $place", doc.pageOf(place), doc.currentPage)
+            val fresh = open(carried, settings).use { other ->
+                assertTrue(other.goToXPointer(place))
+                other.currentPage to hash(other)
+            }
+            assertEquals("the page of a fresh opening at $place, drawn in $face", fresh, doc.currentPage to hash(doc))
+        }
+    }
+
     /** With the override on, the book's page is the page a book naming no face draws. */
     private fun assertTheChosenFaceIsDrawn(book: File) {
         val chosen = page(book, LITERATA, override = true)
@@ -86,6 +142,13 @@ class FaceOverBookCssTest {
             context, book, WIDTH, HEIGHT, EngineSettings(fontFace = face, overrideBookFont = override), DENSITY,
         ).use(::hash)
 
+    private val ownFace = EngineSettings(fontFace = LITERATA, overrideBookFont = false)
+    private val chosenFace = EngineSettings(fontFace = LITERATA)
+
+    /** Opened without the engine's cache, so that each opening lays the book out afresh. */
+    private fun open(book: File, settings: EngineSettings): EngineDocument =
+        EngineDocument.open(context, book, WIDTH, HEIGHT, settings, DENSITY, cacheable = false)
+
     private fun hash(doc: EngineDocument): Int {
         val page = Bitmap.createBitmap(WIDTH, HEIGHT, Bitmap.Config.ARGB_8888)
         doc.renderPage(page)
@@ -94,9 +157,10 @@ class FaceOverBookCssTest {
 
     /**
      * An EPUB whose chapter takes its rules from a stylesheet of its own, listed in the package as a
-     * book does; a null [css] leaves the book with nothing about faces.
+     * book does; a null [css] leaves the book with nothing about faces. [carry] puts [CARRIED_FONT] in the
+     * package, [code] a block of code after the second paragraph.
      */
-    private fun epub(name: String, css: String?): File {
+    private fun epub(name: String, css: String?, carry: Boolean = false, code: Boolean = false): File {
         val file = File(dir, name)
         ZipOutputStream(file.outputStream()).use { zip ->
             val mimetype = "application/epub+zip".toByteArray()
@@ -116,6 +180,8 @@ class FaceOverBookCssTest {
             }
             val stylesheet = if (css == null) "" else
                 """  <item id="css" href="style.css" media-type="text/css"/>"""
+            val font = if (!carry) "" else
+                """  <item id="font" href="fonts/$CARRIED_FONT" media-type="application/x-font-truetype"/>"""
             entry(
                 "META-INF/container.xml",
                 """<?xml version="1.0"?>
@@ -136,21 +202,28 @@ class FaceOverBookCssTest {
   <manifest>
   <item id="c1" href="c1.xhtml" media-type="application/xhtml+xml"/>
 $stylesheet
+$font
   </manifest>
   <spine><itemref idref="c1"/></spine>
 </package>""",
             )
             if (css != null) entry("style.css", css)
-            val paragraphs = (1..PARAGRAPHS).joinToString("\n") {
+            if (carry) {
+                zip.putNextEntry(ZipEntry("fonts/$CARRIED_FONT"))
+                InstrumentationRegistry.getInstrumentation().context.assets.open("fonts/$CARRIED_FONT").use { it.copyTo(zip) }
+                zip.closeEntry()
+            }
+            val paragraphs = (1..PARAGRAPHS).map {
                 "<p>Paragraph $it. The quick brown fox jumps over the lazy dog while the engine lays " +
                     "out this line, and the letters of the face decide how far it reaches.</p>"
-            }
+            }.toMutableList()
+            if (code) paragraphs.add(2, "<pre><code>val face = \"monospace\"\nprintln(face)</code></pre>")
             val link = if (css == null) "" else """<link rel="stylesheet" type="text/css" href="style.css"/>"""
             entry(
                 "c1.xhtml",
                 """<?xml version="1.0" encoding="UTF-8"?>
 <html xmlns="http://www.w3.org/1999/xhtml"><head><title>One</title>$link</head>
-<body>$paragraphs</body></html>""",
+<body>${paragraphs.joinToString("\n")}</body></html>""",
             )
         }
         return file
@@ -163,5 +236,11 @@ $stylesheet
         const val WIDTH = 600
         const val HEIGHT = 800
         const val DENSITY = 320
+        const val CARRIED_FONT = "PT_Serif-Web-Regular.ttf"
+
+        /** The family the book declares its font under; the file itself names PT Serif, which the app ships too. */
+        const val CARRIED_FAMILY = "Book Serif"
+        const val CARRIED_CSS = """@font-face { font-family: "$CARRIED_FAMILY"; src: url(fonts/$CARRIED_FONT); }
+p { font-family: "$CARRIED_FAMILY", serif; }"""
     }
 }

@@ -21,7 +21,6 @@ class GlyphSettingsTest {
         assertFalse("no ligatures: light shaping unless the script needs full", settings.ligatures)
         assertEquals("glyphs on whole pixels", 0, settings.fractionalPositioning)
         assertEquals("code at the engine's own size", 100, settings.monospaceSizePercent)
-        assertTrue("the book's own fonts allowed", settings.embeddedFonts)
         // The engine's own defaults, which a document opened without the reader's settings gets, are the same.
         val engine = EngineSettings()
         assertEquals(engine.antialiasing, settings.antialiasing)
@@ -29,7 +28,6 @@ class GlyphSettingsTest {
         assertEquals(engine.ligatures, settings.ligatures)
         assertEquals(engine.fractionalPositioning, settings.fractionalPositioning)
         assertEquals(engine.monospaceSizePercent, settings.monospaceSizePercent)
-        assertEquals(engine.embeddedFonts, settings.embeddedFonts)
     }
 
     @Test
@@ -46,7 +44,6 @@ class GlyphSettingsTest {
         for (percent in ReaderPrefs.MONOSPACE_SIZES) {
             assertEquals(percent, settings(ReaderPrefs(monospaceSizePercent = percent)).monospaceSizePercent)
         }
-        assertFalse(settings(ReaderPrefs(embeddedFonts = false)).embeddedFonts)
     }
 
     @Test
