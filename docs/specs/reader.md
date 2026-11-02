@@ -217,7 +217,7 @@ A separate build for finding out why the app closes on a device (#147). It is no
 ./gradlew :app:assembleFdroidDebug -PperigeeDiagnostics=true -PperigeeAbis=arm64-v8a,x86_64
 ```
 
-The APK is `app/build/outputs/apk/fdroid/debug/app-fdroid-debug.apk`. The workflow `Diagnostic APK` (`.github/workflows/diagnostic.yml`) builds it on pushes to the investigation branch and on demand, checks it, runs `DiagnosticBuildTest` on an emulator and uploads `diagnostic-apk` (the APK as `perigee-diagnostic.apk`, its package, label, signer and source commit in `perigee-diagnostic.txt`, its SHA-256) and, when found, `diagnostic-symbols` (the unstripped arm64-v8a `libperigee_engine.so` with the same build ID as the one in the APK).
+The APK is `app/build/outputs/apk/fdroid/debug/app-fdroid-debug.apk`. The workflow `Diagnostic APK` (`.github/workflows/diagnostic.yml`) builds it on demand only (run by hand, `workflow_dispatch`), checks it, runs `DiagnosticTraceTest` on the JVM and `DiagnosticBuildTest` on an emulator, and uploads `diagnostic-apk` (the APK as `perigee-diagnostic.apk`, its package, label, source commit and `apksigner`'s full output in `perigee-diagnostic.txt`, its SHA-256) and, when found, `diagnostic-symbols` (the unstripped arm64-v8a `libperigee_engine.so` with the same build ID as the one in the APK). The tests' results are kept as `diagnostic-test-reports` whether they pass or fail.
 
 The property changes the debug build only; release builds and builds without it stay as they are. With it, the debug build:
 
