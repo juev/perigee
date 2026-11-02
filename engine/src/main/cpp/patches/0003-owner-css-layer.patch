@@ -1,0 +1,185 @@
+--- a/crengine/src/lvrend.cpp
++++ b/crengine/src/lvrend.cpp
+@@ -10529,6 +10529,9 @@
+     return true;
+ }
+
++// The owner's sheet of [doc], NULL without one: kept by lxmlDocBase::setStyleSheet() in lvtinydom.cpp.
++LVStyleSheet * perigeeOwnerStyleSheet( const lxmlDocBase * doc );
++
+ void setNodeStyle( ldomNode * enode, css_style_ref_t parent_style, LVFontRef parent_font, int docFragmentIdx )
+ {
+     //lvdomElementFormatRec * fmt = node->getRenderData();
+@@ -10712,6 +10715,42 @@
+             }
+         }
+     }
++
++    //////////////////////////////////////////////////////
++    // Perigee: the owner's CSS, after all of the above (issue #150)
++    //////////////////////////////////////////////////////
++    // Its rules cascade among themselves as usual: ordinary ones by specificity and order, !important
++    // ones after them. Over the app's, the book's and style= they win every property they set, whatever
++    // the importance and specificity there. Only the importance marks are put aside while they apply,
++    // so a property they do not set keeps the value and the mark it had. The slots in which the element
++    // gathers its pseudo-elements are treated alike.
++    if ( LVStyleSheet * owner = perigeeOwnerStyleSheet( doc ) ) {
++        css_style_rec_t * slots[] = { pstyle, pstyle->pseudo_elem_before_style, pstyle->pseudo_elem_after_style,
++                                      pstyle->pseudo_elem_first_letter_catcher_style, pstyle->pseudo_elem_first_line_style };
++        const int count = sizeof(slots) / sizeof(slots[0]);
++        lUInt32 important[count][NB_IMP_SLOTS];
++        lUInt32 importance[count][NB_IMP_SLOTS];
++        for ( int k = 0; k < count; k++ ) {
++            if ( !slots[k] )
++                continue;
++            for ( int i = 0; i < NB_IMP_SLOTS; i++ ) {
++                important[k][i] = slots[k]->important[i];
++                importance[k][i] = slots[k]->importance[i];
++                slots[k]->important[i] = 0;
++                slots[k]->importance[i] = 0;
++            }
++        }
++        owner->apply( enode, pstyle );
++        // A slot the owner's sheet created had no marks to give back.
++        for ( int k = 0; k < count; k++ ) {
++            if ( !slots[k] )
++                continue;
++            for ( int i = 0; i < NB_IMP_SLOTS; i++ ) {
++                slots[k]->important[i] |= important[k][i];
++                slots[k]->importance[i] |= importance[k][i];
++            }
++        }
++    }
+
+     #if MATHML_SUPPORT==1
+         // We apply our internal MathML stylesheet *after* user-agent (including style tweaks)
+diff --git a/crengine/src/lvtinydom.cpp b/crengine/src/lvtinydom.cpp
+--- a/crengine/src/lvtinydom.cpp
++++ b/crengine/src/lvtinydom.cpp
+@@ -101,7 +101,9 @@
+
+ /// change in case of incompatible changes in swap/cache file format to avoid using incompatible swap file
+ // increment to force complete reload/reparsing of old file
+-#define CACHE_FILE_FORMAT_VERSION "3.05.83k"
++// Perigee: "p" after the upstream "k" (issue #150): a cache before it may list faces of the owner's @font-face
++// among the book's, which the owner's sheet now keeps apart. Keep it 8 characters, the magic is 40 bytes.
++#define CACHE_FILE_FORMAT_VERSION "3.05.83p"
+ /// increment following value to force re-formatting of old book after load
+ #define FORMATTING_VERSION_ID 0x0036
+
+@@ -237,6 +239,7 @@
+ #include "../include/crtest.h"
+ #include <stddef.h>
+ #include <math.h>
++#include <unordered_map>
+ #if (USE_ZSTD == 1)
+ #include <zstd.h>
+ #else
+@@ -3849,9 +3852,12 @@
+     _stylesheet.setDocument( this );
+ }
+
++static void perigeeDropOwnerStyleSheet( const lxmlDocBase * doc ); // issue #150, by setStyleSheet()
++
+ /// Destructor
+ lxmlDocBase::~lxmlDocBase()
+ {
++    perigeeDropOwnerStyleSheet( this );
+ }
+
+ void lxmlDocBase::onAttributeSet( lUInt16 attrId, lUInt32 valueId, ldomNode * node )
+@@ -19633,12 +19639,62 @@
+
+ #endif
+
++// Perigee: the CSS the owner wrote, a sheet of its own per document that setNodeStyle() applies after the
++// book's styles and style= (issue #150). It comes in the user-agent stylesheet text after this marker,
++// the one of engine/src/main/cpp/jni/owner_css.h: the app's text before it never holds the marker, the
++// owner's after it may. Documents are styled on the one engine thread, so the map needs no lock. The copy
++// constructor of lxmlDocBase, which nothing in the engine calls, leaves the copy without a sheet.
++static const char perigeeOwnerMarker[] = "/*perigee:owner-css*/";
++static std::unordered_map<const lxmlDocBase *, LVStyleSheet *> perigeeOwnerSheets;
++
++LVStyleSheet * perigeeOwnerStyleSheet( const lxmlDocBase * doc )
++{
++    if ( perigeeOwnerSheets.empty() )
++        return NULL;
++    auto it = perigeeOwnerSheets.find( doc );
++    return it == perigeeOwnerSheets.end() ? NULL : it->second;
++}
++
++// For engine/tools/desktop/owner-css.cpp: how many documents have an owner's sheet.
++int perigeeOwnerStyleSheetCount()
++{
++    return (int)perigeeOwnerSheets.size();
++}
++
++static void perigeeDropOwnerStyleSheet( const lxmlDocBase * doc )
++{
++    auto it = perigeeOwnerSheets.find( doc );
++    if ( it == perigeeOwnerSheets.end() )
++        return;
++    delete it->second;
++    perigeeOwnerSheets.erase( it );
++}
++
+ void lxmlDocBase::setStyleSheet( const char * css, bool replace )
+ {
+     lUInt32 oldHash = _ua_stylesheet.getHash();
+     if ( replace ) {
+         //CRLog::debug("cleaning stylesheet contents");
+         _ua_stylesheet.clear();
++        // The faces the owner's @font-face rules registered go with the owner's sheet. The font manager
++        // forgets a document's faces only all together, so the document's are unregistered and those of
++        // its list, the book's and the app's, which the owner's never join, are registered again, each in
++        // the scope it had.
++        LVStyleSheet * old = perigeeOwnerStyleSheet( this );
++        if ( old && old->getFontFaceDecls().length() > 0 ) {
++            ldomDocument * doc = static_cast<ldomDocument *>( this );
++            fontMan->UnregisterDocumentFonts( getDocIndex() );
++            doc->registerEmbeddedFonts();
++            _fontMap.clear();
++        }
++        perigeeDropOwnerStyleSheet( this );
++    }
++    lString8 app;
++    const char * owner = css ? strstr( css, perigeeOwnerMarker ) : NULL;
++    if ( owner ) {
++        app = lString8( css, (int)(owner - css) );
++        css = app.c_str();
++        owner += sizeof(perigeeOwnerMarker) - 1;
+     }
+     if ( css && *css ) {
+         //CRLog::debug("appending stylesheet contents: \n%s", css);
+@@ -19648,6 +19704,31 @@
+         // This will allow any !important to not be overridden
+         // by !important from authors stylesheets.
+     }
++    if ( owner && *owner ) {
++        // After the app's sheet, so an @font-face of the owner's registers after the app's ones.
++        LVStyleSheet * sheet = perigeeOwnerStyleSheet( this );
++        if ( !sheet ) {
++            sheet = new LVStyleSheet( this );
++            // Its @font-face rules count in its hash, the src: local() of one included.
++            sheet->enableFontFaceDeclTracking();
++            perigeeOwnerSheets[this] = sheet;
++        }
++        // Parsed as the user-agent sheet is: an !important of the owner's is one of higher importance,
++        // which no ordinary rule of the owner's overrides. The faces its @font-face rules register are
++        // kept out of the document's list, which the layout cache saves and registers again on opening:
++        // they come from the owner's sheet each time it is set, before the cache is read. The list is put
++        // back as a whole, as an entry of the same source and fragment is changed in place, not added.
++        LVEmbeddedFontList & fonts = static_cast<ldomDocument *>( this )->getEmbeddedFontList();
++        LVEmbeddedFontList listed;
++        listed.addAll( fonts );
++        sheet->parse( owner, true );
++        fonts.set( listed );
++        // The layout cache and the restyling of an open book go by the hash of the user-agent sheet: a
++        // rule there carries the hash of the owner's sheet. Its :not(*) selects no element.
++        char rule[96];
++        snprintf( rule, sizeof(rule), ".perigee-owner-css:not(*) { content: \"%08x\" }", sheet->getHash() );
++        _ua_stylesheet.parse( rule, true );
++    }
+     lUInt32 newHash = _ua_stylesheet.getHash();
+     if (oldHash != newHash) {
+         CRLog::debug("New stylesheet hash: %08x", newHash);

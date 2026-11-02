@@ -83,7 +83,11 @@ data class EngineSettings(
      * `font-family` asks for.
      */
     val overrideBookFont: Boolean = true,
-    /** CSS the owner wrote, appended after every rule of the app's own. */
+    /**
+     * CSS the owner wrote. The engine applies it after the app's rules, the book's and its inline styles:
+     * a property one of its rules sets on an element wins there, `!important` or not; within it the cascade
+     * is the usual one (issue #150).
+     */
     val userCss: String = "",
 ) {
     /** The engine's gamma for [contrast]. */
@@ -119,10 +123,13 @@ data class EngineSettings(
             // from its cache, or kept on a change, with lines that no longer fit. The defaults add nothing.
             if (!antialiasing) append(".perigee-monochrome { font-style: normal }\n")
             if (hinting != HintingMode.Auto) append(".perigee-hinting-${hinting.engine} { font-style: normal }\n")
-            // Last of all: an `!important` rule of the owner's beats one of the app's of the same specificity
-            // only by coming later. A change in it changes the stylesheet, and the engine restyles the book.
-            if (userCss.isNotBlank()) append(userCss).append('\n')
         }
+
+    /**
+     * [userCss] as the owner wrote it, for the engine's sheet of the owner's (`owner_css.h`); empty when it
+     * holds nothing but blanks, and the engine then has no such sheet. A change in it restyles the book.
+     */
+    internal val ownerCss: String get() = userCss.takeIf { it.isNotBlank() }.orEmpty()
 
     companion object {
         const val DEFAULT_FONT_FACE = "Roboto"

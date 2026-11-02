@@ -519,6 +519,67 @@ class EngineFeaturesTest {
         val app = firstLineX(indented)
         val owner = firstLineX(indented.copy(userCss = "p { text-indent: 0 !important; }"))
         assertTrue("the owner's !important rule beats the app's: $owner against $app", owner < app)
+        // Plain CSS does the same: the engine applies the owner's rules after the app's (issue #150).
+        val plain = firstLineX(indented.copy(userCss = "p { text-indent: 0; }"))
+        assertEquals("a plain rule of the owner's beats the app's !important one", owner, plain)
+    }
+
+    @Test
+    fun ownersPlainCssBeatsTheFaceAlignmentAndSpacingSettings() {
+        val file = TestBooks.epub(dir)
+        // The reader's face is drawn over the book's by an !important rule of the app's; a plain one of the owner's wins.
+        assertEquals(TestBooks.TEST_FONT, open(file).use { it.drawnFace })
+        assertEquals(LITERATA, open(file, base.copy(userCss = "p { font-family: \"$LITERATA\"; }")).use { it.drawnFace })
+        val justified = base.copy(textAlign = TextAlign.Justify, hyphenation = false)
+        val app = open(file, justified).use { it.render() }
+        val ragged = open(file, justified.copy(userCss = "p { text-align: left; }")).use { it.render() }
+        assertTrue(
+            "rows reaching the right margin: ${rowsAtRightMargin(app)} justified, ${rowsAtRightMargin(ragged)} with the owner's left",
+            rowsAtRightMargin(app) > rowsAtRightMargin(ragged) * 2,
+        )
+        val tight = base.copy(paragraphSpacingPercent = 0)
+        fun pages(settings: EngineSettings) = open(file, settings).use { it.pageCount }
+        assertTrue("the owner's paragraph spacing over the setting", pages(tight.copy(userCss = "p { margin-bottom: 2em; }")) > pages(tight))
+    }
+
+    /**
+     * The owner's CSS saved, changed and reset on the open book. Each change keeps the place at the top of the page
+     * shown before it, and the page is the one a book opened afresh with that CSS shows at that place.
+     */
+    @Test
+    fun ownersCssChangedOnAnOpenBookKeepsThePlace() {
+        val file = TestBooks.russianFb2(dir)
+        open(file).use { doc ->
+            assertTrue(doc.goToPage(doc.pageCount / 2))
+            for (css in listOf("p { text-indent: 0; margin-bottom: 1em; }", "p { text-indent: 3em; }", "")) {
+                val place = doc.xpointer()
+                val settings = base.copy(userCss = css)
+                doc.apply(settings)
+                assertEquals("the page shown holds $place", doc.pageOf(place), doc.currentPage)
+                val fresh = open(file, settings).use { other ->
+                    assertTrue(other.goToXPointer(place))
+                    other.currentPage to other.render()
+                }
+                assertEquals("the page of a fresh opening at $place with '$css'", fresh.first, doc.currentPage)
+                assertTrue("and what it shows, with '$css'", fresh.second.sameAs(doc.render()))
+            }
+        }
+    }
+
+    @Test
+    fun aCachedLayoutFollowsTheOwnersCss() {
+        // Large enough for the engine to cache its layout.
+        val file = TestBooks.russianFb2(dir)
+        val css = "p { text-indent: 0; margin-bottom: 1em; }"
+        fun page(userCss: String) = open(file, base.copy(userCss = userCss)).use { doc ->
+            assertTrue(doc.goToPage(1))
+            doc.render().also { doc.saveCache() }
+        }
+        val plain = page("")
+        val owner = page(css)
+        assertFalse(owner.sameAs(plain))
+        assertTrue("the owner's layout comes back from the cache as it was", page(css).sameAs(owner))
+        assertTrue("and without the owner's CSS the settings' one", page("").sameAs(plain))
     }
 
     @Test
@@ -634,5 +695,6 @@ class EngineFeaturesTest {
         const val DENSITY = 320
         const val CHAPTERS = TestBooks.CHAPTERS
         const val YELLOW = 0xFFFF00
+        const val LITERATA = "Literata"
     }
 }

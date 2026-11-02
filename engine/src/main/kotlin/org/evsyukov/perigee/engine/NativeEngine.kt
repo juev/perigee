@@ -40,8 +40,9 @@ internal object NativeEngine {
     /** Gamma of the glyphs drawn from now on, for every book: the engine keeps one for all. */
     external fun setGamma(gamma: Double)
 
+    /** [ownerCss] is the CSS the owner wrote, as written; the engine applies it after everything else (issue #150). */
     external fun applySettings(
-        handle: Long, cssFile: String, extraCss: String, fontFace: String, fontSize: Int, fontWeight: Int,
+        handle: Long, cssFile: String, extraCss: String, ownerCss: String, fontFace: String, fontSize: Int, fontWeight: Int,
         lineSpacingPercent: Int, marginHorizontal: Int, marginTop: Int, marginBottom: Int,
         hyphenation: Boolean, footnotes: Boolean, twoPages: Boolean, textColor: Int, backgroundColor: Int,
         renderDpi: Int,
