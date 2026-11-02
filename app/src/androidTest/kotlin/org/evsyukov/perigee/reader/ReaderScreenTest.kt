@@ -19,6 +19,9 @@ import androidx.compose.ui.test.assertIsOn
 import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.click
+import androidx.compose.ui.test.hasTestTag
+import androidx.compose.ui.test.isOff
+import androidx.compose.ui.test.isOn
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.longClick
 import androidx.compose.ui.test.onAllNodesWithTag
@@ -468,6 +471,24 @@ class ReaderScreenTest {
         rule.onAllNodesWithTag("embedded-fonts").assertCountEquals(0)
         rule.onAllNodesWithText("The book's own fonts").assertCountEquals(0)
         rule.onAllNodesWithText("Шрифты книги").assertCountEquals(0)
+    }
+
+    @Test
+    fun footnotesCanUseTheMainTextSize() {
+        show()
+        waitForBook()
+        openMenu()
+        rule.onNodeWithContentDescription(string(R.string.action_settings)).performClick()
+        waitForTag("settings")
+        rule.waitForIdle()
+        // Footnotes stay compact unless the reader asks for them at the size of the main text.
+        val fullSize = rule.onNodeWithTag("full-size-footnotes")
+        fullSize.performScrollTo().assertIsOff().performClick()
+        // The switch shows the stored value once it comes back.
+        rule.waitUntil(TIMEOUT) { rule.onAllNodes(hasTestTag("full-size-footnotes") and isOn()).fetchSemanticsNodes().isNotEmpty() }
+        fullSize.assertIsOn().performClick()
+        rule.waitUntil(TIMEOUT) { rule.onAllNodes(hasTestTag("full-size-footnotes") and isOff()).fetchSemanticsNodes().isNotEmpty() }
+        fullSize.assertIsOff()
     }
 
     @Test
