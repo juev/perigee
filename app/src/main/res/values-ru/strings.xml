@@ -356,7 +356,7 @@
     <string name="setting_styles_own">Ваш CSS поверх встроенного стиля</string>
     <string name="setting_styles_none">Встроенный стиль</string>
     <string name="styles_title">Стили книги</string>
-    <string name="styles_hint">CSS отсюда применяется последним: правило с !important перекрывает настройки чтения.</string>
+    <string name="styles_hint">Обычный CSS: заданные здесь свойства перекрывают настройки чтения и стили книги, остальное остаётся как было. !important влияет только на порядок этих правил между собой.</string>
     <string name="styles_unbalanced">Не сходятся скобки { }, комментарии /* */ или кавычки: исправьте, чтобы сохранить.</string>
     <string name="styles_reset">Вернуть встроенный стиль</string>
     <string name="styles_reset_text">Ваш CSS будет удалён, и книга вернётся к стилю приложения.</string>

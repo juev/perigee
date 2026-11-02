@@ -27,6 +27,7 @@
 #include "lvtinydom.h"
 
 #include "face_size.h"
+#include "owner_css.h"
 
 namespace {
 
@@ -349,10 +350,11 @@ static int kerningFor(const std::string& language, bool ligatures) {
 static std::unordered_map<LVDocView*, lString8> gStylesheets;
 
 // What each view's size is worked out from, to work it out again once the styles of the book name the
-// face its text is drawn in: the stylesheet without the size rule, the reader's size, weight and face,
-// and the size last applied.
+// face its text is drawn in: the stylesheet without the size rule and the owner's CSS, which comes after
+// that rule, the reader's size, weight and face, and the size last applied.
 struct Sizing {
     lString8 base;
+    lString8 owner;
     int fontSize = 0;
     int fontWeight = 0;
     lString8 face;
@@ -367,8 +369,7 @@ static bool applySize(LVDocView* view, Sizing& sizing, const perigee::FaceSize& 
     // The same em is not set again: a property set is a request to lay the book out on the next render.
     if (size.em != sizing.applied.em) view->setFontSize(size.em);
     sizing.applied = size;
-    lString8 css = sizing.base;
-    css << "\r\n" << size.css;
+    const lString8 css = perigee::composeStylesheet(sizing.base, size.css, sizing.owner);
     lString8& applied = gStylesheets[view];
     if (css != applied) {
         view->setStyleSheet(css, false);
@@ -452,7 +453,7 @@ Java_org_evsyukov_perigee_engine_NativeEngine_create(JNIEnv*, jobject, jint widt
 
 JNIEXPORT void JNICALL
 Java_org_evsyukov_perigee_engine_NativeEngine_applySettings(
-        JNIEnv* env, jobject, jlong handle, jstring cssFile, jstring extraCss, jstring fontFace,
+        JNIEnv* env, jobject, jlong handle, jstring cssFile, jstring extraCss, jstring ownerCss, jstring fontFace,
         jint fontSize, jint fontWeight, jint lineSpacingPercent, jint marginHorizontal, jint marginTop, jint marginBottom,
         jboolean hyphenation, jboolean footnotes, jboolean twoPages, jint textColor, jint backgroundColor,
         jint renderDpi, jint width, jint height, jboolean boldWordStarts,
@@ -510,7 +511,7 @@ Java_org_evsyukov_perigee_engine_NativeEngine_applySettings(
     // picked now, a book drawn in a face of its own keeps that face.
     ldomDocument* doc = view->getDocument();
     const bool readersFace = !doc || perigee::drawnFace(doc).face == sizing.face;
-    sizing = Sizing{base, fontSize, fontWeight, face, sizing.applied};
+    sizing = Sizing{base, lString8(toStd(env, ownerCss).c_str()), fontSize, fontWeight, face, sizing.applied};
     applySize(view, sizing, perigee::sizeOfDrawnFace(readersFace ? nullptr : doc, face, fontSize, fontWeight));
     // A new page size comes with the settings, as on a rotation: the book is laid out once, at that size.
     if (width > 0 && height > 0) view->Resize(width, height);

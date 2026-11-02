@@ -64,6 +64,17 @@ class StylesScreenTest {
     }
 
     @Test
+    fun plainCssIsSavedAsWritten() {
+        show()
+        // Ordinary CSS, as the help asks for it: no !important is added, nothing is rewritten.
+        compose.onNodeWithText(context.getString(R.string.styles_hint)).assertIsDisplayed()
+        val css = "p {\n    text-indent: 0;\n    margin-bottom: 0.6em;\n}\n"
+        compose.onNodeWithTag("styles-text").performTextInput(css)
+        compose.onNodeWithTag("styles-save").assertIsEnabled().performClick()
+        assertEquals(listOf(css), saved)
+    }
+
+    @Test
     fun theEditorStartsFromTheSavedCss() {
         show("title { color: #333; }")
         compose.onNodeWithText("title { color: #333; }").assertIsDisplayed()

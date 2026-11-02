@@ -33,6 +33,7 @@
 #include "lvtinydom.h"
 
 #include "../../src/main/cpp/jni/face_size.h"
+#include "../../src/main/cpp/jni/owner_css.h"
 
 // The stream of PERIGEE_GAPS_CSV, defined by the hook in lvtextfm.cpp: the page markers go through it so
 // that they stay in order with the rows the hook writes.
@@ -140,10 +141,9 @@ std::string stem(const std::string& path) {
     return dot == std::string::npos || dot == 0 ? name : name.substr(0, dot);
 }
 
-// EXTRA_CSS and then the owner's CSS from --user-css, as EngineSettings.extraCss appends ReaderPrefs.userCss.
-std::string extraCssWith(const std::string& userCssFile) {
-    std::string css = EXTRA_CSS;
-    if (userCssFile.empty()) return css;
+// The owner's CSS from --user-css, as EngineSettings.ownerCss passes ReaderPrefs.userCss to the engine.
+std::string ownerCssOf(const std::string& userCssFile) {
+    if (userCssFile.empty()) return {};
     FILE* f = std::fopen(userCssFile.c_str(), "rb");
     if (!f) usage(("cannot read " + userCssFile).c_str());
     std::string user;
@@ -151,8 +151,8 @@ std::string extraCssWith(const std::string& userCssFile) {
     for (size_t n; (n = std::fread(buffer, 1, sizeof buffer, f)) > 0;) user.append(buffer, n);
     std::fclose(f);
     // The app leaves a blank overlay out.
-    if (user.find_first_not_of(" \t\r\n") != std::string::npos) css += user + "\n";
-    return css;
+    if (user.find_first_not_of(" \t\r\n") == std::string::npos) return {};
+    return user;
 }
 
 }  // namespace
@@ -312,13 +312,13 @@ int main(int argc, char** argv) {
     view.propsApply(props);
     view.setPageMargins(lvRect(0, 0, 0, 0));
     view.setVisiblePageCount(1, false);
-    const std::string extraCss = extraCssWith(userCss);
+    const lString8 ownerCss(ownerCssOf(userCss).c_str());
     lString8 base;
     if (!LVLoadStylesheetFile(Utf8ToUnicode((data + "/" + css).c_str()), base)) {
         std::fprintf(stderr, "gaps: cannot read %s/%s\n", data.c_str(), css.c_str());
         return 1;
     }
-    base << "\r\n" << extraCss.c_str();
+    base << "\r\n" << EXTRA_CSS;
     // The size of the face the book's text is drawn in, the reader's while the document is not loaded;
     // setSize sets one and says whether it differs from the size set before.
     auto sizeFor = [&](ldomDocument* doc, const std::string& picked) {
@@ -331,9 +331,7 @@ int main(int argc, char** argv) {
         faceSize = next;
         if (same && !force) return false;
         view.setFontSize(next.em);
-        lString8 stylesheet = base;
-        stylesheet << "\r\n" << next.css;
-        view.setStyleSheet(stylesheet, false);
+        view.setStyleSheet(perigee::composeStylesheet(base, next.css, ownerCss), false);
         return true;
     };
     setSize(faceSize, true);
