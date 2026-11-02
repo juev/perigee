@@ -8,6 +8,7 @@
 #include <sys/stat.h>
 
 #include <algorithm>
+#include <atomic>
 #include <climits>
 #include <string>
 #include <vector>
@@ -207,9 +208,59 @@ void seriesOf(LVDocView* view, lString32& name, lString32& number) {
     number = chosen == nullptr ? lString32() : chosen->position;
 }
 
+// The diagnostic build's trace of the stages of laying out and drawing (EngineTrace): each stage calls
+// NativeEngine.stage while tracing is on. Off, a stage costs one load. The order is that of EngineTrace's stages.
+enum class Stage : jint {
+    ApplyBegin, ApplyProps, ApplyLaidOut, ApplyEnd,
+    RenderLocked, RenderLaidOut, RenderDrawn, RenderUnlocked,
+};
+
+jclass gTraceClass = nullptr;
+std::atomic<jmethodID> gTraceStage{nullptr};
+
+void traceStage(JNIEnv* env, Stage stage, jint a = 0, jint b = 0) {
+    jmethodID method = gTraceStage.load(std::memory_order_acquire);
+    // An exception pending is the caller's to see: the trace stays out of its way.
+    if (method == nullptr || env->ExceptionCheck()) return;
+    env->CallStaticVoidMethod(gTraceClass, method, static_cast<jint>(stage), a, b);
+    // One raised by the trace is its own, and must not reach the call being traced.
+    if (env->ExceptionCheck()) env->ExceptionClear();
+}
+
 }  // namespace
 
 extern "C" {
+
+JNIEXPORT void JNICALL
+Java_org_evsyukov_perigee_engine_NativeEngine_setTracing(JNIEnv* env, jobject self, jboolean on) {
+    if (!on) {
+        gTraceStage.store(nullptr, std::memory_order_release);
+        return;
+    }
+    // An exception pending is the caller's to see, and JNI takes no lookups under it: tracing stays off.
+    if (env->ExceptionCheck()) return;
+    // Every failure below leaves tracing off. Its exception, if any, is the trace's own: none was pending.
+    if (gTraceClass == nullptr) {
+        jclass local = env->GetObjectClass(self);
+        if (local == nullptr) {
+            if (env->ExceptionCheck()) env->ExceptionClear();
+            return;
+        }
+        // The class reference is made once and kept for the life of the process.
+        gTraceClass = static_cast<jclass>(env->NewGlobalRef(local));
+        env->DeleteLocalRef(local);
+        if (gTraceClass == nullptr) {
+            if (env->ExceptionCheck()) env->ExceptionClear();
+            return;
+        }
+    }
+    jmethodID method = env->GetStaticMethodID(gTraceClass, "stage", "(III)V");
+    if (method == nullptr) {
+        if (env->ExceptionCheck()) env->ExceptionClear();
+        return;
+    }
+    gTraceStage.store(method, std::memory_order_release);
+}
 
 JNIEXPORT jint JNICALL
 Java_org_evsyukov_perigee_engine_NativeEngine_domVersion(JNIEnv*, jobject) {
@@ -407,6 +458,7 @@ Java_org_evsyukov_perigee_engine_NativeEngine_applySettings(
         jint renderDpi, jint width, jint height, jboolean boldWordStarts,
         jboolean antialiasing, jint hinting, jboolean ligatures, jint fractionalPositioning,
         jint monospaceSizePercent, jboolean embeddedFonts) {
+    traceStage(env, Stage::ApplyBegin, antialiasing ? 1 : 0, hinting);
     LVDocView* view = viewOf(handle);
     // A new layout moves page boundaries; the reader stays where they were.
     const bool loaded = view->getDocument() != nullptr;
@@ -439,6 +491,7 @@ Java_org_evsyukov_perigee_engine_NativeEngine_applySettings(
     props->setInt(PROP_FONT_MONOSPACE_SCALE, monospaceSizePercent);
     props->setInt(PROP_EMBEDDED_FONTS, embeddedFonts ? 1 : 0);
     view->propsApply(props);
+    traceStage(env, Stage::ApplyProps, fontMan->GetAntialiasMode(), static_cast<jint>(fontMan->GetHintingMode()));
     view->setTextColor(0x000000);
     view->setBackgroundColor(0xFFFFFF);
     gPalettes[view] = Palette{static_cast<lUInt32>(textColor) & 0xFFFFFF, static_cast<lUInt32>(backgroundColor) & 0xFFFFFF};
@@ -466,7 +519,9 @@ Java_org_evsyukov_perigee_engine_NativeEngine_applySettings(
         // own fonts allowed or not. The size is put right then, at the cost of a second layout.
         if (applySize(view, sizing, perigee::sizeOfDrawnFace(doc, face, fontSize, fontWeight))) view->Render();
         if (!position.isNull()) view->goToBookmark(position);
+        traceStage(env, Stage::ApplyLaidOut);
     }
+    traceStage(env, Stage::ApplyEnd);
 }
 
 JNIEXPORT void JNICALL
@@ -842,8 +897,10 @@ Java_org_evsyukov_perigee_engine_NativeEngine_renderPage(JNIEnv* env, jobject, j
     LVDocView* view = viewOf(handle);
     const int w = static_cast<int>(info.width);
     const int h = static_cast<int>(info.height);
+    traceStage(env, Stage::RenderLocked, w, h);
     view->Resize(w, h);
     view->Render();
+    traceStage(env, Stage::RenderLaidOut);
     const Palette palette = gPalettes[view];
     const bool plain = palette.plain();
     // The pixels of the page that belong to a picture: they are only converted, never mapped.
@@ -860,6 +917,7 @@ Java_org_evsyukov_perigee_engine_NativeEngine_renderPage(JNIEnv* env, jobject, j
             }
         }
     }
+    traceStage(env, Stage::RenderDrawn);
     // crengine writes BGRA with inverted alpha; Android expects RGBA (bytes R, G, B, A: 0xAABBGGRR as a word).
     // Grey level -> the reader's colour, per channel (R, G, B): 0 is the text, 255 the page.
     int mapped[256][3];
@@ -889,6 +947,7 @@ Java_org_evsyukov_perigee_engine_NativeEngine_renderPage(JNIEnv* env, jobject, j
                 (clamp(to[2] + static_cast<int>(b) - grey) << 16);
     }
     AndroidBitmap_unlockPixels(env, bitmap);
+    traceStage(env, Stage::RenderUnlocked);
 }
 
 }  // extern "C"

@@ -7,6 +7,7 @@ import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.Rect
 import java.io.File
+import java.util.concurrent.atomic.AtomicInteger
 
 /** A stretch of text between two xpointers; [end] names the first character left out. */
 data class TextRange(val start: String, val end: String, val text: String)
@@ -56,6 +57,9 @@ class EngineDocument private constructor(
 ) : AutoCloseable {
     private var colors = PageColors.Day
 
+    /** What the diagnostic trace calls this document: a second copy of a book is another one. */
+    private val traceId = ids.incrementAndGet()
+
     val pageCount: Int get() = NativeEngine.pageCount(checked())
 
     /** Zero-based. */
@@ -84,6 +88,9 @@ class EngineDocument private constructor(
 
     /** Applies [settings], keeping the reading position; with a [width] and [height] the book is laid out at that page size, once. */
     fun apply(settings: EngineSettings, width: Int = 0, height: Int = 0) {
+        EngineTrace.sink?.event(
+            "doc.apply", "doc=$traceId aa=${settings.antialiasing} hint=${settings.hinting.engine} w=$width h=$height",
+        )
         NativeEngine.applySettings(
             checked(), stylesheet.path, settings.extraCss, settings.fontFace, settings.fontSize,
             settings.fontWeight, settings.lineSpacingPercent, settings.marginHorizontal, settings.marginTop,
@@ -95,6 +102,7 @@ class EngineDocument private constructor(
         )
         NativeEngine.setGamma(settings.gamma)
         colors = settings.colors
+        EngineTrace.sink?.event("doc.applied", "doc=$traceId engine_hint=${NativeEngine.hintingMode()}")
     }
 
     /**
@@ -102,6 +110,7 @@ class EngineDocument private constructor(
      * again. The rest of [settings] is left as it was applied.
      */
     fun repaint(settings: EngineSettings) {
+        EngineTrace.sink?.event("doc.repaint", "doc=$traceId")
         NativeEngine.setColors(checked(), settings.colors.text, settings.colors.background)
         NativeEngine.setGamma(settings.gamma)
         this.colors = settings.colors
@@ -149,7 +158,9 @@ class EngineDocument private constructor(
 
     /** Draws the current page with the highlights that fall on it; the bitmap size becomes the page size. */
     fun renderPage(bitmap: Bitmap, highlights: List<Highlight> = emptyList()) {
+        EngineTrace.sink?.event("doc.render", "doc=$traceId bitmap=${EngineTrace.idOf(bitmap)} w=${bitmap.width} h=${bitmap.height}")
         NativeEngine.renderPage(checked(), bitmap)
+        EngineTrace.sink?.event("doc.rendered", "doc=$traceId bitmap=${EngineTrace.idOf(bitmap)} highlights=${highlights.size}")
         if (highlights.isEmpty()) return
         val canvas = Canvas(bitmap)
         val paint = Paint()
@@ -178,6 +189,7 @@ class EngineDocument private constructor(
 
     override fun close() {
         if (handle != 0L) {
+            EngineTrace.sink?.event("doc.close", "doc=$traceId")
             NativeEngine.close(handle)
             handle = 0
         }
@@ -192,6 +204,7 @@ class EngineDocument private constructor(
         private const val SEARCH_CONTEXT_WORDS = 6
         private const val OPAQUE = 0xFF shl 24
         private const val DARK_PAGE_ALPHA = 0x66 shl 24
+        private val ids = AtomicInteger()
 
         /**
          * @param densityDpi screen density the book is laid out for; CSS lengths
@@ -211,6 +224,7 @@ class EngineDocument private constructor(
             val document = EngineDocument(
                 NativeEngine.create(width, height, cacheable), Engine.stylesheetFor(file), densityDpi * 96 / 160,
             )
+            EngineTrace.sink?.event("doc.open", "doc=${document.traceId} cacheable=$cacheable w=$width h=$height")
             document.apply(settings)
             if (!NativeEngine.load(document.handle, file.path)) {
                 document.close()

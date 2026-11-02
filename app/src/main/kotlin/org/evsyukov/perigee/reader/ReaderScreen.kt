@@ -106,6 +106,8 @@ import org.evsyukov.perigee.data.PageTurn
 import org.evsyukov.perigee.data.ReaderPrefs
 import org.evsyukov.perigee.data.RemotePosition
 import org.evsyukov.perigee.data.TapScheme
+import org.evsyukov.perigee.diagnostics.Diagnostics
+import org.evsyukov.perigee.engine.EngineTrace
 import org.evsyukov.perigee.engine.Page
 
 /** What the reader opened on top of the page. */
@@ -478,6 +480,15 @@ private fun PageView(page: Page, turned: Int, pageTurn: PageTurn, hidden: Boolea
         },
         label = "page",
     ) { shown ->
+        // The diagnostic build's trace: the page's bitmap is in the composition from here, which is not to say
+        // that a frame with it has reached the screen.
+        if (Diagnostics.enabled) {
+            DisposableEffect(shown.bitmap) {
+                val id = EngineTrace.idOf(shown.bitmap)
+                Diagnostics.event("compose.bind") { "bitmap=$id page=${shown.index}" }
+                onDispose { Diagnostics.event("compose.dispose") { "bitmap=$id" } }
+            }
+        }
         Image(
             bitmap = shown.bitmap.asImageBitmap(),
             contentDescription = null,

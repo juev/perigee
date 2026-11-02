@@ -22,6 +22,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.repeatOnLifecycle
 import java.io.File
 import org.evsyukov.perigee.data.Library
+import org.evsyukov.perigee.diagnostics.Diagnostics
 import org.evsyukov.perigee.legal.AboutScreen
 import org.evsyukov.perigee.legal.LicensesScreen
 import org.evsyukov.perigee.library.ImportResults
@@ -41,6 +42,7 @@ class MainActivity : ComponentActivity(), VolumeKeyHost {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        Diagnostics.event("activity.create") { "restored=${savedInstanceState != null}" }
         enableEdgeToEdge()
         // Started to show a share, the app opens the book shared, not the one the reader left.
         val sharing = savedInstanceState == null && SharedBooks.shares.value.isNotEmpty()
@@ -123,6 +125,11 @@ class MainActivity : ComponentActivity(), VolumeKeyHost {
                 }
             }
         }
+    }
+
+    override fun onDestroy() {
+        Diagnostics.event("activity.destroy") { "finishing=$isFinishing changing=$isChangingConfigurations" }
+        super.onDestroy()
     }
 
     override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {

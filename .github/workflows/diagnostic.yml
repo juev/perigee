@@ -20,12 +20,14 @@ env:
   CMAKE_VERSION: 3.31.6
   APPLICATION_ID: org.evsyukov.perigee.diagnostic
   APK: app/build/outputs/apk/fdroid/debug/app-fdroid-debug.apk
+  # The same properties for every Gradle call: the tests run on the very APK that is checked and uploaded.
+  GRADLE_PROPERTIES: -PperigeeDiagnostics=true -PperigeeAbis=arm64-v8a,x86_64
 
 jobs:
   build:
-    name: Build and check the diagnostic APK
+    name: Build, check and try the diagnostic APK
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 75
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -43,21 +45,87 @@ jobs:
           path: engine/.deps
           key: engine-deps-${{ hashFiles('engine/src/main/cpp/cmake/deps.cmake') }}
       - uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
-      # A broken check must not pass for a wrong package or fail for a right one.
-      - name: Test the script that checks the APK
-        run: python3 -m unittest discover -s .github/scripts -p test_apk_identity.py
+      # A broken check must not pass for a wrong package or fail for a right one; the trace switch is checked on the host.
+      - name: Test the scripts and the native trace switch
+        run: python3 -m unittest discover -s .github/scripts
       # Two ABIs: a phone and the x86_64 emulator.
-      - name: Build the diagnostic APK
-        run: ./gradlew :app:assembleFdroidDebug -PperigeeDiagnostics=true -PperigeeAbis=arm64-v8a,x86_64
-      # The id is read from the APK itself: the usual app here means the option was ignored.
-      - name: Check the application id
-        run: python3 .github/scripts/apk_identity.py --apk "$APK" --application-id "$APPLICATION_ID"
-      - name: Name the APK
-        run: cp "$APK" "$RUNNER_TEMP/perigee-diagnostic.apk"
+      - name: Build the diagnostic APK and its tests
+        run: ./gradlew :app:assembleFdroidDebug :app:assembleFdroidDebugAndroidTest $GRADLE_PROPERTIES
+      # Read from the APK itself: the usual app here means the option was ignored.
+      - name: Check the identity of the APK
+        run: >-
+          python3 .github/scripts/apk_identity.py --apk "$APK" --application-id "$APPLICATION_ID"
+          --label "Perigee Diagnostics" --debuggable --abi arm64-v8a --abi x86_64
+      - name: Verify the signature and describe the APK
+        run: |
+          tools="$ANDROID_HOME/build-tools/$(ls "$ANDROID_HOME/build-tools" | sort -V | tail -1)"
+          out="$RUNNER_TEMP/diagnostic-apk"
+          mkdir -p "$out"
+          cp "$APK" "$out/perigee-diagnostic.apk"
+          "$tools/apksigner" verify --verbose --print-certs "$out/perigee-diagnostic.apk" > "$RUNNER_TEMP/signature.txt"
+          cat "$RUNNER_TEMP/signature.txt"
+          {
+            echo "source_sha=$GITHUB_SHA"
+            echo "workflow_run=$GITHUB_RUN_ID"
+            "$tools/aapt2" dump badging "$out/perigee-diagnostic.apk" | grep -E "^(package:|application-label:|application-debuggable|native-code:)"
+            grep -E "^(Verified using|Signer #1 certificate (DN|SHA-256 digest))" "$RUNNER_TEMP/signature.txt"
+          } > "$out/perigee-diagnostic.txt"
+          (cd "$out" && sha256sum perigee-diagnostic.apk > perigee-diagnostic.apk.sha256)
+          cat "$out/perigee-diagnostic.txt" "$out/perigee-diagnostic.apk.sha256"
+      - name: Test the trace's files on the JVM
+        run: ./gradlew :app:testFdroidDebugUnitTest --tests org.evsyukov.perigee.diagnostics.DiagnosticTraceTest $GRADLE_PROPERTIES
+      - name: Let the emulator use KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Install the system image
+        run: |
+          image=system-images/android-36/google_apis/x86_64
+          for attempt in 1 2 3; do
+            "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "system-images;android-36;google_apis;x86_64" --channel=0 > /dev/null || true
+            if [ -f "$ANDROID_HOME/$image/system.img" ]; then exit 0; fi
+            echo "Attempt $attempt: the system image did not install"
+            rm -rf "$ANDROID_HOME/.temp" "$ANDROID_HOME/.downloadIntermediates" "$ANDROID_HOME/$image"
+            sleep 15
+          done
+          exit 1
+      # The diagnostic tests only, once: a failure is not run again.
+      - uses: ReactiveCircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0
+        with:
+          api-level: 36
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader -no-snapshot -noaudio -no-boot-anim
+          script: ./gradlew :app:connectedFdroidDebugAndroidTest $GRADLE_PROPERTIES -Pandroid.testInstrumentationRunnerArguments.class=org.evsyukov.perigee.diagnostics.DiagnosticBuildTest
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: diagnostic-apk
-          path: ${{ runner.temp }}/perigee-diagnostic.apk
+          path: ${{ runner.temp }}/diagnostic-apk
+          if-no-files-found: error
+      # The engine's library with its symbols, for a native crash's addresses; only the one built into the APK.
+      - name: Find the engine's symbols for arm64-v8a
+        id: symbols
+        run: |
+          mkdir -p "$RUNNER_TEMP/symbols" "$RUNNER_TEMP/shipped"
+          unzip -o -q "$APK" lib/arm64-v8a/libperigee_engine.so -d "$RUNNER_TEMP/shipped"
+          shipped=$(readelf -n "$RUNNER_TEMP/shipped/lib/arm64-v8a/libperigee_engine.so" | awk '/Build ID/ {print $3}')
+          for lib in $(find engine/build/intermediates -path '*arm64-v8a/libperigee_engine.so'); do
+            if [ "$(readelf -n "$lib" | awk '/Build ID/ {print $3}')" = "$shipped" ] && readelf -S "$lib" | grep -q debug_info; then
+              cp "$lib" "$RUNNER_TEMP/symbols/libperigee_engine.so"
+              echo "build_id=$shipped" > "$RUNNER_TEMP/symbols/build-id.txt"
+              echo "found=true" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+          done
+          echo "::warning::No unstripped arm64-v8a libperigee_engine.so with build ID $shipped"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: steps.symbols.outputs.found == 'true'
+        with:
+          name: diagnostic-symbols
+          path: ${{ runner.temp }}/symbols
           if-no-files-found: error
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: failure()
@@ -65,4 +133,5 @@ jobs:
           name: build-reports
           path: |
             */build/reports
+            */build/outputs/androidTest-results
           if-no-files-found: ignore

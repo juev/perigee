@@ -36,6 +36,8 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import org.evsyukov.perigee.R
+import org.evsyukov.perigee.diagnostics.Diagnostics
+import org.evsyukov.perigee.diagnostics.DiagnosticsSection
 import org.evsyukov.perigee.ui.Centred
 
 /**
@@ -76,6 +78,11 @@ fun AboutScreen(onLicenses: () -> Unit, onClose: () -> Unit) {
                     )
                 }
                 HorizontalDivider()
+                // The diagnostic build only: what to do, and the report to save.
+                if (Diagnostics.enabled) {
+                    DiagnosticsSection()
+                    HorizontalDivider()
+                }
                 Entry(stringResource(R.string.about_author), { open(AUTHOR_URL) }) {
                     Text(AUTHOR, style = MaterialTheme.typography.bodyMedium)
                     Link(AUTHOR_URL)

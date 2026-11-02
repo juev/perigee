@@ -321,6 +321,19 @@
     <string name="about_source">Source code</string>
     <string name="action_licenses">Licenses</string>
     <string name="about_open_failed">No app on this phone opens the address</string>
+    <!-- The diagnostic build only. -->
+    <string name="diagnostics_title">Diagnostic build</string>
+    <string name="diagnostics_about">A separate copy of Perigee for finding out why the app closes. Its library and settings are its own and start empty; the usual Perigee is not touched.</string>
+    <string name="diagnostics_step_font">1. In the reading settings, pick the same font and font size as in the usual Perigee.</string>
+    <string name="diagnostics_step_book">2. Open the same book here from a file on this phone.</string>
+    <string name="diagnostics_step_smoothing">3. Turn Smoothing off, then on again.</string>
+    <string name="diagnostics_step_save">4. If the app closes, open it once more, come back here and save the diagnostics.</string>
+    <string name="diagnostics_contents">The file holds what the app did and when: numbers, names of settings and the font\'s name. No text, titles or paths of books, and nothing of accounts. Nothing is sent by itself, and no other logs of the phone are needed.</string>
+    <string name="action_save_diagnostics">Save diagnostics</string>
+    <string name="diagnostics_saving">Saving…</string>
+    <string name="diagnostics_saved">Saved. Send the file to the developer.</string>
+    <string name="diagnostics_save_failed">The file could not be written there. Try again, or pick another place.</string>
+    <string name="diagnostics_trace_stopped">The trace stopped being written on this phone (%1$s). The file says so and holds what was written before.</string>
     <string name="licenses_title">Licenses</string>
     <string name="licenses_gpl">GNU General Public License, version 3</string>
     <string name="action_view_grid">Show as a grid of covers</string>

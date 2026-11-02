@@ -36,9 +36,11 @@ import org.evsyukov.perigee.data.Quote
 import org.evsyukov.perigee.data.ReaderPreferences
 import org.evsyukov.perigee.data.ReaderPrefs
 import org.evsyukov.perigee.data.RemotePosition
+import org.evsyukov.perigee.diagnostics.Diagnostics
 import org.evsyukov.perigee.engine.BookReader
 import org.evsyukov.perigee.engine.Engine
 import org.evsyukov.perigee.engine.EngineSettings
+import org.evsyukov.perigee.engine.EngineTrace
 import org.evsyukov.perigee.engine.Highlight
 import org.evsyukov.perigee.engine.HintingMode
 import org.evsyukov.perigee.engine.Layout
@@ -324,6 +326,10 @@ class ReaderViewModel internal constructor(
                 change(old).also { new ->
                     // A scheme the reader chose by hand holds over the light around until the next book.
                     if (new.colorScheme != old.colorScheme) lightSwitch.pause()
+                    Diagnostics.event("prefs.request") {
+                        "aa=${old.antialiasing}>${new.antialiasing} hint=${old.hinting}>${new.hinting} " +
+                            "font=${Diagnostics.token(new.fontFace)} size=${new.fontSize}"
+                    }
                 }
             }
         }
@@ -646,6 +652,7 @@ class ReaderViewModel internal constructor(
             )
             reader = open
             applied = target
+            Diagnostics.event("reader.open") { traced(settings, width, height) }
             val info = open.read { it.info() }
             val book = library.open(file, info.title, info.authors)
             book.xpointer?.let { open.goTo(it) }
@@ -669,6 +676,7 @@ class ReaderViewModel internal constructor(
         _state.update { it.copy(busy = true) }
         val started = System.nanoTime()
         val (width, height, settings) = target
+        Diagnostics.event("reader.relayout") { traced(settings, width, height) }
         val page = open.apply(settings, width, height)
         applied = target
         _state.update { it.copy(selection = null, quoteTouch = null) }
@@ -676,6 +684,9 @@ class ReaderViewModel internal constructor(
         // The page is there: touches count from now on, not once the contents are counted too.
         _state.update { it.copy(busy = false) }
         Log.d(TAG, "new layout shown in ${(System.nanoTime() - started) / 1_000_000} ms")
+        Diagnostics.event("reader.relayout.shown") {
+            "bitmap=${EngineTrace.idOf(page.bitmap)} ms=${(System.nanoTime() - started) / 1_000_000}"
+        }
         // Page numbers of the contents moved with the layout; the page is not kept waiting for them.
         val toc = open.read { it.toc() }
         val charsPerLine = open.read { it.charsPerLine() }
@@ -717,6 +728,7 @@ class ReaderViewModel internal constructor(
                 selection = null, quoteTouch = null,
             )
         }
+        Diagnostics.event("page.shown") { "bitmap=${EngineTrace.idOf(page.bitmap)} page=${page.index} turned=$turned" }
         val open = reader ?: return
         val book = _state.value.book ?: return
         // The page shown is looked at from here, before anything is written: the app put away while
@@ -750,6 +762,11 @@ class ReaderViewModel internal constructor(
     }
 
     private fun screenPages(): Int = viewport?.let { if (twoUp(_prefs.value, it)) 2 else 1 } ?: 1
+
+    /** How the glyphs of a layout are drawn, for the diagnostic trace. */
+    private fun traced(settings: EngineSettings, width: Int, height: Int) =
+        "aa=${settings.antialiasing} hint=${settings.hinting.engine} font=${Diagnostics.token(settings.fontFace)} " +
+            "size=${settings.fontSize} w=$width h=$height"
 
     override fun onCleared() {
         // Closing waits for the engine thread, which outlives this model.

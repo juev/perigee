@@ -124,6 +124,11 @@ class BookReader private constructor(
             val shown = Layout(this.settings, this.width, this.height)
             val swapped = ready != null && ready.layout.fallsAs(wanted)
             val repainted = !swapped && shown.differsInPaintOnly(wanted)
+            val how = if (swapped) "copy shown" else if (repainted) "painted" else "laid out"
+            EngineTrace.sink?.event(
+                "book.apply",
+                "branch=${how.replace(' ', '_')} aa=${settings.antialiasing} hint=${settings.hinting.engine} w=$width h=$height",
+            )
             if (ready != null && swapped) {
                 // Laid out for this already: the copies change places, and the one shown so far waits for the way back.
                 // The contrast is the engine's for every book: it is set again even for a copy painted as wanted.
@@ -141,8 +146,8 @@ class BookReader private constructor(
             this.width = width
             this.height = height
             relaidOut().also {
-                val how = if (swapped) "copy shown" else if (repainted) "painted" else "laid out"
                 Log.d(TAG, "$how at ${width}x$height in ${millisSince(started)} ms")
+                EngineTrace.sink?.event("book.applied", "bitmap=${EngineTrace.idOf(it.bitmap)} ms=${millisSince(started)}")
             }
         }
 
@@ -160,6 +165,7 @@ class BookReader private constructor(
             // A copy laid out for this already, in the colours and contrast before: painting it is enough.
             spare = old.repainted(layout.settings)
             Log.d(TAG, "copy painted in ${millisSince(started)} ms")
+            EngineTrace.sink?.event("book.spare", "action=painted ms=${millisSince(started)}")
             return@onEngine
         }
         spare = if (old != null) {
@@ -170,6 +176,11 @@ class BookReader private constructor(
             Spare(copy, layout)
         }
         Log.d(TAG, "copy ${if (old == null) "opened and laid out" else "laid out again"} at ${layout.width}x${layout.height} in ${millisSince(started)} ms")
+        EngineTrace.sink?.event(
+            "book.spare",
+            "action=${if (old == null) "opened" else "laid_out"} aa=${layout.settings.antialiasing} " +
+                "hint=${layout.settings.hinting.engine} w=${layout.width} h=${layout.height} ms=${millisSince(started)}",
+        )
     }
 
     /** Whether a second copy is laid out as [layout] asks. */
@@ -261,8 +272,10 @@ class BookReader private constructor(
     private fun draw(): Page {
         // A fresh bitmap per page: the screen may still be drawing the previous one.
         val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+        EngineTrace.sink?.event("bitmap.alloc", "bitmap=${EngineTrace.idOf(bitmap)} w=$width h=$height")
         document.renderPage(bitmap, highlights)
         return Page(bitmap, document.currentPage, document.pageCount, document.xpointer(), document.progress, settings.colors)
+            .also { EngineTrace.sink?.event("page.drawn", "bitmap=${EngineTrace.idOf(bitmap)} page=${it.index} layout=$layout") }
     }
 
     companion object {
