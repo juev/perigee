@@ -124,7 +124,7 @@ On a fresh emulator nobody has confirmed the system's notice for a screen that h
 | `contract` | Tests against a real bookOrbit server: positions, OPDS, account |
 | `third_party/crengine` | The engine, a git submodule pinned to a commit |
 
-Specifications are in [docs/specs](docs/specs): [reader.md](docs/specs/reader.md) for the engine API and the reading screen, [library.md](docs/specs/library.md), [opds.md](docs/specs/opds.md), and [sync-bookorbit.md](docs/specs/sync-bookorbit.md) for the server.
+Specifications are in [docs/specs](docs/specs): [reader.md](docs/specs/reader.md) for the engine API and the reading screen, [library.md](docs/specs/library.md), [opds.md](docs/specs/opds.md), and [sync-bookorbit.md](docs/specs/sync-bookorbit.md) for the server. Research notes, which commit to no feature, are in [docs/research](docs/research/README.md).
 
 ## Privacy
 
