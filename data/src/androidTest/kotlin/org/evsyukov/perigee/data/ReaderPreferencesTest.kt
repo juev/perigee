@@ -106,4 +106,31 @@ class ReaderPreferencesTest {
         jobs.removeAt(jobs.lastIndex).cancelAndJoin()
         assertEquals("compact again after another restart", kept, preferences(store(file)).prefs.first())
     }
+
+    @Test
+    fun theLargestSizeAndOnePageInLandscapeOutliveARestart() = runBlocking<Unit> {
+        val defaults = preferences(store(fresh)).prefs.first()
+        assertEquals("a fresh install reads at 18 dp", 18, defaults.fontSize)
+        assertEquals("with two pages in landscape", true, defaults.twoPagesInLandscape)
+
+        // A reader at 40 dp, the largest size before issue #154, with settings of their own.
+        val old = store(file)
+        old.edit {
+            it[intPreferencesKey("font_size")] = 40
+            it[intPreferencesKey("line_spacing")] = 150
+            it[stringPreferencesKey("user_css")] = "p { color: #333 }"
+        }
+        val upgraded = preferences(old)
+        val kept = ReaderPrefs(fontSize = 40, lineSpacingPercent = 150, userCss = "p { color: #333 }")
+        assertEquals("the size and the rest are read as they were", kept, upgraded.prefs.first())
+
+        upgraded.update { it.copy(fontSize = ReaderPrefs.FONT_SIZES.last, twoPagesInLandscape = false) }
+        jobs.removeAt(jobs.lastIndex).cancelAndJoin()
+        val restarted = preferences(store(file))
+        assertEquals("48 dp and one page after a restart", kept.copy(fontSize = 48, twoPagesInLandscape = false), restarted.prefs.first())
+
+        restarted.update { it.copy(fontSize = 40, twoPagesInLandscape = true) }
+        jobs.removeAt(jobs.lastIndex).cancelAndJoin()
+        assertEquals("and back, after another", kept, preferences(store(file)).prefs.first())
+    }
 }

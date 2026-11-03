@@ -94,6 +94,13 @@ data class EngineSettings(
      * is the usual one (issue #150).
      */
     val userCss: String = "",
+    /**
+     * How much of [marginHorizontal] the reader actually sees, when it is less than all of it: with two pages the app
+     * lays the book out on a canvas wider than the screen, with doubled side margins, and the screen crops half of each
+     * outer one (issue #154). Hanging punctuation and the hyphen of a broken word may then reach into the visible part
+     * only. Null, as for one page, lets them use the whole margin, as the app has always done.
+     */
+    val visibleMarginHorizontal: Int? = null,
 ) {
     /** The engine's gamma for [contrast]. */
     internal val gamma: Double get() = GAMMAS[contrast.coerceIn(CONTRASTS)]
@@ -128,6 +135,8 @@ data class EngineSettings(
             // from its cache, or kept on a change, with lines that no longer fit. The defaults add nothing.
             if (!antialiasing) append(".perigee-monochrome { font-style: normal }\n")
             if (hinting != HintingMode.Auto) append(".perigee-hinting-${hinting.engine} { font-style: normal }\n")
+            // The same for the overhang allowed into the margin: the engine keeps it out of that hash as well.
+            visibleMarginHorizontal?.let { append(".perigee-overhang-${overhangLimit} { font-style: normal }\n") }
         }
 
     /**
@@ -135,6 +144,9 @@ data class EngineSettings(
      * holds nothing but blanks, and the engine then has no such sheet. A change in it restyles the book.
      */
     internal val ownerCss: String get() = userCss.takeIf { it.isNotBlank() }.orEmpty()
+
+    /** The overhang the engine allows into the side margins, in px; -1 for the whole margin. */
+    internal val overhangLimit: Int get() = visibleMarginHorizontal?.coerceIn(0, maxOf(marginHorizontal, 0)) ?: -1
 
     companion object {
         const val DEFAULT_FONT_FACE = "Roboto"

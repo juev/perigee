@@ -51,6 +51,8 @@ internal object NativeEngine {
         boldWordStarts: Boolean,
         antialiasing: Boolean, hinting: Int, ligatures: Boolean, fractionalPositioning: Int,
         monospaceSizePercent: Int,
+        /** Px of the side margins hanging punctuation and hyphens may reach into; -1 for the whole margin. */
+        overhangLimit: Int,
     )
 
     /** Returns false when the file cannot be opened. */

@@ -1,0 +1,27 @@
+--- a/crengine/src/lvdocview.cpp
++++ b/crengine/src/lvdocview.cpp
+@@ -3128,10 +3128,23 @@
+         CRLog::debug("Render(width=%d, height=%d, fontSize=%d, currentFontSize=%d, 0 char width=%d)", dx, dy,
+                      m_font_size, m_font->getSize(), m_font->getCharWidth('0'));
+ 		//CRLog::trace("calling render() for document %08X font=%08X", (unsigned int)m_doc, (unsigned int)m_font.get() );
++		// Perigee: what of the side margins a line may overhang into (hanging punctuation, the hyphen of a
++		// broken word), from the view's property "perigee.overhang.limit" in px; absent or negative, the whole
++		// margin, as before. Perigee sets it where the screen shows less of the margin than the page has.
++		// It is not part of the rendering hash: the app keeps layouts apart with a stylesheet rule instead.
++		int overhangLeft = m_pageMargins.left;
++		int overhangRight = m_pageMargins.right;
++		const int overhangLimit = m_props->getIntDef("perigee.overhang.limit", -1);
++		if (overhangLimit >= 0) {
++			if (overhangLeft > overhangLimit)
++				overhangLeft = overhangLimit;
++			if (overhangRight > overhangLimit)
++				overhangRight = overhangLimit;
++		}
+ 		bool did_rerender = m_doc->render(pages, isDocumentOpened() ? m_callback : NULL, dx, dy,
+ 					m_showCover, m_showCover ? dy + m_pageMargins.bottom * 4 : 0,
+ 					m_font, m_def_interline_space, m_props,
+-					m_pageMargins.left, m_pageMargins.right);
++					overhangLeft, overhangRight);
+ 
+ #if 0
+                 // For debugging lvpagesplitter.cpp (small books)

@@ -83,6 +83,7 @@
     <string name="setting_page_margins">Page margins</string>
     <string name="chars_per_line">≈%1$d characters per line</string>
     <string name="setting_two_pages">Two pages in landscape</string>
+    <string name="hint_two_pages">On, two pages side by side. Off, one page across the whole width: more room on each line for larger letters.</string>
     <string name="setting_code_size">Code size</string>
     <string name="setting_full_size_footnotes">Footnotes as large as the text</string>
     <string name="setting_volume_keys">Volume keys turn pages</string>

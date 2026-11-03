@@ -98,7 +98,7 @@ class EngineDocument private constructor(
             settings.hyphenation, settings.footnotes, settings.twoPages,
             settings.colors.text, settings.colors.background, renderDpi, width, height, settings.boldWordStarts,
             settings.antialiasing, settings.hinting.engine, settings.ligatures, settings.fractionalPositioning,
-            settings.monospaceSizePercent,
+            settings.monospaceSizePercent, settings.overhangLimit,
         )
         NativeEngine.setGamma(settings.gamma)
         colors = settings.colors

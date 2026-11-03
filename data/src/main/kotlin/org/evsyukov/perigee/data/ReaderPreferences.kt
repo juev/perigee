@@ -120,7 +120,11 @@ data class ReaderPrefs(
         copy(colorScheme = if (colorScheme.dark) dayScheme else nightScheme)
 
     companion object {
-        val FONT_SIZES = 10..40
+        /**
+         * Up to 48 dp (issue #154): chosen with headroom after measuring every shipped face at up to
+         * 640 dpi against the engine's 256 px cap. Not a clinical or arbitrary-book-font limit.
+         */
+        val FONT_SIZES = 10..48
         val LINE_SPACINGS = 80..200 step 10
         val PARAGRAPH_SPACINGS = 0..100 step 10
         val FRACTIONAL_STEPS = 0..3

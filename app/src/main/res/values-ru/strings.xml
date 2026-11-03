@@ -82,6 +82,7 @@
     <string name="setting_page_margins">Поля страниц</string>
     <string name="chars_per_line">≈%1$d знаков в строке</string>
     <string name="setting_two_pages">Две страницы в альбомной ориентации</string>
+    <string name="hint_two_pages">Включено — две страницы рядом. Выключено — одна страница во всю ширину: в строке больше места для крупных букв.</string>
     <string name="setting_code_size">Размер кода</string>
     <string name="setting_full_size_footnotes">Сноски того же размера, что и текст</string>
     <string name="setting_volume_keys">Листать кнопками громкости</string>
