@@ -92,7 +92,7 @@ class EngineDocument private constructor(
             "doc.apply", "doc=$traceId aa=${settings.antialiasing} hint=${settings.hinting.engine} w=$width h=$height",
         )
         NativeEngine.applySettings(
-            checked(), stylesheet.path, settings.extraCss, settings.fontFace, settings.fontSize,
+            checked(), stylesheet.path, settings.extraCss, settings.ownerCss, settings.fontFace, settings.fontSize,
             settings.fontWeight, settings.lineSpacingPercent, settings.marginHorizontal, settings.marginTop,
             settings.marginBottom,
             settings.hyphenation, settings.footnotes, settings.twoPages,

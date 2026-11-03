@@ -150,3 +150,7 @@ add_executable(gaps gaps.cpp)
 target_link_libraries(gaps PRIVATE crengine)
 # Stylesheets and hyphenation patterns, as the app unpacks them from the same tree.
 target_compile_definitions(gaps PRIVATE GAPS_DATA_DIR="${CRENGINE_DIR}/cr3gui/data")
+
+# The precedence of the owner's CSS (issue #150), checked on the styles the engine resolves.
+add_executable(owner-css owner-css.cpp)
+target_link_libraries(owner-css PRIVATE crengine)

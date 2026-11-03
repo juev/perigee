@@ -25,6 +25,14 @@ class UserCssPreferenceTest {
     }
 
     @Test
+    fun plainCssIsStoredAsWritten() = runBlocking {
+        // The engine gives the owner's rules their priority itself: the text kept has no !important added.
+        val css = "p {\n    text-indent: 0;\n    margin-bottom: 0.6em;\n}\n"
+        preferences.update { it.copy(userCss = css) }
+        assertEquals(css, preferences.prefs.first().userCss)
+    }
+
+    @Test
     fun theLastThreeVersionsAreKept() = runBlocking {
         for (css in listOf("a { }", "b { }", "c { }", "d { }")) preferences.update { it.copy(userCss = css) }
         // The same text saved again is not a new version.
