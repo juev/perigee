@@ -99,6 +99,23 @@ class EngineDocumentTest {
         assertEquals("the old position is on the page shown after the change", shown, doc.currentPage)
     }
 
+    // A place asked for by xpointer, or the place a new layout returns to, is taken by the engine when the page is
+    // next read. A page asked for before anything is read is the one shown: the earlier place must not win over it.
+    @Test
+    fun pageAskedForComesAfterAPlaceNotYetShown() = open(TestBooks.epub(dir)).use { doc ->
+        val place = checkNotNull(doc.xpointerOfPage(5))
+        assertTrue(doc.goToXPointer(place))
+        assertTrue(doc.goToPage(0))
+        assertEquals("after an xpointer", 0, doc.currentPage)
+        assertEquals(doc.xpointerOfPage(0), doc.xpointer())
+
+        assertTrue(doc.goToPage(5))
+        doc.apply(EngineSettings(fontSize = 44))
+        assertTrue(doc.goToPage(0))
+        assertEquals("after a new layout", 0, doc.currentPage)
+        assertEquals(doc.xpointerOfPage(0), doc.xpointer())
+    }
+
     @Test
     fun twoPageModeHalvesTheNumberOfSpreads() {
         val file = TestBooks.epub(dir)

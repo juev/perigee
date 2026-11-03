@@ -74,6 +74,11 @@ data class EngineSettings(
     val monospaceSizePercent: Int = 100,
     /** Footnotes at the bottom of the page that refers to them. */
     val footnotes: Boolean = true,
+    /**
+     * Footnote text at the reader's [fontSize], whatever size the book gives its notes; off sets them
+     * compact, at 80 % of the size they would have, as the app has always done.
+     */
+    val fullSizeFootnotes: Boolean = false,
     /** Two pages side by side; meant for landscape tablets. */
     val twoPages: Boolean = false,
     /** The opening third of words of five or more letters in the 600 weight, the rest in 300; the book is laid out again. */
@@ -113,7 +118,7 @@ data class EngineSettings(
             paragraphIndent?.let {
                 append("p { text-indent: ${if (it) PARAGRAPH_INDENT else "0"} !important; }\n")
             }
-            append(FOOTNOTE_CSS)
+            append(if (fullSizeFootnotes) FULL_SIZE_FOOTNOTE_CSS else FOOTNOTE_CSS)
             append(PART_TITLE_CSS)
             // A rule that matches nothing: it makes the stylesheet, and so the layout kept in the engine's
             // cache, differ with bold word starts on and off.
@@ -158,15 +163,27 @@ data class EngineSettings(
             "*[role~=\"doc-footnote\"]", "*[role~=\"doc-endnote\"]",
         )
 
-        // Notes are set smaller than the text, as on paper, so that one of a few
+        // By default notes are set smaller than the text, as on paper, so that one of a few
         // lines fits under the text that cites it; the line height follows the
         // size. `-cr-only-if` keeps the size off inline matches such as the FB2
         // reference `<a type="note">`, which has its own size in fb2.css. Note
         // paragraphs get no paragraph spacing: the descendant selectors outrank
         // the bare `p` of the spacing setting.
-        private val FOOTNOTE_CSS =
+        private val FOOTNOTE_CSS = footnoteCss("80%")
+
+        // Notes at the size of the main text: the reader's size itself, `urem`, the engine's unit for the size
+        // of the document's default font. A percentage or `em` would take whatever smaller size the book gives
+        // the note's container or an ancestor of it, and `rem` the root of the book's own CSS, which a book may
+        // scale (`html { font-size: 62.5% }`; crengine matches `html` to the fragment root of each EPUB file).
+        // The blocks inside a note get the size as well, over the book's own rules for them; text inside those
+        // blocks that the book sizes, as `sup` or `small`, keeps its size relative to them.
+        private val FULL_SIZE_FOOTNOTE_CSS = footnoteCss("1urem") +
+            FOOTNOTES.joinToString(", ") { "$it *" } +
+            " { -cr-only-if: not-inline; font-size: 1urem !important; }\n"
+
+        private fun footnoteCss(size: String) =
             FOOTNOTES.joinToString(", ") +
-                " { -cr-hint: footnote-inpage; margin: 0 !important; -cr-only-if: not-inline; font-size: 80% !important; }\n" +
+                " { -cr-hint: footnote-inpage; margin: 0 !important; -cr-only-if: not-inline; font-size: $size !important; }\n" +
                 FOOTNOTES.joinToString(", ") { "$it p" } +
                 " { margin-top: 0 !important; margin-bottom: 0 !important; }\n"
 

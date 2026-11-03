@@ -7,6 +7,7 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
+import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import java.io.File
@@ -18,6 +19,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Test
 import org.junit.runner.RunWith
 
@@ -74,5 +76,34 @@ class ReaderPreferencesTest {
         jobs.removeAt(jobs.lastIndex).cancelAndJoin()
         val restarted = preferences(store(file)).prefs.first()
         assertEquals("after a restart as well", changed, restarted)
+    }
+
+    @Test
+    fun notesStayCompactUntilTheReaderChoosesTheMainTextSizeAndTheChoiceOutlivesARestart() = runBlocking<Unit> {
+        assertFalse("a fresh install has compact notes", preferences(store(fresh)).prefs.first().fullSizeFootnotes)
+
+        // As a version without the choice left it: other settings of the reader's own, and no key for the notes.
+        val old = store(file)
+        old.edit {
+            it[intPreferencesKey("font_size")] = 24
+            it[intPreferencesKey("line_spacing")] = 150
+            it[stringPreferencesKey("user_css")] = "p { color: #333 }"
+        }
+        val upgraded = preferences(old)
+        val kept = ReaderPrefs(fontSize = 24, lineSpacingPercent = 150, userCss = "p { color: #333 }")
+        assertEquals("an older installation keeps compact notes and its own settings", kept, upgraded.prefs.first())
+
+        upgraded.update { it.copy(fullSizeFootnotes = true) }
+        assertEquals("the notes change, nothing else does", kept.copy(fullSizeFootnotes = true), upgraded.prefs.first())
+
+        // The app started again: a new store reads the same file.
+        jobs.removeAt(jobs.lastIndex).cancelAndJoin()
+        val restarted = preferences(store(file))
+        assertEquals("main-size notes after a restart", kept.copy(fullSizeFootnotes = true), restarted.prefs.first())
+
+        restarted.update { it.copy(fullSizeFootnotes = false) }
+        assertEquals(kept, restarted.prefs.first())
+        jobs.removeAt(jobs.lastIndex).cancelAndJoin()
+        assertEquals("compact again after another restart", kept, preferences(store(file)).prefs.first())
     }
 }

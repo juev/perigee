@@ -618,7 +618,12 @@ Java_org_evsyukov_perigee_engine_NativeEngine_currentPage(JNIEnv*, jobject, jlon
 
 JNIEXPORT jboolean JNICALL
 Java_org_evsyukov_perigee_engine_NativeEngine_goToPage(JNIEnv*, jobject, jlong handle, jint page) {
-    return viewOf(handle)->goToPage(page, false, true, false);
+    LVDocView* view = viewOf(handle);
+    // A place set by goToBookmark (goToXPointer, and applySettings returning to the place) is taken only when the
+    // page is next read, and goToPage reads it after setting the page: the earlier place would win and the page
+    // asked for be lost. Reading the page first takes that place, and the page asked for then comes after it.
+    view->getCurPage();
+    return view->goToPage(page, false, true, false);
 }
 
 JNIEXPORT jstring JNICALL

@@ -84,6 +84,7 @@
     <string name="chars_per_line">≈%1$d characters per line</string>
     <string name="setting_two_pages">Two pages in landscape</string>
     <string name="setting_code_size">Code size</string>
+    <string name="setting_full_size_footnotes">Footnotes as large as the text</string>
     <string name="setting_volume_keys">Volume keys turn pages</string>
     <string name="setting_brightness_gesture">Brightness by sliding along the left edge</string>
     <string name="setting_dim_below_flicker">Darker without flicker</string>
