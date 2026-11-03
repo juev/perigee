@@ -311,6 +311,10 @@ Java_org_evsyukov_perigee_engine_NativeEngine_fontFaces(JNIEnv* env, jobject) {
     return out;
 }
 
+// The view property patches/0004-overhang-limit.patch reads in LVDocView::Render: px of the side margins hanging
+// punctuation and the hyphen of a broken word may use, -1 or absent for all of them. The patch spells it the same.
+static const char* const PERIGEE_OVERHANG_LIMIT = "perigee.overhang.limit";
+
 // Kerning modes of the engine: HarfBuzz without ligatures, and HarfBuzz with everything.
 static const int KERNING_LIGHT = 2;
 static const int KERNING_FULL = 3;
@@ -458,7 +462,7 @@ Java_org_evsyukov_perigee_engine_NativeEngine_applySettings(
         jboolean hyphenation, jboolean footnotes, jboolean twoPages, jint textColor, jint backgroundColor,
         jint renderDpi, jint width, jint height, jboolean boldWordStarts,
         jboolean antialiasing, jint hinting, jboolean ligatures, jint fractionalPositioning,
-        jint monospaceSizePercent) {
+        jint monospaceSizePercent, jint overhangLimit) {
     traceStage(env, Stage::ApplyBegin, antialiasing ? 1 : 0, hinting);
     LVDocView* view = viewOf(handle);
     // A new layout moves page boundaries; the reader stays where they were.
@@ -493,6 +497,9 @@ Java_org_evsyukov_perigee_engine_NativeEngine_applySettings(
     // The fonts a book carries are always there for its CSS to pick (issue #149); whether the reader's face is
     // drawn over them is the override rule of the stylesheet. A flag of the document, taken when it is loaded.
     props->setInt(PROP_EMBEDDED_FONTS, 1);
+    // How far into the side margins a line may overhang, set on every call so that -1 takes a limit away again
+    // (patches/0004-overhang-limit.patch). A property of the view: each book open has its own.
+    props->setInt(PERIGEE_OVERHANG_LIMIT, overhangLimit);
     view->propsApply(props);
     traceStage(env, Stage::ApplyProps, fontMan->GetAntialiasMode(), static_cast<jint>(fontMan->GetHintingMode()));
     view->setTextColor(0x000000);

@@ -164,6 +164,17 @@ internal fun SettingsSheet(
                     onLess = { onChange { it.copy(fontSize = (it.fontSize - 1).coerceIn(ReaderPrefs.FONT_SIZES)) } },
                     onMore = { onChange { it.copy(fontSize = (it.fontSize + 1).coerceIn(ReaderPrefs.FONT_SIZES)) } },
                 )
+                // Next to the size, where it is looked for: larger letters leave fewer of them on each of two
+                // half-width pages, and one page across the screen turned sideways gives each line its whole width.
+                Toggle(R.string.setting_two_pages, prefs.twoPagesInLandscape, "two-pages") { on ->
+                    onChange { it.copy(twoPagesInLandscape = on) }
+                }
+                Text(
+                    stringResource(R.string.hint_two_pages),
+                    Modifier.testTag("two-pages-hint"),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
                 WeightSlider(prefs.fontWeight) { chosen -> onChange { it.copy(fontWeight = chosen) } }
                 // Darker strokes step by step, with no line moved; the page is painted again as the thumb is let go.
                 StepSlider(R.string.setting_contrast, prefs.contrast, EngineSettings.CONTRASTS, "contrast") { chosen ->
@@ -249,7 +260,6 @@ internal fun SettingsSheet(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
-                Toggle(R.string.setting_two_pages, prefs.twoPagesInLandscape) { on -> onChange { it.copy(twoPagesInLandscape = on) } }
                 Stepper(
                     R.string.setting_code_size, stringResource(R.string.percent, prefs.monospaceSizePercent), "code-size",
                     onLess = { onChange { it.copy(monospaceSizePercent = stepped(it.monospaceSizePercent, -1, ReaderPrefs.MONOSPACE_SIZES)) } },

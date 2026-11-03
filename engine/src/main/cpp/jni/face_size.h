@@ -24,8 +24,10 @@ namespace perigee {
 
 inline const char* referenceFace() { return "Roboto"; }
 
-/// Above the engine's own limit of 72 px, which a 560 dpi phone reaches at 20 dp: 40 dp, the largest
-/// size offered, at the densest screens, in the face with the smallest letters.
+/// Above the engine's own limit of 72 px, which a 560 dpi phone reaches at 20 dp. At 48 dp, the largest size
+/// offered (issue #154), every shipped face measured at 640 dpi stays below it, 203 px at most; a book's face
+/// with smaller letters, or a denser screen, may reach it and is then drawn smaller than asked. The size of an
+/// element, as of a heading, has a limit of its own in lvrend.cpp, 340 px.
 constexpr int MAX_FONT_PX = 256;
 
 struct FaceSize {

@@ -492,6 +492,37 @@ class ReaderScreenTest {
     }
 
     @Test
+    fun onePageInLandscapeIsChosenNextToTheSizeAndKept() {
+        show()
+        waitForBook()
+        openMenu()
+        rule.onNodeWithContentDescription(string(R.string.action_settings)).performClick()
+        waitForTag("settings")
+        rule.waitForIdle()
+        // The switch comes right after the size, before the settings of how letters are drawn, with a line that says
+        // what each position gives.
+        fun top(tag: String) = rule.onNodeWithTag(tag).fetchSemanticsNode().positionInRoot.y
+        assertTrue("after the size", top("two-pages") > top("font-size"))
+        assertTrue("before the contrast", top("two-pages") < top("contrast"))
+        rule.onNodeWithText(string(R.string.setting_two_pages)).performScrollTo().assertIsDisplayed()
+        rule.onNodeWithTag("two-pages-hint").performScrollTo().assertIsDisplayed().assertTextEquals(string(R.string.hint_two_pages))
+        val twoPages = rule.onNodeWithTag("two-pages")
+        twoPages.performScrollTo().assertIsOn().performClick()
+        rule.waitUntil(TIMEOUT) { rule.onAllNodes(hasTestTag("two-pages") and isOff()).fetchSemanticsNodes().isNotEmpty() }
+        assertFalse("the model has it", model().prefs.value.twoPagesInLandscape)
+        assertFalse("it is stored", runBlocking { preferences.prefs.first() }.twoPagesInLandscape)
+
+        rule.activityRule.scenario.recreate()
+        show()
+        waitForBook()
+        openMenu()
+        rule.onNodeWithContentDescription(string(R.string.action_settings)).performClick()
+        waitForTag("settings")
+        rule.waitForIdle()
+        rule.onNodeWithTag("two-pages").performScrollTo().assertIsOff()
+    }
+
+    @Test
     fun theBooksOwnFontsHaveNoSwitchWhileTheReadersFontStillOverridesThem() {
         show()
         waitForBook()

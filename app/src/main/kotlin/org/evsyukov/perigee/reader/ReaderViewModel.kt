@@ -868,6 +868,8 @@ class ReaderViewModel internal constructor(
                 colors = colorsOf(prefs.colorScheme),
                 twoPages = twoPages,
                 userCss = prefs.userCss,
+                // The screen shows only `side` of the doubled margin: what hangs past it would be cut off.
+                visibleMarginHorizontal = if (twoPages) side else null,
             )
             return Triple(viewport.width + 2 * overdraw, viewport.height, settings)
         }
