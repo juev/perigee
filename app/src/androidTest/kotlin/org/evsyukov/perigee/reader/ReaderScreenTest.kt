@@ -448,6 +448,50 @@ class ReaderScreenTest {
     }
 
     @Test
+    fun fontSizeCanGrowPastFortyFromSettings() {
+        // A reader at 40 dp, the largest size before issue #154; the other settings stay as they are.
+        runBlocking { preferences.update { it.copy(fontSize = 40) } }
+        show()
+        waitForBook()
+        turnForward(2)
+        val read = model().state.value.page!!
+        openMenu()
+        rule.onNodeWithContentDescription(string(R.string.action_settings)).performClick()
+        rule.onNodeWithTag("font-size").assertTextEquals("40")
+
+        var drawn = read
+        for (size in 41..48) {
+            rule.onNodeWithTag("font-size-more").performClick()
+            // Each press is stored first and shown when the stored value comes back; the book is laid out again.
+            waitFor("size $size is in the model") { model().prefs.value.fontSize == size }
+            rule.onNodeWithTag("font-size").assertTextEquals(size.toString())
+            assertEquals("size $size is stored", size, runBlocking { preferences.prefs.first() }.fontSize)
+            val before = drawn
+            waitFor("the page is drawn anew at $size") {
+                model().state.value.let { !it.busy && it.page?.bitmap?.sameAs(before.bitmap) == false }
+            }
+            drawn = model().state.value.page!!
+            assertTrue("the place read stays at $size, not back at the start", drawn.index >= read.index)
+        }
+
+        // 48 is the largest size: one more press changes nothing.
+        rule.onNodeWithTag("font-size-more").performClick()
+        rule.waitForIdle()
+        assertEquals(48, model().prefs.value.fontSize)
+        assertEquals(48, runBlocking { preferences.prefs.first() }.fontSize)
+        rule.onNodeWithTag("font-size").assertTextEquals("48")
+
+        // Back at 40 the page read before is shown again, as it was drawn.
+        repeat(8) { rule.onNodeWithTag("font-size-less").performClick() }
+        waitFor("the page read is shown again at 40") {
+            model().prefs.value.fontSize == 40 && model().state.value.let { !it.busy && it.page?.xpointer == read.xpointer }
+        }
+        assertEquals(read.index, shownPage())
+        assertTrue("the page is drawn as before", model().state.value.page!!.bitmap.sameAs(read.bitmap))
+        assertEquals("the setting is stored", 40, runBlocking { preferences.prefs.first() }.fontSize)
+    }
+
+    @Test
     fun theBooksOwnFontsHaveNoSwitchWhileTheReadersFontStillOverridesThem() {
         show()
         waitForBook()
