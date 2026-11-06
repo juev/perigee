@@ -6,7 +6,7 @@ Perigee is a working name.
 
 ## Status
 
-The app is released as release candidates, published as GitHub pre-releases. They install with [Obtainium](https://github.com/ImranR98/Obtainium) or by hand; see [Installing](#installing).
+The app is released on GitHub; 0.1.0 is the first release that is not a release candidate. Releases install with [Obtainium](https://github.com/ImranR98/Obtainium) or by hand; see [Installing](#installing).
 
 Works today:
 
@@ -37,7 +37,7 @@ The app is on its way to F-Droid (#166). F-Droid will build the same APK from so
 
 **With Obtainium.** [Obtainium](https://github.com/ImranR98/Obtainium) follows a project's GitHub releases and installs and updates the app from them. Add the repository's address, `https://github.com/juev/perigee`, and it picks the release's APK. If *Filter APKs by Regular Expression* was set to an architecture for the earlier releases, clear it: the name of the new APK does not hold one, and the filter leaves nothing to install.
 
-**Pre-releases.** Every release so far is a release candidate: a build that installs and is usable, whose remaining gap is the listings in the stores. The release workflow publishes a tag with a suffix, such as `-rc8`, as a GitHub pre-release; a plain `vX.Y.Z` tag is published as a normal release and becomes the project's Latest. Obtainium leaves a pre-release out of its list unless *Include prereleases* is on in the app's settings there; with the switch off the list is empty, as if the project had published nothing.
+**Pre-releases.** The releases before 0.1.0 are release candidates. The release workflow publishes a tag with a suffix, such as `-rc8`, as a GitHub pre-release; a plain `vX.Y.Z` tag is published as a normal release and becomes the project's Latest. Obtainium leaves a pre-release out of its list unless *Include prereleases* is on in the app's settings there; with the switch off the list is empty, as if the project had published nothing.
 
 **By hand.** Without a second app, download the APK from the release page of the version you want and open it on the phone. Each release also carries `SHA256SUMS`, to check the download against.
 
