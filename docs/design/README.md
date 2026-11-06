@@ -15,7 +15,7 @@ Colours: terracotta `#B4532A`, paper `#FBF5EA`, ink `#2E2620`. The screens of th
 
 ## Phone screenshots
 
-`phoneScreenshots/1.png` to `6.png`: a page of a book, the library as covers, the menu over a page, the reading settings, a page at night, the page about a book. They were taken on the emulator `shareding_api36` (Android 16, 420 dpi) on 2026-10-14, with the screen set to 1080×2160: Google Play takes no picture whose long side is more than twice the short one, and the emulator's own 2400 is.
+`phoneScreenshots/1.png` to `6.png`: a page of a book, the library as covers, the menu over a page, the reading settings, a page at night, the page about a book. They were taken on the emulator `shareding_api36` (Android 16, 420 dpi, arm64-v8a, so the debug build is made with `-PperigeeAbis=arm64-v8a`) on 2026-11-06 from the build of 0.1.0, with the screen set to 1080×2160: Google Play takes no picture whose long side is more than twice the short one, and the emulator's own 2400 is.
 
 ```sh
 adb shell wm size 1080x2160
@@ -31,9 +31,9 @@ adb shell am broadcast -a com.android.systemui.demo -e command exit
 adb shell wm size reset
 ```
 
-Reading settings as shown: Roboto 18, line spacing 120 %, justified with hyphenation, page margins on.
+The system is in light mode with gesture navigation (`adb shell cmd uimode night no`, `adb shell cmd overlay enable com.android.internal.systemui.navbar.gestural`). Reading settings as shown: Roboto 18, line spacing 120 %, justified with hyphenation, page margins on; page margins are off by default and were turned on. The reading settings open on half the screen, over the page.
 
-The books are the Standard Ebooks editions (standardebooks.org), downloaded 2026-10-14. Standard Ebooks dedicates its own work to the public domain under CC0 1.0 and holds the text and cover art of its books to be in the U.S. public domain. The covers are adapted from these paintings:
+The books are the Standard Ebooks editions (standardebooks.org), downloaded 2026-11-06; Alice is the edition illustrated by John Tenniel (`lewis-carroll/alices-adventures-in-wonderland/john-tenniel`), the address the plain one now leads to. Standard Ebooks dedicates its own work to the public domain under CC0 1.0 and holds the text and cover art of its books to be in the U.S. public domain. The covers are adapted from these paintings:
 
 | Book | Painting |
 |---|---|
@@ -47,7 +47,7 @@ The books are the Standard Ebooks editions (standardebooks.org), downloaded 2026
 
 ## Tablet screenshots
 
-`tenInchScreenshots/1.png` to `4.png`: two pages side by side, the library as covers, the reading settings over the pages, the page about a book. They were taken on 2026-10-14 on the emulator `perigee_tablet_api36` (the Pixel Tablet profile, 2560×1600, 320 dpi, Android 16, 4 GB of memory), made on the image the phone emulator uses:
+`tenInchScreenshots/1.png` to `4.png`: two pages side by side, the library as covers, the reading settings over the pages, the page about a book. They were taken on 2026-11-06 on the emulator `perigee_tablet_api36` (the Pixel Tablet profile, 2560×1600, 320 dpi, Android 16, 4 GB of memory), made on the image the phone emulator uses:
 
 ```sh
 avdmanager create avd -n perigee_tablet_api36 -k 'system-images;android-36;google_apis;arm64-v8a' -d pixel_tablet
