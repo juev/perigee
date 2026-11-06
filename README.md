@@ -31,21 +31,15 @@ Android 11 or later.
 
 ## Installing
 
-The app is installed from the APKs attached to the project's [GitHub releases](https://github.com/juev/perigee/releases). Each release has one APK for each architecture:
+The app is installed from the APK attached to the project's [GitHub releases](https://github.com/juev/perigee/releases). From 0.1.0 a release has one APK, `perigee-<version>.apk`, for the phones of the last few years (`arm64-v8a`) and older 32-bit ones (`armeabi-v7a`). It does not run on x86 devices and emulators. Releases up to 0.1.0-rc11 had one APK for each of these and `x86_64`.
 
-| Architecture | Where it runs |
-|---|---|
-| `arm64-v8a` | Phones of the last few years |
-| `armeabi-v7a` | Older 32-bit phones |
-| `x86_64` | Emulators and x86 tablets |
+The app is on its way to F-Droid (#166). F-Droid will build the same APK from source and ship it with the same signature, so the app moves between F-Droid, Obtainium and a hand install without being removed.
 
-**With Obtainium.** [Obtainium](https://github.com/ImranR98/Obtainium) follows a project's GitHub releases and installs and updates the app from them. Add the repository's address, `https://github.com/juev/perigee`, and choose the APK for the phone's architecture from the table above.
+**With Obtainium.** [Obtainium](https://github.com/ImranR98/Obtainium) follows a project's GitHub releases and installs and updates the app from them. Add the repository's address, `https://github.com/juev/perigee`, and it picks the release's APK. If *Filter APKs by Regular Expression* was set to an architecture for the earlier releases, clear it: the name of the new APK does not hold one, and the filter leaves nothing to install.
 
 **Pre-releases.** Every release so far is a release candidate: a build that installs and is usable, whose remaining gap is the listings in the stores. The release workflow publishes a tag with a suffix, such as `-rc8`, as a GitHub pre-release; a plain `vX.Y.Z` tag is published as a normal release and becomes the project's Latest. Obtainium leaves a pre-release out of its list unless *Include prereleases* is on in the app's settings there; with the switch off the list is empty, as if the project had published nothing.
 
-**One APK, not three.** With several APKs in one release, Obtainium asks which one to install on every update and cannot update in the background. Set *Filter APKs by Regular Expression* once to the architecture, for example `arm64-v8a`, and the question goes away. *Attempt to filter APKs by CPU architecture* does the same automatically, but it guesses from the file names.
-
-**By hand.** Without a second app, download the APK for the phone's architecture from the release page of the version you want and open it on the phone. Each release also carries `SHA256SUMS`, to check the download against.
+**By hand.** Without a second app, download the APK from the release page of the version you want and open it on the phone. Each release also carries `SHA256SUMS`, to check the download against.
 
 The APKs are signed by the release workflow. An APK built by hand is unsigned and does not install, so building from source is not a way to get an installable file.
 
@@ -77,11 +71,11 @@ There are two builds of the app, `fdroid` and `play`, one for each store. Their 
 ./gradlew :app:assembleFdroidRelease :app:bundlePlayRelease
 ```
 
-F-Droid builds the app from source and signs it with its own key. Two clean builds of the same commit give the same APK byte for byte, whatever directory they are made in. Google Play takes a bundle signed with an upload key. With `PERIGEE_UPLOAD_KEYSTORE` and `PERIGEE_UPLOAD_PASSWORD` set, `bundlePlayRelease` signs the bundle with the key `perigee` from that keystore.
+F-Droid builds the app from source, checks that its APK is the one of the GitHub release and ships it with the release key's signature (`AllowedAPKSigningKeys` in its recipe). Two clean builds of the same commit give the same APK byte for byte, whatever directory they are made in. Google Play takes a bundle signed with an upload key. With `PERIGEE_UPLOAD_KEYSTORE` and `PERIGEE_UPLOAD_PASSWORD` set, `bundlePlayRelease` signs the bundle with the key `perigee` from that keystore.
 
 The [release workflow](.github/workflows/release.yml) builds the signed bundle on a `v`-prefixed tag that matches `versionName`, or when run by hand. It takes the key and its password from the repository secrets `PERIGEE_UPLOAD_KEYSTORE_B64` and `PERIGEE_UPLOAD_PASSWORD`, checks the certificate of the bundle and keeps the bundle as an artifact of the run for 90 days.
 
-The same workflow builds the `fdroid` APK once for each ABI and signs it with the release key: with `PERIGEE_RELEASE_KEYSTORE` and `PERIGEE_RELEASE_PASSWORD` set, `assembleFdroidRelease` signs the APK with the key `perigee` from that keystore. The key comes from the secrets `PERIGEE_RELEASE_KEYSTORE_B64` and `PERIGEE_RELEASE_PASSWORD`. On a tag the APKs and their `SHA256SUMS` go to a GitHub release of that tag, published with notes made from the commits. Releases are built there only: an unsigned APK does not install on a phone.
+The same workflow builds one `fdroid` APK for `arm64-v8a` and `armeabi-v7a` (`-PperigeeAbis=arm64-v8a,armeabi-v7a`) and signs it with the release key: with `PERIGEE_RELEASE_KEYSTORE` and `PERIGEE_RELEASE_PASSWORD` set, `assembleFdroidRelease` signs the APK with the key `perigee` from that keystore. The key comes from the secrets `PERIGEE_RELEASE_KEYSTORE_B64` and `PERIGEE_RELEASE_PASSWORD`. On a tag the APK and its `SHA256SUMS` go to a GitHub release of that tag, published with notes made from the commits. Releases are built there only: an unsigned APK does not install on a phone.
 
 On a Mac, `scripts/make-upload-key.sh` makes the upload key once. It writes the keystore to `~/.local/share/perigee/upload.jks`, puts the password into the Keychain (service `org.evsyukov.perigee.upload`, account `perigee`) and sets both secrets. `scripts/build-release-macos.sh` builds the signed bundle from that key. Keep a copy of the keystore and its password elsewhere: Google Play takes bundles signed with the registered upload key only, and a lost one is replaced through its support.
 
