@@ -504,6 +504,10 @@ class ReaderScreenTest {
         fun top(tag: String) = rule.onNodeWithTag(tag).fetchSemanticsNode().positionInRoot.y
         assertTrue("after the size", top("two-pages") > top("font-size"))
         assertTrue("before the contrast", top("two-pages") < top("contrast"))
+        // The settings of how glyphs are drawn are hidden until #147 is fixed.
+        for (hidden in listOf("antialiasing", "hinting", "ligatures", "fractional")) {
+            assertTrue("$hidden is not shown", rule.onAllNodes(hasTestTag(hidden)).fetchSemanticsNodes().isEmpty())
+        }
         rule.onNodeWithText(string(R.string.setting_two_pages)).performScrollTo().assertIsDisplayed()
         rule.onNodeWithTag("two-pages-hint").performScrollTo().assertIsDisplayed().assertTextEquals(string(R.string.hint_two_pages))
         val twoPages = rule.onNodeWithTag("two-pages")

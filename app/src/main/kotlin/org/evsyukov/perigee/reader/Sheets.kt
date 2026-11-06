@@ -182,41 +182,44 @@ internal fun SettingsSheet(
                 }
                 Toggle(R.string.setting_bold_word_starts, prefs.boldWordStarts) { on -> onChange { it.copy(boldWordStarts = on) } }
                 // How the letters are drawn; each of these lays the book out again, keeping the place.
-                Toggle(R.string.setting_antialiasing, prefs.antialiasing, "antialiasing") { on -> onChange { it.copy(antialiasing = on) } }
-                Choice(
-                    R.string.setting_hinting, prefs.hinting, Hinting.entries, tag = "hinting",
-                    label = {
-                        stringResource(
-                            when (it) {
-                                Hinting.Auto -> R.string.hinting_auto
-                                Hinting.Native -> R.string.hinting_native
-                                Hinting.Off -> R.string.hinting_off
-                            },
+                // Hidden until #147 is fixed, see ReaderViewModel.GLYPH_DRAWING_CHOSEN.
+                if (ReaderViewModel.glyphDrawingChosen) {
+                    Toggle(R.string.setting_antialiasing, prefs.antialiasing, "antialiasing") { on -> onChange { it.copy(antialiasing = on) } }
+                    Choice(
+                        R.string.setting_hinting, prefs.hinting, Hinting.entries, tag = "hinting",
+                        label = {
+                            stringResource(
+                                when (it) {
+                                    Hinting.Auto -> R.string.hinting_auto
+                                    Hinting.Native -> R.string.hinting_native
+                                    Hinting.Off -> R.string.hinting_off
+                                },
+                            )
+                        },
+                    ) { chosen -> onChange { it.copy(hinting = chosen) } }
+                    Toggle(R.string.setting_ligatures, prefs.ligatures, "ligatures") { on -> onChange { it.copy(ligatures = on) } }
+                    if (prefs.ligatures) {
+                        Text(
+                            stringResource(R.string.hint_ligatures),
+                            Modifier.testTag("ligatures-hint"),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
-                    },
-                ) { chosen -> onChange { it.copy(hinting = chosen) } }
-                Toggle(R.string.setting_ligatures, prefs.ligatures, "ligatures") { on -> onChange { it.copy(ligatures = on) } }
-                if (prefs.ligatures) {
-                    Text(
-                        stringResource(R.string.hint_ligatures),
-                        Modifier.testTag("ligatures-hint"),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    }
+                    Stepper(
+                        R.string.setting_fractional, prefs.fractionalPositioning.toString(), "fractional",
+                        onLess = { onChange { it.copy(fractionalPositioning = stepped(it.fractionalPositioning, -1, ReaderPrefs.FRACTIONAL_STEPS)) } },
+                        onMore = { onChange { it.copy(fractionalPositioning = stepped(it.fractionalPositioning, 1, ReaderPrefs.FRACTIONAL_STEPS)) } },
                     )
-                }
-                Stepper(
-                    R.string.setting_fractional, prefs.fractionalPositioning.toString(), "fractional",
-                    onLess = { onChange { it.copy(fractionalPositioning = stepped(it.fractionalPositioning, -1, ReaderPrefs.FRACTIONAL_STEPS)) } },
-                    onMore = { onChange { it.copy(fractionalPositioning = stepped(it.fractionalPositioning, 1, ReaderPrefs.FRACTIONAL_STEPS)) } },
-                )
-                // The step does nothing while the book is shaped lightly; with ligatures on it does, so the note goes.
-                if (!prefs.ligatures) {
-                    Text(
-                        stringResource(R.string.hint_fractional),
-                        Modifier.testTag("fractional-hint"),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
+                    // The step does nothing while the book is shaped lightly; with ligatures on it does, so the note goes.
+                    if (!prefs.ligatures) {
+                        Text(
+                            stringResource(R.string.hint_fractional),
+                            Modifier.testTag("fractional-hint"),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                 }
                 Stepper(
                     R.string.setting_line_spacing, stringResource(R.string.percent, prefs.lineSpacingPercent), "line-spacing",

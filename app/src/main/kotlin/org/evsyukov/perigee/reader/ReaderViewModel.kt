@@ -778,6 +778,17 @@ class ReaderViewModel internal constructor(
         private const val MIN_PAGE_SECONDS = 5
         private const val MAX_PAGE_SECONDS = 120
 
+        /**
+         * Whether the reader may choose how glyphs are drawn: smoothing, hinting, ligatures and
+         * sub-pixel placement. Off until #147 is fixed: switching smoothing on can end the app.
+         * While off, the controls are not shown and the engine draws with its defaults, whatever
+         * an earlier version stored; the stored choices are kept for when the controls return.
+         */
+        const val GLYPH_DRAWING_CHOSEN = false
+
+        /** [GLYPH_DRAWING_CHOSEN], or the diagnostic build, which must switch smoothing to trace #147. */
+        val glyphDrawingChosen: Boolean get() = GLYPH_DRAWING_CHOSEN || Diagnostics.enabled
+
         /** The time pages are timed by; the tests set their own. */
         internal var clock: () -> Long = System::currentTimeMillis
 
@@ -826,8 +837,13 @@ class ReaderViewModel internal constructor(
          * screen crops the surplus off both edges: the gap doubles while the
          * outer margins stay as chosen.
          */
-        fun laidOut(prefs: ReaderPrefs, viewport: Viewport): Triple<Int, Int, EngineSettings> {
+        fun laidOut(
+            prefs: ReaderPrefs,
+            viewport: Viewport,
+            glyphDrawingChosen: Boolean = this.glyphDrawingChosen,
+        ): Triple<Int, Int, EngineSettings> {
             fun px(dp: Int) = (dp * viewport.density).toInt()
+            val drawing = if (glyphDrawingChosen) prefs else ReaderPrefs()
             val twoPages = twoUp(prefs, viewport)
             val side = px(if (prefs.pageMargins) SIDE_WIDE else SIDE_NARROW)
             val top = px(if (prefs.pageMargins) TOP_WIDE else TOP_NARROW)
@@ -839,14 +855,14 @@ class ReaderViewModel internal constructor(
                 fontWeight = prefs.fontWeight,
                 contrast = prefs.contrast.coerceIn(EngineSettings.CONTRASTS),
                 boldWordStarts = prefs.boldWordStarts,
-                antialiasing = prefs.antialiasing,
-                hinting = when (prefs.hinting) {
+                antialiasing = drawing.antialiasing,
+                hinting = when (drawing.hinting) {
                     Hinting.Auto -> HintingMode.Auto
                     Hinting.Native -> HintingMode.Native
                     Hinting.Off -> HintingMode.Off
                 },
-                ligatures = prefs.ligatures,
-                fractionalPositioning = prefs.fractionalPositioning.coerceIn(ReaderPrefs.FRACTIONAL_STEPS),
+                ligatures = drawing.ligatures,
+                fractionalPositioning = drawing.fractionalPositioning.coerceIn(ReaderPrefs.FRACTIONAL_STEPS),
                 monospaceSizePercent = prefs.monospaceSizePercent
                     .coerceIn(ReaderPrefs.MONOSPACE_SIZES.first, ReaderPrefs.MONOSPACE_SIZES.last),
                 fullSizeFootnotes = prefs.fullSizeFootnotes,

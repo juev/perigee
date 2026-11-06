@@ -10,8 +10,25 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class GlyphSettingsTest {
-    private fun settings(prefs: ReaderPrefs): EngineSettings =
-        ReaderViewModel.laidOut(prefs, Viewport(1080, 2400, 2f, 320, 0)).third
+    // The choices are checked as they work when the reader may make them; the app hides them for now (#147).
+    private fun settings(prefs: ReaderPrefs, chosen: Boolean = true): EngineSettings =
+        ReaderViewModel.laidOut(prefs, Viewport(1080, 2400, 2f, 320, 0), glyphDrawingChosen = chosen).third
+
+    @Test
+    fun whileTheChoiceIsHiddenTheEngineDrawsWithItsDefaultsWhateverIsStored() {
+        assertFalse("hidden in this version", ReaderViewModel.GLYPH_DRAWING_CHOSEN)
+        assertFalse("hidden outside the diagnostic build", ReaderViewModel.glyphDrawingChosen)
+        val stored = ReaderPrefs(antialiasing = false, hinting = Hinting.Off, ligatures = true, fractionalPositioning = 3)
+        val drawn = ReaderViewModel.laidOut(stored, Viewport(1080, 2400, 2f, 320, 0)).third
+        val engine = EngineSettings()
+        assertEquals(engine.antialiasing, drawn.antialiasing)
+        assertEquals(engine.hinting, drawn.hinting)
+        assertEquals(engine.ligatures, drawn.ligatures)
+        assertEquals(engine.fractionalPositioning, drawn.fractionalPositioning)
+        // The rest of what the reader chose still reaches the engine.
+        assertEquals(settings(stored).fontSize, drawn.fontSize)
+        assertEquals(settings(ReaderPrefs(monospaceSizePercent = 120), chosen = false).monospaceSizePercent, 120)
+    }
 
     @Test
     fun aReaderWhoChangesNothingGetsTheGlyphsTheAppAlwaysDrew() {
