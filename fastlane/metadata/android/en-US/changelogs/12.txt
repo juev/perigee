@@ -1,0 +1,6 @@
+The first release in the stores.
+
+• Pages laid out by crengine: hyphenation, justified text, footnotes, two pages in landscape
+• Day, night, sepia and OLED schemes, a warm page by the clock, contrast, large text, your own stylesheet
+• Local library, books shared from other apps, OPDS catalogues
+• Syncing with your bookOrbit server: reading place, highlights, bookmarks, status, rating, reading time; the server's shelves and collections
