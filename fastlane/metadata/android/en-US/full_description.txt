@@ -2,12 +2,15 @@ Perigee is a reader for text e-books. Pages are laid out by crengine, the engine
 
 Reading
 • Page turning by touch zones, swipes and volume keys
-• Day, night and sepia; font, size, boldness, line spacing, alignment, paragraph indent and spacing, margins
+• Day, night, sepia and OLED black; a scheme picked by the light around you; the page warmed by the clock
+• Font, size, boldness, contrast, line spacing, alignment, paragraph indent and spacing, margins; your own stylesheet
+• Large sizes and one page in landscape
+• Bold word starts, if you like them, without moving your place
 • Table of contents, bookmarks, highlights with notes, search in the book, return from a jump
 • Copying, sharing, translating and looking up the selected text in the apps you have
 
 Library
-• The books in the folders you pick, with covers, authors and series
+• The books in the folders you pick, with covers, authors and series; books shared to Perigee from other apps
 • Shelves: reading, to read, have read, favourites; collections; search and sorting
 • OPDS catalogues: browsing, search, downloads
 • Works without a network and without an account
@@ -16,7 +19,8 @@ Syncing with a bookOrbit server of your own
 • The place you got to, both ways; a later place read on another device is offered, not jumped to
 • Highlights with notes and bookmarks, both ways
 • Status, rating and time spent reading
-• The server's books: browsing, search, downloads; sending your books to the server
+• The server's shelves and collections, a page for each book, search and downloads; sending your books to the server
+• Sign-in with a password or the server's SSO
 
 Formats: EPUB, FB2 (also in a zip archive), FB3, MOBI (not KF8/AZW3), TXT, RTF, DOC, DOCX, ODT, HTML, CHM. PDF and DjVu are not supported.
 
