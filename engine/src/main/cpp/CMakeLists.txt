@@ -11,10 +11,14 @@ get_filename_component(PERIGEE_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../../../.." AB
 set(CRENGINE_DIR "${PERIGEE_ROOT}/third_party/crengine")
 
 # Debug info names the files the library is built from, and its build ID is a
-# hash of the whole file. Paths from the build and source trees are written
-# relative to them, so that a build in another directory, as F-Droid's, comes
-# out the same byte for byte.
-set(PERIGEE_PREFIX_MAP "-ffile-prefix-map=${CMAKE_BINARY_DIR}=build -ffile-prefix-map=${PERIGEE_ROOT}=.")
+# hash of the whole file, debug info included. Paths from the NDK, the source
+# tree and the build tree are written relative to them, so that a build on
+# another machine, as F-Droid's, comes out the same byte for byte: with the NDK
+# unmapped the APK of a GitHub release and F-Droid's differed in the build ID
+# alone (#166). The build tree lies inside the source tree, under a directory
+# named by a hash of AGP's, and clang takes the last map that matches, so it
+# comes last.
+set(PERIGEE_PREFIX_MAP "-ffile-prefix-map=${ANDROID_NDK}=ndk -ffile-prefix-map=${PERIGEE_ROOT}=. -ffile-prefix-map=${CMAKE_BINARY_DIR}=build")
 separate_arguments(PERIGEE_PREFIX_MAP_LIST UNIX_COMMAND "${PERIGEE_PREFIX_MAP}")
 add_compile_options(${PERIGEE_PREFIX_MAP_LIST})
 
