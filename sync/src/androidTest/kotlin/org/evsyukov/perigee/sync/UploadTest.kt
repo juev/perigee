@@ -558,8 +558,10 @@ class UploadTest {
         assertEquals(listOf(UploadFolder(10, "books")), options.libraries.single().folders)
         assertEquals(listOf(1L), options.librariesFor("epub").map { it.id })
 
-        val (book, file) = book("Whole At Once", "Reader Author")
-        file.writeBytes(ByteArray(70_000) { (it * 17).toByte() })
+        val title = "Whole At Once"
+        // A file of several reads, so that the progress callback is told more than once.
+        val file = File(dir, "whole-at-once.epub").apply { writeBytes(ByteArray(70_000) { (it * 17).toByte() }) }
+        val book = library.keep(file, LocalBook(FileHash.partialMd5(file), "epub", title, listOf("Reader Author"), "", "", "", false))
         val steps = ArrayList<Long>()
 
         assertEquals(Uploaded.Sent, orbit.upload(book, file, place) { steps += it })
@@ -605,7 +607,7 @@ class UploadTest {
         server.wholeUploadAnswer = Answer(403, """{"message":"Library upload permission is required"}""")
         failing<NotAllowedException> { orbit.upload(book, file, place) }
 
-        server.wholeUploadAnswer = Answer(409, """{"errorCode":"UPLOAD_DESTINATION_CONFLICT","message":"A file named \\"Refused Whole.epub\\" already exists"}""")
+        server.wholeUploadAnswer = Answer(409, """{"errorCode":"UPLOAD_DESTINATION_CONFLICT","message":"A file named Refused Whole.epub already exists"}""")
         assertEquals(UploadRefusal.NameTaken, failing<UploadRefusedException> { orbit.upload(book, file, place) }.why)
 
         assertNull("nothing was kept of any of them", library.book(book.id)?.uploadSession)
