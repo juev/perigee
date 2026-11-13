@@ -536,9 +536,14 @@ class BookOrbit(
     /**
      * What the server takes from the reader: whether they may send books, how
      * large, in which formats, and into which libraries.
+     *
+     * A server that keeps its upload session for its own apps answers
+     * `403 APP_ATTEST_REQUIRED`: what it offers is then its libraries, and
+     * [UploadOptions.resumable] is false — a book goes there whole, see [upload].
      */
     suspend fun uploadOptions(): UploadOptions {
         val reply = jwt("GET", "/uploads/capabilities")
+        if (reply.code == 403 && reply.errorCode == APP_ATTEST_REQUIRED) return wholeOnlyOptions()
         if (!reply.ok) throw failure(reply)
         val json = reply.json() ?: throw ServerResponseException(reply.code, "nothing said of uploads")
         val libraries = ArrayList<UploadLibrary>()
@@ -554,6 +559,33 @@ class BookOrbit(
     }
 
     /**
+     * What a server that takes no file in parts offers: its libraries, with the formats each takes.
+     * The largest file and the server's own formats are the session's to tell, so they are not said
+     * here — the whole-file route answers for itself — and the permission it checks is its own, so a
+     * reader is not told before the file goes that they may not send it.
+     */
+    private suspend fun wholeOnlyOptions(): UploadOptions {
+        val reply = jwt("GET", "/libraries")
+        if (!reply.ok) throw failure(reply)
+        val listed = try {
+            JSONArray(reply.body.trim().ifEmpty { "[]" })
+        } catch (e: JSONException) {
+            throw IOException("the server did not answer with its libraries", e)
+        }
+        val libraries = ArrayList<UploadLibrary>()
+        for (i in 0 until listed.length()) {
+            val library = listed.optJSONObject(i) ?: continue
+            val folders = ArrayList<UploadFolder>()
+            library.optJSONArray("folders").each { folders += UploadFolder(it.optLong("id"), it.textOf("name")) }
+            libraries += UploadLibrary(library.optLong("id"), library.textOf("name"), library.optJSONArray("allowedFormats").words(), folders)
+        }
+        return UploadOptions(
+            allowed = true, maxBytes = Long.MAX_VALUE, formats = SENDABLE_FORMATS,
+            libraries = libraries, resumable = false,
+        )
+    }
+
+    /**
      * Sends a book's [file] to the server, into [place], for the server to keep
      * and the book to be synced with it from then on. The server is asked first
      * whether it has the file: one that got there meanwhile is not sent again.
@@ -562,6 +594,12 @@ class BookOrbit(
      * book keeps until the file is there. A file cut off on its way, by the
      * network or by the app being closed, goes on from what the server got when
      * it is sent again; [place] is then the one it was first sent to.
+     *
+     * A server that keeps its upload session for its own apps — it answers
+     * `403 APP_ATTEST_REQUIRED` to what it takes, see [uploadOptions] — takes the
+     * file whole instead, as the one part of a form. Nothing is kept of such a
+     * send on the way: one cut off is sent again from the beginning, and there is
+     * no session with the book to settle or call off.
      *
      * The server files the book away by what the file says of itself, and by
      * the file's name when it says nothing, as FB2 does to this server: [name]
@@ -587,7 +625,12 @@ class BookOrbit(
             if (session == null) {
                 // Gone, called off, run out, or for a file that has changed since: begun anew.
                 if (stored != null) library.uploadEnded(book.id)
-                session = openUpload(book, size, place, uploadName(book, name))
+                val options = uploadOptions()
+                placeIn(options, book, size, place)
+                val named = uploadName(book, name)
+                // A server that keeps its session for its own apps takes the file whole instead.
+                if (!options.resumable) return sendWhole(book, file, size, place, named, progress)
+                session = openUpload(place, size, named)
                 library.uploadStarted(book.id, session.id)
             }
 
@@ -672,16 +715,18 @@ class BookOrbit(
         )
     }
 
-    /** Asks the server where the file goes, after seeing for itself that it takes such files there. */
-    private suspend fun openUpload(book: Book, size: Long, place: UploadPlace, name: String): UploadSession {
-        val options = uploadOptions()
+    /** Asks the server before the file goes that it takes such files there, which the whole file's way needs too. */
+    private fun placeIn(options: UploadOptions, book: Book, size: Long, place: UploadPlace) {
         if (!options.allowed) throw NotAllowedException("the account may not send books to the server")
         if (book.format !in options.formats) throw UploadRefusedException(UploadRefusal.Format, "")
         val target = options.libraries.firstOrNull { it.id == place.libraryId } ?: throw UploadRefusedException(UploadRefusal.NoPlace, "")
         if (!target.takes(book.format)) throw UploadRefusedException(UploadRefusal.Format, "")
         if (place.folderId != null && target.folders.none { it.id == place.folderId }) throw UploadRefusedException(UploadRefusal.NoPlace, "")
         if (size > options.maxBytes) throw UploadRefusedException(UploadRefusal.TooLarge, "")
+    }
 
+    /** Opens an upload session for the file, into the place seen to take it. */
+    private suspend fun openUpload(place: UploadPlace, size: Long, name: String): UploadSession {
         val into = JSONObject().put("kind", "library").put("libraryId", place.libraryId)
         place.folderId?.let { into.put("folderId", it) }
         val body = JSONObject().put("filename", name).put("sizeBytes", size).put("target", into)
@@ -690,6 +735,21 @@ class BookOrbit(
         val reply = jwt("POST", "/uploads", body)
         if (!reply.ok) throw refusal(reply)
         return sessionOf(reply)
+    }
+
+    /**
+     * Sends the file whole, as the one part of a form, into the place seen to take it: the way a
+     * server that keeps its upload session for its own apps takes a book. Nothing is kept of it on
+     * the way — no session with the book, nothing to settle or call off — so one cut off is sent
+     * again from the beginning, and [progress] is told how far the file has gone.
+     */
+    private suspend fun sendWhole(
+        book: Book, file: File, size: Long, place: UploadPlace, name: String, progress: (Long) -> Unit,
+    ): Uploaded {
+        val path = "/libraries/${place.libraryId}/upload" + (place.folderId?.let { "?folderId=$it" } ?: "")
+        val reply = withToken { token -> Http(token.first).upload(path, bearer(token.second), file, name, 0, size) { progress(it) } }
+        if (!reply.ok) throw refusal(reply)
+        return finished(book.id)
     }
 
     /** A request with the session's token, asked again with a renewed one when it is not taken. */
@@ -1368,6 +1428,12 @@ class BookOrbit(
 
         /** An upload session past these has the whole file, and the server files it away or has done so. */
         private val FINISHED = setOf("processing", "completed")
+
+        /** What a server says of a route it keeps for its own apps: the app is not refused the sending, only that way of it. */
+        private const val APP_ATTEST_REQUIRED = "APP_ATTEST_REQUIRED"
+
+        /** The formats the app sends a book in; a server takes them, or says why not. */
+        private val SENDABLE_FORMATS = setOf("epub", "fb2", "mobi")
 
         /** The shortest password the server takes for the devices' channel. */
         const val MIN_DEVICE_PASSWORD = 6

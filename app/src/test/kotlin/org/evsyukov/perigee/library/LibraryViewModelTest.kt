@@ -721,6 +721,58 @@ class LibraryViewModelTest {
         assertNull(runBlocking { model.fileOf(shown("Ghost")) })
     }
 
+    /** A server that keeps its upload session for its own apps: the question of what it takes is refused with App Attest. */
+    private fun keepsItsSessionForItsOwnApps() {
+        server.value.capabilitiesAnswer = Answer(403, """{"errorCode":"APP_ATTEST_REQUIRED","message":"This route requires App Attest"}""")
+    }
+
+    @Test
+    fun serverThatTakesNoSessionIsToldBeforeTheBookGoesWhole() {
+        val id = keep("Whole Sent")
+        keepsItsSessionForItsOwnApps()
+        signIn()
+        serverAsked()
+        assertTrue("a book is offered to be sent there all the same", model.state.value.canSend(shown("Whole Sent")))
+
+        model.send(shown("Whole Sent"))
+
+        val question = until("the reader is told what sending whole costs") { it.question is SendQuestion.Whole }.question as SendQuestion.Whole
+        assertEquals(UploadPlace(1, 10), question.place)
+        assertTrue("nothing goes before the reader says so", server.value.uploads.isEmpty())
+
+        // Thought better of it: nothing is sent, and the question goes.
+        model.dontSend()
+        until("the question is gone") { it.question == null }
+        assertNull(stored(id)?.serverFileId)
+        assertTrue(server.value.uploads.isEmpty())
+
+        model.send(shown("Whole Sent"))
+        until("the reader is asked again") { it.question is SendQuestion.Whole }
+        model.sendWholeAnyway()
+
+        untilTrue("the book is on the server") { stored(id)?.serverFileId != null }
+        assertNull("nothing is kept of a whole send", stored(id)?.uploadSession)
+        assertEquals(1, server.value.uploads.size)
+    }
+
+    @Test
+    fun refusalOfAWholeSendIsToldAtTheBook() {
+        val id = keep("Refused Whole")
+        keepsItsSessionForItsOwnApps()
+        server.value.wholeUploadAnswer = Answer(413, """{"errorCode":"UPLOAD_TOO_LARGE","message":"File exceeds the upload limit"}""")
+        signIn()
+        serverAsked()
+
+        model.send(shown("Refused Whole"))
+        until("the reader is asked") { it.question is SendQuestion.Whole }
+        model.sendWholeAnyway()
+
+        until("the refusal is told at the book") { state ->
+            (state.sending[id] as? Sending.Failed)?.why == SendFailure.TooLarge
+        }
+        assertNull(stored(id)?.serverFileId)
+    }
+
     private companion object {
         const val TIMEOUT = 15_000L
     }

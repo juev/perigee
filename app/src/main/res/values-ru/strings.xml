@@ -312,6 +312,10 @@
     <string name="send_where_text">Дальше отправленные книги будут попадать туда же.</string>
     <string name="send_place_folder">%1$s, папка %2$s</string>
     <string name="send_waiting">ждёт отправки</string>
+    <string name="send_whole_title">Отправка целиком, без продолжения</string>
+    <string name="send_whole_text">Этот сервер принимает книгу только целиком. Если связь оборвётся во время отправки, книга будет отправлена заново с начала.</string>
+    <string name="send_whole_many_text">Этот сервер принимает книги только целиком. Если связь оборвётся во время отправки, книга будет отправлена заново с начала.</string>
+    <string name="send_whole_confirm">Отправить</string>
     <string name="book_partly_sent">отправлена не до конца</string>
     <string name="action_resume_sending">Продолжить отправку</string>
     <string name="action_cancel_sending">Отменить отправку</string>

@@ -537,4 +537,90 @@ class UploadTest {
         assertEquals(2, server.sessions.size)
         assertArrayEquals(file.readBytes(), server.uploads.single().bytes)
     }
+
+    /** A server that keeps its upload session for its own apps: the question of what it takes is refused with App Attest. */
+    private fun keepsItsSessionForItsOwnApps() {
+        server.capabilitiesAnswer = Answer(403, """{"errorCode":"APP_ATTEST_REQUIRED","message":"This route requires App Attest"}""")
+    }
+
+    /** The whole files the app sent, by the route of one part of a form. */
+    private fun wholeSends() = server.seen.filter { it.method == "POST" && it.path.startsWith("/api/v1/libraries/") && "/upload" in it.path }
+
+    @Test
+    fun serverThatTakesNoSessionIsAnsweredWithItsLibrariesAndTakesTheFileWhole() = runBlocking<Unit> {
+        signIn()
+        keepsItsSessionForItsOwnApps()
+
+        val options = orbit.uploadOptions()
+
+        assertFalse("a book goes whole there", options.resumable)
+        assertEquals("the libraries are the server's own list", listOf("Books"), options.libraries.map { it.name })
+        assertEquals(listOf(UploadFolder(10, "books")), options.libraries.single().folders)
+        assertEquals(listOf(1L), options.librariesFor("epub").map { it.id })
+
+        val (book, file) = book("Whole At Once", "Reader Author")
+        file.writeBytes(ByteArray(70_000) { (it * 17).toByte() })
+        val steps = ArrayList<Long>()
+
+        assertEquals(Uploaded.Sent, orbit.upload(book, file, place) { steps += it })
+
+        val sent = server.uploads.single()
+        assertEquals("whole, as the one part of a form", 1, wholeSends().size)
+        assertEquals(1L, sent.libraryId)
+        assertEquals(10L, sent.folderId)
+        assertArrayEquals(file.readBytes(), sent.bytes)
+        assertEquals("told how far the file went", file.length(), steps.last())
+        assertEquals("nothing is kept of a whole send", null, library.book(book.id)?.uploadSession)
+        assertNotNull("the book is on the server from then on", library.book(book.id)?.serverFileId)
+        assertEquals("and not sent again", Uploaded.WasThere, orbit.upload(book, file, place))
+    }
+
+    @Test
+    fun wholeSendIsCutOffAndGoesAnewFromTheBeginning() = runBlocking<Unit> {
+        signIn()
+        keepsItsSessionForItsOwnApps()
+        val (book, file) = book("Cut Off Whole", "Reader Author")
+
+        server.droppedWholeUploads = 1
+        failing<java.io.IOException> { orbit.upload(book, file, place) }
+
+        assertNull("nothing was kept as sent in part", library.book(book.id)?.uploadSession)
+        assertNull(library.book(book.id)?.serverFileId)
+        assertTrue(server.uploads.isEmpty())
+
+        assertEquals(Uploaded.Sent, orbit.upload(book, file, place))
+
+        assertEquals("the whole file, from its first byte", file.length(), server.uploads.single().bytes.size.toLong())
+    }
+
+    @Test
+    fun wholeSendIsRefusedAsTheServerRefusesIt() = runBlocking<Unit> {
+        signIn()
+        keepsItsSessionForItsOwnApps()
+        val (book, file) = book("Refused Whole", "Reader Author")
+
+        server.wholeUploadAnswer = Answer(413, """{"errorCode":"UPLOAD_TOO_LARGE","message":"File exceeds the upload limit"}""")
+        assertEquals(UploadRefusal.TooLarge, failing<UploadRefusedException> { orbit.upload(book, file, place) }.why)
+
+        server.wholeUploadAnswer = Answer(403, """{"message":"Library upload permission is required"}""")
+        failing<NotAllowedException> { orbit.upload(book, file, place) }
+
+        server.wholeUploadAnswer = Answer(409, """{"errorCode":"UPLOAD_DESTINATION_CONFLICT","message":"A file named \\"Refused Whole.epub\\" already exists"}""")
+        assertEquals(UploadRefusal.NameTaken, failing<UploadRefusedException> { orbit.upload(book, file, place) }.why)
+
+        assertNull("nothing was kept of any of them", library.book(book.id)?.uploadSession)
+    }
+
+    @Test
+    fun serverThatTakesNoSessionIsAskedThePlaceBeforeTheFileGoes() = runBlocking<Unit> {
+        signIn()
+        keepsItsSessionForItsOwnApps()
+        val (book, file) = book("Nowhere Whole", "Reader Author")
+
+        assertEquals(UploadRefusal.NoPlace, failing<UploadRefusedException> { orbit.upload(book, file, UploadPlace(9)) }.why)
+        assertEquals(UploadRefusal.NoPlace, failing<UploadRefusedException> { orbit.upload(book, file, UploadPlace(1, 99)) }.why)
+
+        assertTrue("nothing was sent", wholeSends().isEmpty())
+        assertTrue(server.uploads.isEmpty())
+    }
 }

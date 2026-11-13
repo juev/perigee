@@ -29,6 +29,7 @@ import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
+import org.junit.Assume
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -172,15 +173,22 @@ class UploadContractTest {
         val options = device.orbit.uploadOptions()
 
         assertTrue(options.allowed)
-        // What the server takes unless the administrator said otherwise: 500 MB in 3.3, 4 GB from 3.4 on.
-        assertTrue("got ${options.maxBytes}", options.maxBytes in listOf(500L * 1024 * 1024, 4096L * 1024 * 1024))
-        assertTrue("got ${options.formats}", options.formats.containsAll(listOf("epub", "fb2", "mobi")))
-        assertTrue("of what the app reads, only those three", options.formats.none { it in listOf("fb3", "txt", "rtf", "doc", "docx", "odt", "html", "chm") })
         val library = options.libraries.single()
         assertEquals("Contract", library.name)
         assertEquals("a library that takes whatever the server does", emptySet<String>(), library.formats)
         assertEquals(1, library.folders.size)
         assertEquals(listOf(library), options.librariesFor("epub"))
+
+        // The session route says how large a file may be and which formats the server takes; a server
+        // that keeps that route for its own apps says neither, and takes the file whole instead.
+        if (options.resumable) {
+            // What the server takes unless the administrator said otherwise: 500 MB in 3.3, 4 GB from 3.4 on.
+            assertTrue("got ${options.maxBytes}", options.maxBytes in listOf(500L * 1024 * 1024, 4096L * 1024 * 1024))
+            assertTrue("got ${options.formats}", options.formats.containsAll(listOf("epub", "fb2", "mobi")))
+            assertTrue("of what the app reads, only those three", options.formats.none { it in listOf("fb3", "txt", "rtf", "doc", "docx", "odt", "html", "chm") })
+        } else {
+            assertTrue("no largest file is said of a server that takes no session", options.maxBytes == Long.MAX_VALUE)
+        }
     }
 
     @Test
@@ -218,6 +226,7 @@ class UploadContractTest {
 
     @Test
     fun bookCutOffOnItsWayGoesOnFromWhereTheServerGot() = runBlocking<Unit> {
+        Assume.assumeTrue("the server takes no upload session from the app", device.orbit.uploadOptions().resumable)
         val chunk = server.jwt("GET", "/uploads/capabilities").json().getLong("chunkSizeBytes")
         val title = "Cut Off $run"
         val file = epub("cut-off", title, "Upload Author", "A book sent in two goes.", filler = chunk.toInt() + 100_000)
@@ -244,6 +253,7 @@ class UploadContractTest {
 
     @Test
     fun bookCalledOffOnItsWayIsLetGoOfByTheServer() = runBlocking<Unit> {
+        Assume.assumeTrue("the server takes no upload session from the app", device.orbit.uploadOptions().resumable)
         val title = "Called Off $run"
         val file = epub("called-off", title, "Upload Author", "A book the reader thought better of.", filler = 300_000)
         val book = onDevice(file, "epub", title, "Upload Author")
@@ -366,5 +376,28 @@ class UploadContractTest {
         assertEquals(Uploaded.Sent, device.orbit.upload(renamed, third, place()))
         assertEquals(1, titled(renamedTitle).size)
         assertEquals(3, listed(run).size)
+    }
+
+    /**
+     * A server that keeps its upload session for its own apps — from 3.7.0 the route is behind App
+     * Attest — takes the book whole, as the one part of a form: it is on the server all the same, and
+     * nothing is kept of the way it went.
+     */
+    @Test
+    fun bookSentWholeWhereTheServerTakesNoSession() = runBlocking<Unit> {
+        Assume.assumeFalse("this server takes an upload session", device.orbit.uploadOptions().resumable)
+        val title = "Whole Way $run"
+        val file = epub("whole-way", title, "Upload Author", "A book sent whole on a server that takes no session.")
+        val book = onDevice(file, "epub", title, "Upload Author")
+
+        assertEquals(Uploaded.Sent, device.orbit.upload(book, file, place()))
+
+        val sent = checkNotNull(device.library.book(book.id))
+        assertNull("nothing is kept of a whole send", sent.uploadSession)
+        val there = titled(title).single().getJSONArray("files").getJSONObject(0)
+        assertEquals(there.getLong("id"), sent.serverFileId)
+        assertEquals("the file the server keeps is the file that was sent", file.length(), there.getLong("sizeBytes"))
+        assertEquals("and it is not sent twice", Uploaded.WasThere, device.orbit.upload(book, file, place()))
+        assertEquals("still one book", 1, titled(title).size)
     }
 }

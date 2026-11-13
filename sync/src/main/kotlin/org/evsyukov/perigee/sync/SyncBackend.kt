@@ -142,11 +142,17 @@ data class UploadLibrary(
 data class UploadOptions(
     /** Whether the reader's account may put books into libraries at all. */
     val allowed: Boolean,
-    /** The largest file the server takes, in bytes. */
+    /** The largest file the server takes, in bytes; [Long.MAX_VALUE] when the server does not say. */
     val maxBytes: Long,
     /** Lower-case, as "epub". */
     val formats: Set<String>,
     val libraries: List<UploadLibrary>,
+    /**
+     * Whether the server takes a file in parts, through an upload session. False on a server that
+     * keeps that route for its own apps — it answers `403 APP_ATTEST_REQUIRED` to the question: a
+     * book then goes there whole, and one cut off on its way is sent again from the beginning.
+     */
+    val resumable: Boolean = true,
 ) {
     /** The libraries a file of this format can be sent into; none when the reader may not send, or nothing takes it. */
     fun librariesFor(format: String): List<UploadLibrary> =
