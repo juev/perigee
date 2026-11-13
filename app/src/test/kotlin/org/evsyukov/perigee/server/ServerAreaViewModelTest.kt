@@ -918,6 +918,119 @@ class ServerAreaViewModelTest {
         assertFalse(again.more)
     }
 
+    @Test
+    fun theReadersPageShowsWhoTheyAreWhatTheyEarnedAndWhatTheyRead() {
+        serverHas(book(7, "Listed Title", 70))
+        signIn()
+        // Nothing of it is asked for before the reader opens it.
+        assertTrue(
+            "nothing of the reader's page was asked: ${server.seen.map { it.path }}",
+            server.seen.none { it.path.startsWith("/api/v1/achievements") || it.path.startsWith("/api/v1/user-statistics") },
+        )
+
+        model.show(Section.Profile)
+        val state = until("the reader's page came") { it.profile.loaded }
+        val profile = checkNotNull(state.profile.profile)
+        assertEquals("Reader Name", profile.name)
+        assertEquals("reader", profile.username)
+        assertTrue("the server says it has a picture", profile.hasPicture)
+
+        val achievements = checkNotNull(state.profile.achievements)
+        assertEquals(2, achievements.earned)
+        assertEquals(3, achievements.total)
+        assertEquals(listOf("Reading", "Library"), achievements.categories.map { it.label })
+        val ten = achievements.categories.first().achievements.single { it.key == "books-ten" }
+        assertEquals("what is not earned is counted", 3, ten.progress)
+        assertEquals(10, ten.threshold)
+        assertFalse(ten.earned)
+
+        val reading = checkNotNull(state.profile.reading)
+        assertEquals(12, reading.summary?.tracked)
+        assertEquals(2, reading.summary?.inProgress)
+        assertEquals(8, reading.summary?.completed)
+        assertEquals(41.7, reading.summary?.meanProgressPercent ?: 0.0, 0.001)
+        assertEquals("this year's goal, as the widget has it", 30, reading.goal?.books)
+        assertEquals(8, reading.goal?.read)
+        assertEquals(4, reading.streak?.current)
+        assertEquals(11, reading.streak?.longest)
+        assertEquals(listOf(true, false, true, true, false, true, true), reading.streak?.lastSevenDays)
+        assertEquals("the days the server named", 3, reading.days.size)
+        assertTrue(reading.daysKnown)
+
+        val heatmap = server.asked("/user-statistics/reading-heatmap?days=${OrbitArea.HEATMAP_DAYS}").single()
+        assertEquals("GET", heatmap.method)
+        assertFalse(
+            "the server's own words are asked for in the language the app is in",
+            heatmap.headers["accept-language"].isNullOrBlank(),
+        )
+        assertEquals("no widget is asked for alone", 1, server.asked("/dashboard/widgets/batch").size)
+    }
+
+    @Test
+    fun aPageTheServerDoesNotHaveLeavesTheRestOfItAsItIs() {
+        serverHas(book(7, "Listed Title", 70))
+        server.achievementsAnswer = Answer(404, """{"message":"Cannot GET /api/v1/achievements","error":"Not Found","statusCode":404}""")
+        server.heatmapAnswer = Answer(404, """{"message":"Cannot GET /api/v1/user-statistics/reading-heatmap","error":"Not Found","statusCode":404}""")
+        server.failedWidgets = setOf("reading-streak")
+        signIn()
+        model.show(Section.Profile)
+
+        val state = until("the page came without them") { it.profile.loaded }
+        assertNull("a server without achievements is not a failure", state.profile.failure)
+        assertNull(state.profile.achievements)
+        val reading = checkNotNull(state.profile.reading)
+        assertEquals("what it answered is still there", 12, reading.summary?.tracked)
+        assertEquals(30, reading.goal?.books)
+        assertNull("a failed widget costs only its own block", reading.streak)
+        assertFalse("the server has no calendar", reading.daysKnown)
+        assertTrue(reading.days.isEmpty())
+    }
+
+    @Test
+    fun theReadersPageIsAskedOnceUntilItIsTriedAgain() {
+        serverHas(book(7, "Listed Title", 70))
+        signIn()
+        model.show(Section.Profile)
+        until("the page came") { it.profile.loaded }
+        model.show(Section.Catalogue)
+        model.show(Section.Profile)
+        repeat(5) { pass(20) }
+        assertEquals(1, server.asked("/auth/me").size)
+        assertEquals(1, server.asked("/achievements").size)
+
+        model.retryProfile()
+        val state = until("the page is asked again") { !it.profile.loading && it.profile.loaded }
+        assertEquals(2, server.asked("/auth/me").size)
+        assertEquals("the reader's page came again whole", 12, state.profile.reading?.summary?.tracked)
+    }
+
+    @Test
+    fun theReadersPageThatCannotBeReachedIsTriedAgain() {
+        serverHas(book(7, "Listed Title", 70))
+        server.summaryAnswer = Answer(500, """{"statusCode":500,"message":"Internal server error"}""")
+        signIn()
+        model.show(Section.Profile)
+        val failed = until("the failure is told") { it.profile.failure != null && !it.profile.loading }
+        assertEquals(ServerFailure.Unreachable, failed.profile.failure)
+        assertNull("nothing of it is shown as the server's word", failed.profile.profile)
+
+        server.summaryAnswer = null
+        model.retryProfile()
+        val again = until("the page came") { it.profile.loaded && it.profile.failure == null }
+        assertEquals(12, again.profile.reading?.summary?.tracked)
+    }
+
+    @Test
+    fun aPictureTheServerOnlyNamesElsewhereIsNotAskedForHere() {
+        serverHas(book(7, "Listed Title", 70))
+        server.avatarUrl = "https://id.example/avatars/reader.png"
+        signIn()
+        model.show(Section.Profile)
+        val state = until("the page came") { it.profile.loaded }
+        assertFalse("a picture on another host is not fetched here", checkNotNull(state.profile.profile).hasPicture)
+        assertTrue("and nothing of it was asked", server.asked("/users/1/avatar").isEmpty())
+    }
+
     private companion object {
         const val TIMEOUT = 15_000L
     }

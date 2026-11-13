@@ -11,6 +11,7 @@ import java.security.MessageDigest
 import java.security.SecureRandom
 import java.time.Instant
 import java.util.Base64
+import java.util.Locale
 import java.time.format.DateTimeParseException
 import kotlin.math.abs
 import kotlin.math.roundToInt
@@ -439,6 +440,21 @@ class BookOrbit(
         } catch (e: ServerResponseException) {
             null
         }
+    }
+
+    /**
+     * A picture the server keeps at [path], as the reader's own page asks for theirs. null when the server has
+     * none to give, or gives something larger than a picture of a person is kept for.
+     */
+    internal suspend fun pictureOf(path: String): ByteArray? = try {
+        fetch(path) { connection ->
+            connection.inputStream.use { input ->
+                val bytes = input.readNBytesUpTo(MAX_COVER + 1)
+                bytes.takeIf { it.size <= MAX_COVER }
+            }
+        }
+    } catch (e: ServerResponseException) {
+        null
     }
 
     override suspend fun download(file: RemoteFile, title: String, dir: File): File =
@@ -1441,7 +1457,11 @@ class BookOrbit(
             return (if (base.length < 3) "perigee-$base" else base) + ending
         }
 
-        private fun bearer(token: String) = mapOf("Authorization" to "Bearer $token")
+        private fun bearer(token: String) = mapOf(
+            "Authorization" to "Bearer $token",
+            // The server's own words — an achievement's name and description — come in the language the app is in.
+            "Accept-Language" to Locale.getDefault().toLanguageTag(),
+        )
 
         private fun deviceHeaders(user: String, key: String) = mapOf("x-auth-user" to user, "x-auth-key" to key)
 

@@ -384,6 +384,7 @@
     <string name="server_section_home">Главная</string>
     <string name="server_section_catalogue">Каталог</string>
     <string name="server_section_collections">Коллекции</string>
+    <string name="server_section_profile">Профиль</string>
     <string name="server_shelf_continue_reading">Продолжить чтение</string>
     <string name="server_shelf_want_to_read">Хочу прочитать</string>
     <string name="server_shelf_recently_added">Недавно добавленные</string>
@@ -397,6 +398,41 @@
     <string name="server_home_empty">Полки пока пусты</string>
     <string name="server_home_empty_text">Здесь появятся книги, которые вы читаете, хотите прочитать и добавляете на сервер. А пока загляните в каталог.</string>
     <string name="server_home_unsupported">У этой версии сервера нет полок главной страницы. Его книги — в каталоге и в коллекциях.</string>
+    <string name="server_profile_picture">Фотография профиля</string>
+    <string name="server_profile_tracked">Отслеживается</string>
+    <string name="server_profile_in_progress">Читается</string>
+    <string name="server_profile_completed">Прочитано</string>
+    <string name="server_profile_mean_progress">Средний прогресс %1$d%%</string>
+    <string name="server_profile_goal">Цель на %1$d</string>
+    <string name="server_profile_no_goal">Цель не задана</string>
+    <string name="server_profile_goal_value">%1$d из %2$d</string>
+    <string name="server_profile_streak">Серия</string>
+    <string name="server_profile_days">Дни чтения</string>
+    <string name="server_profile_days_note">Последние полгода, квадрат — день</string>
+    <string name="server_profile_days_none">За последние полгода нет дней с чтением</string>
+    <string name="server_profile_no_achievements">У этого сервера нет достижений</string>
+    <string name="server_profile_achievements">Достижения</string>
+    <string name="server_profile_achievements_count">Получено %1$d из %2$d</string>
+    <string name="server_profile_achievement_progress">%1$d / %2$d</string>
+    <string name="server_profile_earned_on">Получено %1$s</string>
+    <plurals name="server_profile_streak_days">
+        <item quantity="one">%1$d день</item>
+        <item quantity="few">%1$d дня</item>
+        <item quantity="many">%1$d дней</item>
+        <item quantity="other">%1$d дня</item>
+    </plurals>
+    <plurals name="server_profile_longest">
+        <item quantity="one">Лучшая: %1$d день</item>
+        <item quantity="few">Лучшая: %1$d дня</item>
+        <item quantity="many">Лучшая: %1$d дней</item>
+        <item quantity="other">Лучшая: %1$d дня</item>
+    </plurals>
+    <plurals name="server_profile_days_read">
+        <item quantity="one">С чтением %1$d из последних 7 дней</item>
+        <item quantity="few">С чтением %1$d из последних 7 дней</item>
+        <item quantity="many">С чтением %1$d из последних 7 дней</item>
+        <item quantity="other">С чтением %1$d из последних 7 дней</item>
+    </plurals>
     <string name="server_open_catalogue">Открыть каталог</string>
     <string name="server_filters">Фильтры</string>
     <string name="server_filters_on">Фильтры: %1$s</string>

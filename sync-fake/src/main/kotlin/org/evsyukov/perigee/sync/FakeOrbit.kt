@@ -799,6 +799,94 @@ class FakeOrbit : AutoCloseable {
     /** What the list of libraries is answered with instead, while not null. */
     var librariesAnswer: Answer? = null
 
+    /** What the reader's own page is answered with instead, while not null: who they are, what they have earned and read. */
+    var profileAnswer: Answer? = null
+    var achievementsAnswer: Answer? = null
+    var summaryAnswer: Answer? = null
+    var heatmapAnswer: Answer? = null
+    var widgetsAnswer: Answer? = null
+    var avatarAnswer: Answer? = null
+
+    /** Whether the server has a picture of the reader; one it has none of answers 404 for it. */
+    var avatar = true
+
+    /** A picture the server only names elsewhere, as a provider's, instead of keeping it itself. */
+    var avatarUrl: String? = null
+
+    /** The dashboard's widgets this server marks failed rather than answering, as one it could not work out. */
+    var failedWidgets = emptySet<String>()
+
+    /** Who the reader is on the server, as `GET auth/me` tells it. */
+    private fun me(): JSONObject = JSONObject()
+        .put("id", 1).put("username", "reader").put("name", "Reader Name").put("email", "reader@example.org")
+        .put("active", true).put("isSuperuser", false).put("isDefaultPassword", false)
+        .put("settings", JSONObject().put("timezone", "Europe/Moscow"))
+        .put(
+            "avatarUrl",
+            when {
+                avatarUrl != null -> avatarUrl
+                avatar -> "/api/v1/users/1/avatar"
+                else -> JSONObject.NULL
+            },
+        )
+        .put("provisioningMethod", "local").put("authenticationMethod", "password")
+        .put("permissions", JSONArray())
+
+    private fun achievement(
+        key: String, category: String, name: String, description: String, rarity: String,
+        threshold: Int, earned: Boolean, progress: Int, awardedAt: String? = null,
+    ): JSONObject = JSONObject()
+        .put("key", key).put("groupKey", JSONObject.NULL).put("tier", JSONObject.NULL).put("category", category)
+        .put("name", name).put("description", description).put("iconName", "book").put("rarity", rarity)
+        .put("threshold", threshold).put("hidden", false).put("sortOrder", 1)
+        .put("earned", earned).put("awardedAt", awardedAt ?: JSONObject.NULL)
+        .put("context", JSONObject.NULL).put("currentProgress", progress)
+
+    /** The server's own catalogue of what it awards, with the reader's earned ones and how far they are with the rest. */
+    private fun achievements(): JSONObject {
+        val reading = JSONArray()
+            .put(achievement("first-book", "reading", "First book", "Finish a book", "common", 1, true, 1, "2026-02-03T10:00:00.000Z"))
+            .put(achievement("books-ten", "reading", "Ten books", "Finish ten books", "rare", 10, false, 3))
+        val library = JSONArray()
+            .put(achievement("shelf-fifty", "library", "A shelf of fifty", "Keep fifty books on the server", "epic", 50, true, 50, "2026-03-01T09:00:00.000Z"))
+        return JSONObject()
+            .put(
+                "categories",
+                JSONArray()
+                    .put(JSONObject().put("key", "reading").put("label", "Reading").put("earnedCount", 1).put("totalCount", 2).put("achievements", reading))
+                    .put(JSONObject().put("key", "library").put("label", "Library").put("earnedCount", 1).put("totalCount", 1).put("achievements", library)),
+            )
+            .put("totalEarned", 2).put("totalAvailable", 3)
+    }
+
+    private fun summary(): JSONObject = JSONObject().put("trackedBooks", 12).put("startedBooks", 10)
+        .put("inProgressBooks", 2).put("completedBooks", 8).put("meanProgressPercent", 41.7)
+
+    private fun readingDay(day: String, seconds: Long): JSONObject =
+        JSONObject().put("day", day).put("readingSeconds", seconds).put("progressDelta", 0.1).put("eventsCount", 1)
+
+    private fun heatmap(): JSONArray = JSONArray()
+        .put(readingDay("2026-11-10", 600)).put(readingDay("2026-11-11", 3600)).put(readingDay("2026-11-12", 120))
+
+    /** The dashboard's widgets asked for together: each answered on its own, as the server does, or marked failed. */
+    private fun widgetsBatch(body: JSONObject): Answer {
+        widgetsAnswer?.let { return it }
+        val asked = body.getJSONArray("widgets")
+        val items = JSONArray()
+        for (i in 0 until asked.length()) {
+            val type = asked.getString(i)
+            val data = when (type) {
+                "reading-goal" -> JSONObject().put("goalBooks", 30).put("completedBooks", 8).put("year", 2026)
+                "reading-streak" -> JSONObject().put("currentStreak", 4).put("longestStreak", 11)
+                    .put("lastSevenDays", JSONArray(listOf(true, false, true, true, false, true, true)))
+                else -> null
+            }
+            val failed = data == null || type in failedWidgets
+            items.put(JSONObject().put("type", type).put("data", if (failed) JSONObject.NULL else data).put("failed", failed))
+        }
+        return Answer(200, JSONObject().put("items", items).toString())
+    }
+
     private val server = TestServer(::answer)
     val url get() = server.url
     val seen get() = server.seen
@@ -964,6 +1052,13 @@ class FakeOrbit : AutoCloseable {
             .associate { java.net.URLDecoder.decode(it.substringBefore('='), "UTF-8") to java.net.URLDecoder.decode(it.substringAfter('='), "UTF-8") }
         return when {
             path == "/app-info" -> Answer(200, JSONObject().put("version", version).put("features", JSONArray()).toString())
+            route == "/auth/me" && request.method == "GET" -> profileAnswer ?: Answer(200, me().toString())
+            route == "/achievements" && request.method == "GET" -> achievementsAnswer ?: Answer(200, achievements().toString())
+            route == "/user-statistics/summary" && request.method == "GET" -> summaryAnswer ?: Answer(200, summary().toString())
+            route == "/user-statistics/reading-heatmap" && request.method == "GET" -> heatmapAnswer ?: Answer(200, heatmap().toString())
+            route == "/dashboard/widgets/batch" && request.method == "POST" -> widgetsBatch(body)
+            Regex("/users/\\d+/avatar").matches(route) && request.method == "GET" ->
+                avatarAnswer ?: if (avatar) Answer(200, byteArrayOf(9, 9, 9), "image/jpeg") else error(404, "No avatar for user 1")
             route == "/dashboard/scrollers/batch" && request.method == "POST" -> shelvesBatch(body)
             route.startsWith("/dashboard/scrollers/") && request.method == "GET" -> oneShelf(route.removePrefix("/dashboard/scrollers/"), params)
             route == "/collections" || route.startsWith("/collections/") -> collectionRoute(request, route, params, body)
