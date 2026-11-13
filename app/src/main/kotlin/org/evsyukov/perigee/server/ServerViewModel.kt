@@ -42,6 +42,7 @@ import org.evsyukov.perigee.sync.RemoteBook
 import org.evsyukov.perigee.sync.RemoteBookDetail
 import org.evsyukov.perigee.sync.RemoteCollection
 import org.evsyukov.perigee.sync.RemoteFile
+import org.evsyukov.perigee.sync.RemoteProfile
 import org.evsyukov.perigee.sync.ShelfKind
 import org.evsyukov.perigee.sync.SignInCancelledException
 import org.evsyukov.perigee.sync.SignInExpiredException
@@ -180,6 +181,8 @@ data class ServerState(
     val onDeviceByBook: Map<Long, String> = emptyMap(),
     /** Why the libraries to narrow the catalogue to could not be asked for; null when they could, or were not asked. */
     val librariesFailure: ServerFailure? = null,
+    /** The reader's own page: who they are on the server, what they have earned and what they have read. */
+    val profile: ProfileState = ProfileState(),
 ) {
     /** What of the server's book [bookId] is on its way to the server. */
     fun saving(bookId: Long): Set<Personal> = writing.keys.filter { it.first == bookId }.mapTo(HashSet()) { it.second }
@@ -209,6 +212,9 @@ class ServerViewModel(
     private var fetching: Job? = null
     private var page = 0
     private val pictures = LruCache<Long, ImageBitmap>(64)
+
+    /** The reader's picture, once fetched: by the account it was fetched for, so another reader's is not shown. */
+    private var picture: Pair<Long, ImageBitmap>? = null
 
     /**
      * Counts the readers and servers signed in to while the screen lives. An answer is taken only for the one
@@ -310,6 +316,7 @@ class ServerViewModel(
         details.clear()
         relatedKept.clear()
         pictures.evictAll()
+        picture = null
     }
 
     /** Signs in, in place of whoever was signed in before. */
@@ -442,6 +449,9 @@ class ServerViewModel(
         _state.update { it.copy(section = section) }
         val state = _state.value
         if (section == Section.Collections && !state.collections.loaded && !state.collections.loading) loadCollections()
+        // The reader's own page is asked of the server when it is first opened, and not again: it is the server's
+        // own record, and coming back to it is not a reason to ask again.
+        if (section == Section.Profile && !state.profile.loaded && !state.profile.loading) loadProfile()
     }
 
     /** Looks the server's books up by a phrase; an empty one shows them all. The catalogue's filters stay. */
@@ -496,6 +506,53 @@ class ServerViewModel(
     /** Asks the server again from the start, as after it could not be reached. */
     fun retry() {
         if (_state.value.account != null && !_state.value.sessionOver) open()
+    }
+
+    /**
+     * The reader's own page, asked when it is first opened and when it is tried again: who they are on the
+     * server, what it awards them and what it has counted of their reading. Each answer is the server's own; a
+     * page it does not have leaves its block empty rather than failing the rest.
+     */
+    private fun loadProfile() {
+        val at = epoch
+        _state.update { it.copy(profile = it.profile.copy(loading = true, failure = null)) }
+        tracked {
+            try {
+                val profile = orbit.area.profile()
+                // Asked one after another, so that a server refusing one of them is not asked the next for nothing.
+                val achievements = orbit.area.achievements()
+                val reading = orbit.area.reading()
+                if (at != epoch) return@tracked
+                _state.update {
+                    it.copy(
+                        profile = it.profile.copy(
+                            profile = profile, achievements = achievements, reading = reading,
+                            loading = false, loaded = true, failure = null,
+                        ),
+                    )
+                }
+            } catch (e: SignedOutException) {
+                ended(at)
+            } catch (e: IOException) {
+                if (at == epoch) _state.update { it.copy(profile = it.profile.copy(loading = false, failure = failureOf(e))) }
+            }
+        }
+    }
+
+    /** Asks the reader's page again, as after the server could not be reached. */
+    fun retryProfile() = loadProfile()
+
+    /** The reader's picture, fetched once while the screen lives; null when they have none. */
+    suspend fun picture(profile: RemoteProfile): ImageBitmap? {
+        picture?.takeIf { it.first == profile.id }?.let { return it.second }
+        val at = epoch
+        val bytes = try {
+            orbit.area.picture(profile)
+        } catch (e: IOException) {
+            null
+        } ?: return null
+        return withContext(Dispatchers.Default) { BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap() }
+            ?.also { if (at == epoch) picture = profile.id to it }
     }
 
     /** What is asked of the server when its screen is come to: its version, the channel, its shelves, the reader's books, its own. */

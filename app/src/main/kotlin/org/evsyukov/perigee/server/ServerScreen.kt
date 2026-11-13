@@ -120,6 +120,7 @@ fun ServerScreen(onOpen: (File) -> Unit, onClose: () -> Unit, model: ServerViewM
     val homeList = rememberLazyListState()
     val catalogueList = rememberLazyListState()
     val collectionsList = rememberLazyListState()
+    val profileList = rememberLazyListState()
     val collectionBooksList = rememberSaveable(state.collection?.collection?.id, saver = LazyListState.Saver) { LazyListState(0, 0) }
 
     /** One step back, as the arrow of the top bar goes: the way to the library is always this one. */
@@ -188,7 +189,8 @@ fun ServerScreen(onOpen: (File) -> Unit, onClose: () -> Unit, model: ServerViewM
                             IconButton(onClick = back) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.action_back)) }
                         },
                         actions = {
-                            if (signedIn && (state.section != Section.Collections || inCollection)) {
+                            // The catalogue's phrase is looked for from the lists; the reader's own page has none.
+                            if (signedIn && (state.section == Section.Home || state.section == Section.Catalogue || inCollection)) {
                                 IconButton(onClick = { searching = true }) { Icon(Icons.Filled.Search, stringResource(R.string.action_search)) }
                             }
                             if (account != null) AccountMenu(account, model::signOut)
@@ -200,6 +202,7 @@ fun ServerScreen(onOpen: (File) -> Unit, onClose: () -> Unit, model: ServerViewM
                     Section.Catalogue -> state.loading
                     Section.Collections -> state.collection?.loading ?: state.collections.loading
                     Section.Home -> state.loading && state.channel == null
+                    Section.Profile -> state.profile.loading
                 }
                 if (signedIn && busy) LinearProgressIndicator(Modifier.fillMaxWidth().testTag("server-loading"))
             }
@@ -212,6 +215,7 @@ fun ServerScreen(onOpen: (File) -> Unit, onClose: () -> Unit, model: ServerViewM
                 Section.Home -> Home(padding, state, model, homeList)
                 Section.Catalogue -> Catalogue(padding, state, model, onOpen, catalogueList)
                 Section.Collections -> Collections(padding, state, model, onOpen, collectionsList, collectionBooksList)
+                Section.Profile -> Profile(padding, state, model, profileList)
             }
         }
     }
@@ -276,6 +280,7 @@ internal fun sectionName(section: Section): Int = when (section) {
     Section.Home -> R.string.server_section_home
     Section.Catalogue -> R.string.server_section_catalogue
     Section.Collections -> R.string.server_section_collections
+    Section.Profile -> R.string.server_section_profile
 }
 
 @Composable

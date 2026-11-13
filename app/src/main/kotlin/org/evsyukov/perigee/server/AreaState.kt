@@ -3,13 +3,27 @@ package org.evsyukov.perigee.server
 import org.evsyukov.perigee.sync.CatalogueQuery
 import org.evsyukov.perigee.sync.CatalogueSort
 import org.evsyukov.perigee.sync.ReadStatuses
+import org.evsyukov.perigee.sync.RemoteAchievements
 import org.evsyukov.perigee.sync.RemoteBook
 import org.evsyukov.perigee.sync.RemoteCollection
+import org.evsyukov.perigee.sync.RemoteProfile
+import org.evsyukov.perigee.sync.RemoteReading
 import org.evsyukov.perigee.sync.Shelf
 import org.evsyukov.perigee.sync.ShelfKind
 
 /** The parts of the server's screen, each with its own place, query and pages kept while another is shown. */
-enum class Section { Home, Catalogue, Collections }
+enum class Section { Home, Catalogue, Collections, Profile }
+
+/** The reader's own page on the server: who they are there, what they have earned, and what they have read. */
+data class ProfileState(
+    val profile: RemoteProfile? = null,
+    val achievements: RemoteAchievements? = null,
+    val reading: RemoteReading? = null,
+    val loading: Boolean = false,
+    /** Whether the server answered once; nothing of the page is drawn before that. */
+    val loaded: Boolean = false,
+    val failure: ServerFailure? = null,
+)
 
 /** How a shelf of the home page stands. */
 sealed interface ShelfState {

@@ -321,6 +321,134 @@ class OrbitArea internal constructor(private val orbit: BookOrbit, private val a
         }
     }
 
+    /**
+     * The reader's own account on the server: the name it shows, the user name it knows them by, and whether
+     * it has a picture of them. Asked of any version, signed in; nothing of it waits for the devices' channel.
+     */
+    suspend fun profile(): RemoteProfile {
+        val reply = orbit.session("GET", "/auth/me")
+        if (!reply.ok) throw failed(reply, "the reader's account")
+        val json = reply.json() ?: throw ServerResponseException(reply.code, "no account")
+        val username = json.textOf("username")
+        val name = json.textOf("name").ifEmpty { username }
+        if (username.isEmpty() && name.isEmpty()) throw ServerResponseException(reply.code, "no account")
+        return RemoteProfile(
+            id = json.optLong("id"),
+            username = username,
+            name = name,
+            isSuperuser = json.optBoolean("isSuperuser"),
+            // The server names the address of a picture; one that keeps none says so by leaving it out.
+            hasPicture = !json.stringOrNull("avatarUrl").isNullOrBlank(),
+        )
+    }
+
+    /** The picture the server keeps of the reader; null when it has none, or the answer is not a picture. */
+    suspend fun picture(profile: RemoteProfile): ByteArray? =
+        if (profile.hasPicture) orbit.pictureOf("/users/${profile.id}/avatar") else null
+
+    /**
+     * What the server awards and how far the reader has got with it, in the language the app asks in. null
+     * when this server has no such page, which the rest of the screen does not depend on.
+     */
+    suspend fun achievements(): RemoteAchievements? {
+        val reply = orbit.session("GET", "/achievements")
+        if (reply.routeMissing() || reply.code == 404) return null
+        if (!reply.ok) throw failed(reply, "achievements")
+        val json = reply.json() ?: return null
+        val categories = ArrayList<RemoteAchievementCategory>()
+        json.optJSONArray("categories").each { group ->
+            val items = ArrayList<RemoteAchievement>()
+            group.optJSONArray("achievements").each { item ->
+                items += RemoteAchievement(
+                    key = item.textOf("key"),
+                    name = item.textOf("name"),
+                    description = item.textOf("description"),
+                    rarity = item.textOf("rarity"),
+                    earned = item.optBoolean("earned"),
+                    awardedAt = item.stringOrNull("awardedAt").orEmpty(),
+                    // A count the server does not give is not zero: it is not drawn at all.
+                    progress = item.optInt("currentProgress").takeIf { item.has("currentProgress") && !item.isNull("currentProgress") },
+                    threshold = item.optInt("threshold").takeIf { item.has("threshold") && !item.isNull("threshold") },
+                )
+            }
+            categories += RemoteAchievementCategory(
+                key = group.textOf("key"),
+                label = group.textOf("label"),
+                earned = group.optInt("earnedCount"),
+                total = group.optInt("totalCount", items.count { it.name.isNotEmpty() }),
+                achievements = items.filter { it.name.isNotEmpty() },
+            )
+        }
+        return RemoteAchievements(
+            earned = json.optInt("totalEarned"),
+            total = json.optInt("totalAvailable"),
+            // A category this version has no achievements in is not a heading with nothing under it.
+            categories = categories.filter { it.achievements.isNotEmpty() },
+        )
+    }
+
+    /**
+     * The reader's reading as the server counts it: the goal and the streak from the dashboard's widgets,
+     * asked together, then the summary and a half year of days. Each part stands on its own — a widget the
+     * server marks failed, or a route it has not, leaves the rest of the page as it is.
+     */
+    suspend fun reading(): RemoteReading {
+        val who = orbit.signedInAs()
+        val widgets = widgets(who)
+        val goal = widgets["reading-goal"]?.let { widget ->
+            RemoteReadingGoal(
+                books = widget.optInt("goalBooks").takeIf { widget.has("goalBooks") && !widget.isNull("goalBooks") },
+                read = widget.optInt("completedBooks"),
+                year = widget.optInt("year"),
+            )
+        }
+        val streak = widgets["reading-streak"]?.let { widget ->
+            val seven = widget.optJSONArray("lastSevenDays") ?: JSONArray()
+            RemoteReadingStreak(
+                current = widget.optInt("currentStreak"),
+                longest = widget.optInt("longestStreak"),
+                lastSevenDays = (0 until seven.length()).map { seven.optBoolean(it) },
+            )
+        }
+        val summary = answered("GET", "/user-statistics/summary", null, who)?.json()?.let { numbers ->
+            RemoteReadingSummary(
+                tracked = numbers.optInt("trackedBooks"),
+                inProgress = numbers.optInt("inProgressBooks"),
+                completed = numbers.optInt("completedBooks"),
+                meanProgressPercent = numbers.optDouble("meanProgressPercent", 0.0),
+            )
+        }
+        val heatmap = answered("GET", "/user-statistics/reading-heatmap?days=$HEATMAP_DAYS", null, who)
+        val days = heatmap?.let { listIn(it) }.orEmpty()
+            .mapNotNull { day ->
+                val text = day.textOf("day")
+                if (text.isEmpty()) null else RemoteReadingDay(text, day.optLong("readingSeconds"))
+            }
+        return RemoteReading(summary = summary, goal = goal, streak = streak, days = days, daysKnown = heatmap != null)
+    }
+
+    /** The dashboard's widgets asked for together, by their type; a widget that failed, or the batch missing, is absent. */
+    private suspend fun widgets(who: String?): Map<String, JSONObject> {
+        val body = JSONObject().put("widgets", JSONArray().put("reading-goal").put("reading-streak"))
+        val reply = answered("POST", "/dashboard/widgets/batch", body, who) ?: return emptyMap()
+        val given = HashMap<String, JSONObject>()
+        reply.json()?.optJSONArray("items").each { item ->
+            val data = item.optJSONObject("data")
+            if (!item.optBoolean("failed") && data != null) given[item.textOf("type")] = data
+        }
+        return given
+    }
+
+    /** A request of the reader's page; null when this server has not got the route, which is its own answer. */
+    private suspend fun answered(method: String, path: String, body: JSONObject?, who: String?): Reply? {
+        val reply = orbit.session(method, path, body, owner = who)
+        return when {
+            reply.ok -> reply
+            reply.routeMissing() || reply.code == 404 -> null
+            else -> throw orbit.sessionFailure(reply)
+        }
+    }
+
     private suspend fun channelReady(): Boolean {
         val account = accounts.current() ?: return false
         return BookOrbit.supports(account.serverVersion) && accounts.deviceKey() != null
@@ -366,6 +494,9 @@ class OrbitArea internal constructor(private val orbit: BookOrbit, private val a
     companion object {
         /** Books asked for on each shelf of the home page. */
         const val SHELF_PREVIEW = 12
+
+        /** Days of reading the reader's own page asks for: half a year, which its calendar draws. */
+        const val HEATMAP_DAYS = 182
 
         /** What a new collection is shown with on the server: its icon must not be empty. */
         const val COLLECTION_ICON = "book"

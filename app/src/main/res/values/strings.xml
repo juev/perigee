@@ -372,6 +372,7 @@
     <string name="server_section_home">Home</string>
     <string name="server_section_catalogue">Catalogue</string>
     <string name="server_section_collections">Collections</string>
+    <string name="server_section_profile">Profile</string>
     <string name="server_shelf_continue_reading">Continue reading</string>
     <string name="server_shelf_want_to_read">Want to read</string>
     <string name="server_shelf_recently_added">Recently added</string>
@@ -385,6 +386,35 @@
     <string name="server_home_empty">Your shelves are empty</string>
     <string name="server_home_empty_text">Books you read, want to read and add to the server appear here. Meanwhile, look through the catalogue.</string>
     <string name="server_home_unsupported">This version of the server has no home shelves. Its books are in the catalogue and in collections.</string>
+    <string name="server_profile_picture">Profile picture</string>
+    <string name="server_profile_tracked">Tracked</string>
+    <string name="server_profile_in_progress">In progress</string>
+    <string name="server_profile_completed">Finished</string>
+    <string name="server_profile_mean_progress">Mean progress %1$d%%</string>
+    <string name="server_profile_goal">Goal for %1$d</string>
+    <string name="server_profile_no_goal">No goal set</string>
+    <string name="server_profile_goal_value">%1$d of %2$d</string>
+    <string name="server_profile_streak">Streak</string>
+    <string name="server_profile_days">Reading days</string>
+    <string name="server_profile_days_note">The last half year, a square a day</string>
+    <string name="server_profile_days_none">No reading days in the last half year</string>
+    <string name="server_profile_no_achievements">This server has no achievements to show</string>
+    <string name="server_profile_achievements">Achievements</string>
+    <string name="server_profile_achievements_count">%1$d of %2$d earned</string>
+    <string name="server_profile_achievement_progress">%1$d / %2$d</string>
+    <string name="server_profile_earned_on">Earned %1$s</string>
+    <plurals name="server_profile_streak_days">
+        <item quantity="one">%1$d day</item>
+        <item quantity="other">%1$d days</item>
+    </plurals>
+    <plurals name="server_profile_longest">
+        <item quantity="one">Longest: %1$d day</item>
+        <item quantity="other">Longest: %1$d days</item>
+    </plurals>
+    <plurals name="server_profile_days_read">
+        <item quantity="one">%1$d of the last seven days read</item>
+        <item quantity="other">%1$d of the last seven days read</item>
+    </plurals>
     <string name="server_open_catalogue">Open the catalogue</string>
     <string name="server_filters">Filters</string>
     <string name="server_filters_on">Filters: %1$s</string>

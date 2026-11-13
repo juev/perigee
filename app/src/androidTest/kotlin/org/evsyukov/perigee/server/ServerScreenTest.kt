@@ -30,6 +30,7 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performImeAction
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performScrollToKey
+import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performTextReplacement
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.unit.Density
@@ -780,6 +781,46 @@ class ServerScreenTest {
         openPageOf("First Book")
         val badge = hasText(string(R.string.catalog_downloaded)) and onPage and hasAnyAncestor(hasTestTag("server-related-author-books"))
         waitForShown("the book beside it said to be in the library", badge)
+    }
+
+    @Test
+    fun theReadersPageShowsWhoTheyAreWhatTheyEarnedAndWhatTheyRead() {
+        serverHas(book(7, "Listed Title", 70))
+        show()
+        signIn()
+        part(Section.Profile)
+
+        waitForText("Reader Name")
+        rule.onNodeWithText("@reader").assertIsDisplayed()
+        rule.onNodeWithText(string(R.string.server_profile_mean_progress, 42)).assertIsDisplayed()
+        rule.onNodeWithText(string(R.string.server_profile_goal_value, 8, 30)).assertIsDisplayed()
+        assertTrue(
+            "the page is asked once, when it is opened",
+            server.seen.count { it.path == "/api/v1/achievements" } == 1,
+        )
+
+        // The achievements come below the numbers, in the server's own words and with its counts.
+        rule.onNodeWithTag("server-profile").performScrollToNode(hasText(string(R.string.server_profile_achievements_count, 2, 3)))
+        rule.onNodeWithText(string(R.string.server_profile_achievements_count, 2, 3)).assertIsDisplayed()
+        rule.onNodeWithTag("server-profile").performScrollToNode(hasText("Ten books"))
+        rule.onNodeWithText("Ten books").assertIsDisplayed()
+        rule.onNodeWithText(string(R.string.server_profile_achievement_progress, 3, 10)).assertIsDisplayed()
+    }
+
+    @Test
+    fun readersPageThatCannotBeReachedIsToldThereWithAWayToAskAgain() {
+        serverHas(book(7, "Listed Title", 70))
+        server.profileAnswer = Answer(500, """{"statusCode":500,"message":"Internal server error"}""")
+        show()
+        signIn()
+        part(Section.Profile)
+        waitForText(string(R.string.server_unreachable))
+        rule.onNodeWithText(string(R.string.server_unreachable)).assertIsDisplayed()
+
+        server.profileAnswer = null
+        rule.onNodeWithText(string(R.string.action_retry)).performClick()
+        waitForText("Reader Name")
+        assertEquals("asked again whole", 2, server.seen.count { it.path == "/api/v1/auth/me" })
     }
 
     private companion object {
