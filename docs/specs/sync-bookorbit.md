@@ -130,7 +130,7 @@ Ordinary browsing, collections and the reader's own marks of a book go through t
 
 The fourth part under the top bar, **Profile**: who the reader is on the server, what it has counted of their reading, and the achievements it awards. It is asked of the server when the part is first opened and when it is tried again — not when the screen opens, and not again on coming back to it — and everything in it is the server's own answer, nothing being worked out here. All of it goes through the reader's session.
 
-- `GET auth/me`: the name the server shows (`name`, else `username`), the user name, and `avatarUrl`, which says whether it has a picture to ask for. The picture is `GET users/:id/avatar`, fetched once; without one, a circle of the reader's initials stands in.
+- `GET auth/me`: the name the server shows (`name`, else `username`), the user name, and `avatarUrl`, which says whether it has a picture to ask for. The picture is `GET users/:id/avatar`, fetched once, when the server names it by a path of its own; one it names by an address elsewhere, as a provider's, is not fetched, and a circle of the reader's initials stands in.
 - `GET user-statistics/summary`: books tracked, in progress and finished, and the mean progress, drawn as three numbers and a line.
 - The year's goal and the streak come from the dashboard's widgets in one request, `POST dashboard/widgets/batch` with `reading-goal` and `reading-streak`. Each widget stands alone: one the server marks `failed`, or a batch the server has not, leaves its own block out and the rest of the page as it is. A goal the reader has not set is said as such, not drawn as zero of zero.
 - `GET user-statistics/reading-heatmap?days=182`: a half year of days with reading time on them, drawn as a square a day in weeks, Monday first, ending with the week of the last day the server named. The shades are the app's own: under a quarter of an hour, under an hour, an hour and more. A server without the route says so instead of drawing an empty half year.
@@ -383,6 +383,6 @@ Checked by hand on the emulator against the same server: signing in over `http:/
 - A bookmark's title given here.
 - KEPUB files of the server.
 - The statistics the server draws as charts: the hours the reader reads, the days of the week, the genres over time, the books finished month by month, the pace, the sessions — all of them open routes, none drawn here.
-- The achievements' hints (`GET achievements/hints`, 3.5.0 and later) and the celebrations of a newly earned one (`POST achievements/celebrations/claim`, App Attest only), the picture chosen for the reader, and the achievements' rarity, which the server names and nothing shows yet.
+- The achievements' hints (`GET achievements/hints`, 3.5.0 and later) and the celebrations of a newly earned one (`POST achievements/celebrations/claim`, App Attest only), the picture chosen for the reader, a picture a provider only names by an address elsewhere, and the achievements' rarity, which the server names and nothing shows yet.
 - A second server.
 - Running the contract tests against the latest server image in CI.

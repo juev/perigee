@@ -332,13 +332,15 @@ class OrbitArea internal constructor(private val orbit: BookOrbit, private val a
         val username = json.textOf("username")
         val name = json.textOf("name").ifEmpty { username }
         if (username.isEmpty() && name.isEmpty()) throw ServerResponseException(reply.code, "no account")
+        // A picture the server names with a path of its own is one it serves; one it names by an address
+        // elsewhere, as a provider's, is not fetched here, and the reader's initials stand in for it.
+        val picture = json.stringOrNull("avatarUrl").orEmpty()
         return RemoteProfile(
             id = json.optLong("id"),
             username = username,
             name = name,
             isSuperuser = json.optBoolean("isSuperuser"),
-            // The server names the address of a picture; one that keeps none says so by leaving it out.
-            hasPicture = !json.stringOrNull("avatarUrl").isNullOrBlank(),
+            hasPicture = picture.startsWith("/"),
         )
     }
 

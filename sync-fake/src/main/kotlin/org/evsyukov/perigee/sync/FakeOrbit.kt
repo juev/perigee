@@ -810,6 +810,9 @@ class FakeOrbit : AutoCloseable {
     /** Whether the server has a picture of the reader; one it has none of answers 404 for it. */
     var avatar = true
 
+    /** A picture the server only names elsewhere, as a provider's, instead of keeping it itself. */
+    var avatarUrl: String? = null
+
     /** The dashboard's widgets this server marks failed rather than answering, as one it could not work out. */
     var failedWidgets = emptySet<String>()
 
@@ -818,7 +821,14 @@ class FakeOrbit : AutoCloseable {
         .put("id", 1).put("username", "reader").put("name", "Reader Name").put("email", "reader@example.org")
         .put("active", true).put("isSuperuser", false).put("isDefaultPassword", false)
         .put("settings", JSONObject().put("timezone", "Europe/Moscow"))
-        .put("avatarUrl", if (avatar) "/api/v1/users/1/avatar" else JSONObject.NULL)
+        .put(
+            "avatarUrl",
+            when {
+                avatarUrl != null -> avatarUrl
+                avatar -> "/api/v1/users/1/avatar"
+                else -> JSONObject.NULL
+            },
+        )
         .put("provisioningMethod", "local").put("authenticationMethod", "password")
         .put("permissions", JSONArray())
 

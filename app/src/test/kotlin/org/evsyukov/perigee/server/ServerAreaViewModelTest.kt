@@ -1020,6 +1020,17 @@ class ServerAreaViewModelTest {
         assertEquals(12, again.profile.reading?.summary?.tracked)
     }
 
+    @Test
+    fun aPictureTheServerOnlyNamesElsewhereIsNotAskedForHere() {
+        serverHas(book(7, "Listed Title", 70))
+        server.avatarUrl = "https://id.example/avatars/reader.png"
+        signIn()
+        model.show(Section.Profile)
+        val state = until("the page came") { it.profile.loaded }
+        assertFalse("a picture on another host is not fetched here", checkNotNull(state.profile.profile).hasPicture)
+        assertTrue("and nothing of it was asked", server.asked("/users/1/avatar").isEmpty())
+    }
+
     private companion object {
         const val TIMEOUT = 15_000L
     }
