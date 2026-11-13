@@ -303,6 +303,10 @@
     <string name="send_where_text">Books you send will go there from now on.</string>
     <string name="send_place_folder">%1$s, folder %2$s</string>
     <string name="send_waiting">waiting to be sent</string>
+    <string name="send_whole_title">Sent whole, without resuming</string>
+    <string name="send_whole_text">This server takes the book only whole. If the connection breaks while it goes, it is sent again from the beginning.</string>
+    <string name="send_whole_many_text">This server takes books only whole. If a connection breaks while one goes, it is sent again from the beginning.</string>
+    <string name="send_whole_confirm">Send</string>
     <string name="book_partly_sent">sent in part</string>
     <string name="action_resume_sending">Resume sending</string>
     <string name="action_cancel_sending">Stop sending</string>

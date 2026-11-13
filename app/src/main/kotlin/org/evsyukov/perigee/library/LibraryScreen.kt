@@ -399,6 +399,13 @@ fun LibraryScreen(
             confirmButton = {},
             dismissButton = { TextButton(onClick = model::dontSend) { Text(stringResource(R.string.action_cancel)) } },
         )
+        is SendQuestion.Whole -> AlertDialog(
+            onDismissRequest = model::dontSend,
+            title = { Text(stringResource(R.string.send_whole_title)) },
+            text = { Text(stringResource(if (question.books.size == 1) R.string.send_whole_text else R.string.send_whole_many_text)) },
+            confirmButton = { TextButton(onClick = model::sendWholeAnyway) { Text(stringResource(R.string.send_whole_confirm)) } },
+            dismissButton = { TextButton(onClick = model::dontSend) { Text(stringResource(R.string.action_cancel)) } },
+        )
         null -> Unit
     }
     state.removal?.let { removal ->

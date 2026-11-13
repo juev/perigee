@@ -95,6 +95,13 @@ sealed interface SendQuestion {
 
     /** Which of the server's libraries and folders to send books to; asked once. */
     data class Where(val books: List<Book>, val places: List<SendPlace>) : SendQuestion
+
+    /**
+     * The server takes no file in parts — it keeps its upload session for its own apps — so a book
+     * goes there whole, and one cut off on its way is sent again from the beginning. The reader is
+     * told that before the file goes.
+     */
+    data class Whole(val books: List<Book>, val place: UploadPlace) : SendQuestion
 }
 
 /** Where the reader is on the way to removing a book from the device. */
@@ -304,8 +311,27 @@ class LibraryViewModel(
         serving.update { it.copy(question = null) }
         viewModelScope.launch {
             accounts?.saveUploadPlace(place.libraryId, place.folderId)
-            for (book in books) deliverInTurn(book, place)
+            sendToThePlace(books, place)
         }
+    }
+
+    /** The reader would send the books whole, the server taking no file in parts: they go where they were to go. */
+    fun sendWholeAnyway() {
+        val question = serving.value.question as? SendQuestion.Whole ?: return
+        serving.update { it.copy(question = null) }
+        for (book in question.books) deliverInTurn(book, question.place)
+    }
+
+    /** Whether the server last asked takes a file in parts; when it does not, a book goes there whole. */
+    private fun takesFilesWhole(): Boolean = serving.value.upload?.resumable == false
+
+    /**
+     * Sends the books to [place], asking the reader first what sending whole costs when the server
+     * takes no file in parts: a file cut off then begins again.
+     */
+    private fun sendToThePlace(books: List<Book>, place: UploadPlace) {
+        if (takesFilesWhole()) serving.update { it.copy(question = SendQuestion.Whole(books, place)) }
+        else for (book in books) deliverInTurn(book, place)
     }
 
     /** The reader thought better of sending the books. */
@@ -362,8 +388,8 @@ class LibraryViewModel(
             }
             when {
                 places.isEmpty() -> for (book in books) failed(book, if (options.allowed) SendFailure.Format else SendFailure.NotAllowed)
-                chosen != null -> for (book in books) deliverInTurn(book, chosen.place)
-                places.size == 1 -> for (book in books) deliverInTurn(book, places[0].place)
+                chosen != null -> sendToThePlace(books, chosen.place)
+                places.size == 1 -> sendToThePlace(books, places[0].place)
                 else -> serving.update { it.copy(question = SendQuestion.Where(books, places)) }
             }
         }

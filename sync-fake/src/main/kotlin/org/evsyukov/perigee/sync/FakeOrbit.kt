@@ -158,6 +158,15 @@ class FakeOrbit : AutoCloseable {
     /** What opening an upload session is answered with instead, while not null. */
     var uploadAnswer: Answer? = null
 
+    /** What the question of what the server takes is answered with instead, while not null: a server keeping the session for its own apps says 403 APP_ATTEST_REQUIRED. */
+    var capabilitiesAnswer: Answer? = null
+
+    /** What a file sent whole is answered with instead, while not null. */
+    var wholeUploadAnswer: Answer? = null
+
+    /** How many whole files taken are not answered, as when the connection goes before the file is kept. */
+    var droppedWholeUploads = 0
+
     /** What finishing an upload session is answered with instead, while not null; the session fails with it. */
     var completeAnswer: Answer? = null
 
@@ -271,6 +280,51 @@ class FakeOrbit : AutoCloseable {
         afterUpload()
         if (droppedCompletes) return Answer.Dropped
         return Answer(202, json(session).toString())
+    }
+
+    /**
+     * A file sent whole, as the one part of a form, into a library and the folder asked for: what 3.3.0
+     * answers, and a server that keeps its upload session for its own apps takes a book by.
+     */
+    private fun wholeUpload(request: Seen, route: String, params: Map<String, String>): Answer {
+        if (!uploadAllowed) return error(403, "Library upload permission is required")
+        wholeUploadAnswer?.let { return it }
+        val libraryId = route.removePrefix("/libraries/").substringBefore("/upload").toLongOrNull()
+            ?: return error(400, "Library not found", "UPLOAD_TARGET_INVALID")
+        val library = (0 until libraries.length()).map { libraries.getJSONObject(it) }
+            .firstOrNull { it.getLong("id") == libraryId } ?: return error(400, "Library not found", "UPLOAD_TARGET_INVALID")
+        val folderId = params["folderId"]?.toLongOrNull()
+        if (params.containsKey("folderId") && folderId == null) return error(400, "Invalid folderId")
+        if (folderId != null) {
+            val folders = library.getJSONArray("folders")
+            if ((0 until folders.length()).none { folders.getJSONObject(it).getLong("id") == folderId }) {
+                return error(400, "Folder does not belong to this library", "UPLOAD_TARGET_INVALID")
+            }
+        }
+        val (name, bytes) = filePart(request) ?: return error(400, "No file provided")
+        if (bytes.isEmpty()) return error(400, "File must not be empty", "UPLOAD_EMPTY")
+        val format = name.substringAfterLast('.', "").lowercase()
+        if (format !in FORMATS) return error(400, "Unsupported file type .$format", "UPLOAD_FORMAT_UNSUPPORTED")
+        val allowed = library.getJSONArray("allowedFormats")
+        if (allowed.length() > 0 && (0 until allowed.length()).none { allowed.getString(it) == format }) {
+            return error(400, "This library does not allow .$format files", "UPLOAD_FORMAT_NOT_ALLOWED")
+        }
+        if (bytes.size > maxUploadBytes) return error(413, "File exceeds the upload limit", "UPLOAD_TOO_LARGE")
+        if (droppedWholeUploads > 0) {
+            droppedWholeUploads--
+            return Answer.Dropped
+        }
+        if (uploads.any { it.libraryId == libraryId && it.name == name }) {
+            return error(409, "A file named \"$name\" already exists at the target location", "UPLOAD_DESTINATION_CONFLICT")
+        }
+        val bookId = marks.incrementAndGet().toLong()
+        uploads += Upload(libraryId, folderId, name, bytes, bookId)
+        files[partialMd5(bytes)] = bookId to bookId * 10
+        afterUpload()
+        return Answer(
+            201,
+            JSONObject().put("bookId", bookId).put("filename", name).put("format", format).put("sizeBytes", bytes.size).toString(),
+        )
     }
 
     private fun uploads(request: Seen, path: String, body: JSONObject): Answer {
@@ -1062,12 +1116,26 @@ class FakeOrbit : AutoCloseable {
             route == "/dashboard/scrollers/batch" && request.method == "POST" -> shelvesBatch(body)
             route.startsWith("/dashboard/scrollers/") && request.method == "GET" -> oneShelf(route.removePrefix("/dashboard/scrollers/"), params)
             route == "/collections" || route.startsWith("/collections/") -> collectionRoute(request, route, params, body)
-            route == "/libraries" && request.method == "GET" -> librariesAnswer ?: Answer(200, JSONArray().apply { libraryNames.forEachIndexed { i, name -> put(JSONObject().put("id", i + 1).put("name", name)) } }.toString())
+            route == "/libraries" && request.method == "GET" -> librariesAnswer ?: Answer(
+                200,
+                JSONArray().apply {
+                    libraryNames.forEachIndexed { i, name ->
+                        // The formats and folders of the library of that place, as a server tells them to a reader.
+                        val known = libraries.optJSONObject(i)
+                        put(
+                            JSONObject().put("id", i + 1).put("name", name)
+                                .put("allowedFormats", known?.optJSONArray("allowedFormats") ?: JSONArray())
+                                .put("folders", known?.optJSONArray("folders") ?: JSONArray()),
+                        )
+                    }
+                }.toString(),
+            )
+            Regex("/libraries/\\d+/upload").matches(route) && request.method == "POST" -> wholeUpload(request, route, params)
             Regex("/books/\\d+/(recommendations|author-books|series-books)").matches(route) && request.method == "GET" ->
                 related(route.removePrefix("/books/").substringBefore('/').toLong(), route.substringAfterLast('/'))
             Regex("/books/\\d+/status").matches(route) && request.method == "PATCH" -> setStatus(route.removePrefix("/books/").substringBefore('/').toLong(), body)
             route == "/books/bulk-set-rating" && request.method == "POST" -> setRatings(body)
-            path == "/uploads/capabilities" -> Answer(
+            path == "/uploads/capabilities" -> capabilitiesAnswer ?: Answer(
                 200,
                 JSONObject().put("maxFileSizeBytes", maxUploadBytes).put("chunkSizeBytes", chunkBytes)
                     .put("supportedFormats", JSONArray(FORMATS)).put("canUploadToLibrary", uploadAllowed).put("canUseBookDock", false)
