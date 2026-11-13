@@ -14,10 +14,11 @@ import org.json.JSONObject
 
 /**
  * What the reader does on the server beyond looking through its list of books: the shelves of its home
- * page, their collections, the books the server lists beside another, and their own status, stars and
- * note of a book. All of it goes through the reader's session, so none of it waits for the devices'
- * channel; a version of the server without one of these says so by [UnsupportedOnServerException] or
- * [Shelf.Unsupported], and the rest goes on working.
+ * page, their collections, the books the server lists beside another, their own status, stars and note
+ * of a book, and the reader's own page — who they are there, the achievements it awards and what it has
+ * counted of their reading. All of it goes through the reader's session, so none of it waits for the
+ * devices' channel; a version of the server without one of these says so by [UnsupportedOnServerException],
+ * [Shelf.Unsupported] or an empty block, and the rest goes on working.
  *
  * Nothing is kept here: every answer is the server's as it gave it, and a change is only taken for made
  * once the server confirmed it.

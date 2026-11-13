@@ -40,7 +40,7 @@ class ProfileContractTest {
         assertEquals(BookOrbitServer.USERNAME, profile.username)
         assertEquals(raw.getLong("id"), profile.id)
         assertTrue("the server shows a name: $profile", profile.name.isNotEmpty())
-        assertEquals("a picture is asked for only when the server names one", !raw.isNull("avatarUrl"), profile.hasPicture)
+        assertEquals("a picture is asked for only when the server serves one itself", raw.optString("avatarUrl").startsWith("/"), profile.hasPicture)
     }
 
     @Test
