@@ -259,7 +259,7 @@ private fun ReadingDays(days: List<RemoteReadingDay>) {
             // The squares are as large as the column can hold all of them: a narrow screen keeps them small
             // rather than cutting the half year off.
             BoxWithConstraints(Modifier.fillMaxWidth()) {
-                val side = ((maxWidth - 25 * CELL_GAP) / WEEKS).coerceIn(4.dp, 12.dp)
+                val side = ((maxWidth - CELL_GAP * (WEEKS - 1)) / WEEKS).coerceIn(4.dp, 12.dp)
                 Row(
                     Modifier.padding(top = 8.dp).testTag("server-profile-days").semantics { contentDescription = description },
                     horizontalArrangement = Arrangement.spacedBy(CELL_GAP),
