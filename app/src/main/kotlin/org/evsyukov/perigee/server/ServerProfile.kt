@@ -4,6 +4,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
@@ -255,14 +256,19 @@ private fun ReadingDays(days: List<RemoteReadingDay>) {
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         } else {
-            Row(
-                Modifier.padding(top = 8.dp).testTag("server-profile-days").semantics { contentDescription = description },
-                horizontalArrangement = Arrangement.spacedBy(2.dp),
-            ) {
-                for (week in weeks) {
-                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                        for ((_, seconds) in week) {
-                            Box(Modifier.size(9.dp).clip(RoundedCornerShape(2.dp)).background(shadeOf(seconds)))
+            // The squares are as large as the column can hold all of them: a narrow screen keeps them small
+            // rather than cutting the half year off.
+            BoxWithConstraints(Modifier.fillMaxWidth()) {
+                val side = ((maxWidth - 25 * CELL_GAP) / WEEKS).coerceIn(4.dp, 12.dp)
+                Row(
+                    Modifier.padding(top = 8.dp).testTag("server-profile-days").semantics { contentDescription = description },
+                    horizontalArrangement = Arrangement.spacedBy(CELL_GAP),
+                ) {
+                    for (week in weeks) {
+                        Column(verticalArrangement = Arrangement.spacedBy(CELL_GAP)) {
+                            for ((_, seconds) in week) {
+                                Box(Modifier.size(side).clip(RoundedCornerShape(2.dp)).background(shadeOf(seconds)))
+                            }
                         }
                     }
                 }
@@ -370,6 +376,9 @@ private fun Block(modifier: Modifier = Modifier, content: @Composable ColumnScop
 
 /** Weeks of the reader's calendar in the app's own week, so that the squares of a week stand in a column. */
 private const val WEEKS = 26
+
+/** The space between two squares of the calendar, and between two of its weeks. */
+private val CELL_GAP = 2.dp
 
 /**
  * The last [WEEKS] weeks of [days], Monday first, each week a column of seven days: a day the server did not
