@@ -1,9 +1,9 @@
 package org.evsyukov.perigee.reader
 
 import android.app.Application
-import android.util.Log
 import android.graphics.Point
 import android.graphics.Rect
+import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import java.io.File
@@ -74,6 +74,22 @@ data class QuoteTouch(val quote: Quote, val rects: List<Rect>)
 
 data class SearchState(val query: String = "", val running: Boolean = false, val hits: List<SearchHit>? = null)
 
+/** A voice available for TTS, as the server lists it. */
+data class TtsVoice(val id: String, val name: String)
+
+/** What the TTS reader is doing. */
+data class TtsState(
+    val playing: Boolean = false,
+    val loading: Boolean = false,
+    val sentenceText: String = "",
+    val sentenceIndex: Int = 0,
+    val sentenceCount: Int = 0,
+    val highlightRects: List<Rect> = emptyList(),
+    val speed: Float = 1.0f,
+    val voices: List<TtsVoice> = emptyList(),
+    val selectedVoice: String = "",
+)
+
 /** What a touch on the page turned out to be, for the screen to act on. */
 sealed interface TapResult {
     /** The touch was used up: a link was followed, a selection dropped. */
@@ -110,6 +126,8 @@ data class ReaderState(
     val charsPerLine: Int? = null,
     /** A font trial under way or just finished; null when there is none. */
     val fontTrial: FontTrialState? = null,
+    /** TTS reading state. */
+    val tts: TtsState = TtsState(),
 ) {
     /** The contents entry the page shown belongs to. */
     val chapter: TocEntry? get() = page?.let { shown -> toc.lastOrNull { it.page <= shown.index } }
@@ -162,6 +180,7 @@ class ReaderViewModel internal constructor(
     private var file: File? = null
     private var viewport: Viewport? = null
     private var applied: Triple<Int, Int, EngineSettings>? = null
+    private var ttsController: TtsController? = null
 
     // Opening, re-laying out and closing must not overlap one another.
     private val layout = Mutex()
@@ -245,6 +264,8 @@ class ReaderViewModel internal constructor(
     /** The app is put away: the page is looked at no more, and what was read is to be sent. */
     fun paused() {
         if (_state.value.book != null) away = true
+        ttsController?.pause()
+        _state.update { it.copy(tts = it.tts.copy(playing = false)) }
         act { open -> open.saveCache() }
         viewModelScope.launch {
             stopLooking()
@@ -290,6 +311,8 @@ class ReaderViewModel internal constructor(
 
     private suspend fun closeBook() = layout.withLock {
         stopLooking()
+        ttsController?.stop()
+        ttsController = null
         watching?.cancel()
         searching?.cancel()
         reader?.close()
@@ -595,6 +618,98 @@ class ReaderViewModel internal constructor(
             val hits = open.read { it.search(query.trim()) }
             _state.update { it.copy(search = SearchState(query, running = false, hits = hits)) }
         }
+    }
+
+    // ─── TTS ──────────────────────────────────────
+
+    /** Starts TTS reading, or pauses/resumes it. */
+    fun startOrToggleTts() {
+        val state = _state.value.tts
+        if (state.playing) {
+            ttsController?.pause()
+            _state.update { it.copy(tts = it.tts.copy(playing = false)) }
+            return
+        }
+        if (state.sentenceIndex > 0) {
+            ttsController?.resume()
+            _state.update { it.copy(tts = it.tts.copy(playing = true)) }
+            return
+        }
+        ensureTtsController()
+        val prefs = _prefs.value
+        val currentTts = _state.value.tts
+        if (prefs.ttsVoicesUrl.isNotBlank() && currentTts.voices.isEmpty()) {
+            _state.update { it.copy(tts = it.tts.copy(loading = true)) }
+            viewModelScope.launch {
+                val voices = ttsController?.fetchVoices().orEmpty()
+                val selected = if (voices.isNotEmpty()) {
+                    ttsController?.selectVoice(voices.first().id)
+                    voices.first().id
+                } else ""
+                _state.update { it.copy(tts = it.tts.copy(voices = voices, selectedVoice = selected, loading = false)) }
+                ttsController?.play()
+            }
+        } else {
+            ttsController?.play()
+        }
+    }
+
+    /** Stops TTS and resets it. */
+    fun stopTts() {
+        ttsController?.stop()
+        _state.update { it.copy(tts = it.tts.copy(playing = false, sentenceText = "", sentenceIndex = 0, sentenceCount = 0, highlightRects = emptyList())) }
+    }
+
+    fun setTtsSpeed(speed: Float) {
+        ttsController?.setSpeed(speed)
+        _state.update { it.copy(tts = it.tts.copy(speed = speed)) }
+    }
+
+    fun selectTtsVoice(voiceId: String) {
+        ttsController?.selectVoice(voiceId)
+        val tts = _state.value.tts
+        // If paused, restart the current sentence with the new voice.
+        if (!tts.playing && tts.sentenceIndex > 0) {
+            ttsController?.restartCurrentSentence()
+            _state.update { it.copy(tts = it.tts.copy(selectedVoice = voiceId, playing = true)) }
+        } else {
+            _state.update { it.copy(tts = it.tts.copy(selectedVoice = voiceId)) }
+        }
+    }
+
+    /** Loads the voice list without starting playback. Call before showing the voice dialog. */
+    fun loadTtsVoicesIfNeeded() {
+        val prefs = _prefs.value
+        val currentTts = _state.value.tts
+        if (prefs.ttsVoicesUrl.isBlank() || currentTts.voices.isNotEmpty()) return
+        ensureTtsController()
+        _state.update { it.copy(tts = it.tts.copy(loading = true)) }
+        viewModelScope.launch {
+            val voices = ttsController?.fetchVoices().orEmpty()
+            val selected = if (voices.isNotEmpty()) {
+                ttsController?.selectVoice(voices.first().id)
+                voices.first().id
+            } else ""
+            _state.update { it.copy(tts = it.tts.copy(voices = voices, selectedVoice = selected, loading = false)) }
+        }
+    }
+
+    private fun ensureTtsController() {
+        if (ttsController != null) return
+        ttsController = TtsController(
+            getReader = { reader },
+            getPrefs = { _prefs.value },
+            turnPage = { turn(1) },
+            onState = { tts -> _state.update { it.copy(tts = it.tts.copy(
+                playing = tts.playing,
+                sentenceText = tts.sentenceText,
+                sentenceIndex = tts.sentenceIndex,
+                sentenceCount = tts.sentenceCount,
+                highlightRects = tts.highlightRects,
+                speed = tts.speed,
+            )) } },
+            scope = viewModelScope,
+        )
     }
 
     private fun act(block: suspend (BookReader) -> Unit) {

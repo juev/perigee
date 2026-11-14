@@ -110,6 +110,10 @@ data class ReaderPrefs(
     val warmStrength: Int = 3,
     /** CSS the owner wrote, applied after everything the app sets; empty means the shipped look. */
     val userCss: String = "",
+    /** TTS: URL for speech synthesis (POST text → MP3). Empty = native Android TTS. */
+    val ttsSynthUrl: String = "",
+    /** TTS: URL for voice list (GET voices). Empty = native Android TTS. */
+    val ttsVoicesUrl: String = "",
 ) {
     /** Choosing a scheme by hand; it becomes the one the day/night switch goes to on its side, light or dark. */
     fun withScheme(scheme: ColorScheme): ReaderPrefs =
@@ -208,6 +212,8 @@ class ReaderPreferences private constructor(private val store: DataStore<Prefere
             warmToMinute = p[WARM_TO] ?: d.warmToMinute,
             warmStrength = p[WARM_STRENGTH] ?: d.warmStrength,
             userCss = p[USER_CSS] ?: d.userCss,
+            ttsSynthUrl = p[TTS_SYNTH_URL] ?: d.ttsSynthUrl,
+            ttsVoicesUrl = p[TTS_VOICES_URL] ?: d.ttsVoicesUrl,
         )
     }
 
@@ -249,6 +255,8 @@ class ReaderPreferences private constructor(private val store: DataStore<Prefere
         p[WARM_TO] = v.warmToMinute
         p[WARM_STRENGTH] = v.warmStrength
         p[USER_CSS] = v.userCss
+        p[TTS_SYNTH_URL] = v.ttsSynthUrl
+        p[TTS_VOICES_URL] = v.ttsVoicesUrl
     }
 
     /** A value written by a newer version that this one does not know reads as the default. */
@@ -296,6 +304,8 @@ class ReaderPreferences private constructor(private val store: DataStore<Prefere
         private val WARM_TO = intPreferencesKey("warm_to_minute")
         private val WARM_STRENGTH = intPreferencesKey("warm_strength")
         private val USER_CSS = stringPreferencesKey("user_css")
+        private val TTS_SYNTH_URL = stringPreferencesKey("tts_synth_url")
+        private val TTS_VOICES_URL = stringPreferencesKey("tts_voices_url")
 
         /** How many versions of the owner's CSS before the current one are kept. */
         const val USER_CSS_KEPT = 3

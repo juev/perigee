@@ -124,6 +124,71 @@ Specifications are in [docs/specs](docs/specs): [reader.md](docs/specs/reader.md
 
 The app talks only to the servers you add; what it sends to them is in [docs/privacy.md](docs/privacy.md). The texts for the stores are in `fastlane/metadata`.
 
+## Text-to-Speech
+
+Perigee reads books aloud through an HTTP server that accepts the OpenAI TTS format.
+
+### Setup
+
+In the reading settings (gear icon → TTS) set two URLs:
+
+| Setting | Example |
+|---|---|
+| **Synthesize (POST)** | `https://your-server/v1/audio/speech` |
+| **Voices (GET)** | `https://your-server/v1/audio/voices` or `/v1/models` |
+
+When the TTS button is pressed in the reader menu, a dialog lists the available voices.
+
+### Server API
+
+**Synthesis** — `POST /v1/audio/speech`
+
+```json
+{
+  "model": "voice-id",
+  "input": "Text to speak",
+  "voice": "voice-id",
+  "response_format": "mp3",
+  "speed": 1.0
+}
+```
+
+The server responds with audio bytes (`audio/mpeg` or any format MediaPlayer supports). Each sentence is sent as a separate request. The next sentence is pre-fetched while the current one plays, so there is no gap between sentences beyond the server's latency.
+
+**Voices** — `GET /v1/audio/voices` or `GET /v1/models`
+
+Three response formats are accepted:
+
+```json
+{ "voices": ["voice-id-1", "voice-id-2"] }
+{ "data": [{ "id": "voice-id-1" }] }
+["voice-id-1", "voice-id-2"]
+```
+
+### Piper TTS wrapper
+
+[Piper](https://github.com/rhasspy/piper) does not have an HTTP API. A minimal Flask wrapper that maps between OpenAI and Piper:
+
+```python
+@app.route("/v1/audio/speech", methods=["POST"])
+def synthesize():
+    data = request.get_json()
+    text = data["input"]
+    voice = data.get("voice", "ru_RU-irina-medium")
+    speed = data.get("speed", 1.0)
+    piper = subprocess.Popen(
+        ["piper", "--model", f"{voice}.onnx", "--output-raw",
+         "--length-scale", str(1.0/speed)],
+        stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+    )
+    mp3 = subprocess.run(
+        ["ffmpeg", "-f", "s16le", "-ar", "22050", "-ac", "1",
+         "-i", "pipe:0", "-f", "mp3", "-b:a", "64k", "-y", "pipe:1"],
+        stdin=piper.stdout, capture_output=True,
+    ).stdout
+    return Response(mp3, mimetype="audio/mpeg")
+```
+
 ## License
 
 Perigee is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version. See [LICENSE](LICENSE).

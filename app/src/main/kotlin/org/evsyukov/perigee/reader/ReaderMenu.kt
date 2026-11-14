@@ -28,6 +28,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
@@ -77,6 +78,7 @@ internal fun ReaderMenu(
     onToggleBookmark: () -> Unit,
     onGoBack: () -> Unit,
     onSeek: (Float) -> Unit,
+    onTts: () -> Unit = {},
 ) {
     Box(Modifier.fillMaxSize()) {
         Surface(Modifier.align(Alignment.TopCenter).fillMaxWidth().swallowTouches().testTag("top-bar"), tonalElevation = 3.dp, shadowElevation = 4.dp) {
@@ -101,6 +103,7 @@ internal fun ReaderMenu(
                     IconButton(onClick = onContents) {
                         Icon(Icons.AutoMirrored.Filled.List, stringResource(R.string.action_contents))
                     }
+                    IconButton(onClick = onTts) { Icon(Icons.Filled.PlayArrow, stringResource(R.string.action_tts)) }
                     IconButton(onClick = onSettings) { Icon(Icons.Filled.Settings, stringResource(R.string.action_settings)) }
                 }
                 state.chapter?.let {

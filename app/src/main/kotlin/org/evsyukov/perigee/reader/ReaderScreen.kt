@@ -20,6 +20,7 @@ import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
@@ -34,6 +35,7 @@ import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.displayCutout
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.systemGestures
 import androidx.compose.foundation.layout.offset
@@ -42,6 +44,7 @@ import androidx.compose.foundation.layout.requiredWidth
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -83,6 +86,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
@@ -154,6 +158,9 @@ fun ReaderScreen(file: File, onClose: () -> Unit, viewModel: ReaderViewModel = v
     val density = LocalDensity.current
     val scope = rememberCoroutineScope()
     var panel by rememberSaveable { mutableStateOf(Panel.None) }
+    var ttsVoiceDialog by remember { mutableStateOf(false) }
+    /** When true, selecting a voice also starts playback (first launch). When false, only changes voice. */
+    var ttsVoiceDialogStartsTts by remember { mutableStateOf(true) }
 
     LaunchedEffect(viewModel, file) { viewModel.open(file) }
     val close = {
@@ -368,9 +375,35 @@ fun ReaderScreen(file: File, onClose: () -> Unit, viewModel: ReaderViewModel = v
                 onToggleBookmark = viewModel::toggleBookmark,
                 onGoBack = viewModel::goBack,
                 onSeek = viewModel::goToProgress,
+                onTts = {
+                    if (state.tts.playing || state.tts.sentenceIndex > 0) {
+                        viewModel.startOrToggleTts()
+                        panel = Panel.None
+                    } else if (prefs.ttsVoicesUrl.isBlank()) {
+                        viewModel.startOrToggleTts()
+                        panel = Panel.None
+                    } else {
+                        ttsVoiceDialogStartsTts = true
+                        ttsVoiceDialog = true
+                    }
+                },
             )
         }
         SelectionBars(state, viewModel, Modifier.align(Alignment.BottomCenter))
+        // TTS bar: shown while TTS is reading.
+        if (state.tts.sentenceText.isNotEmpty()) {
+            TtsBar(
+                tts = state.tts,
+                onPlayPause = viewModel::startOrToggleTts,
+                onStop = viewModel::stopTts,
+                onSpeedChange = viewModel::setTtsSpeed,
+                onChangeVoice = {
+                    ttsVoiceDialogStartsTts = false
+                    ttsVoiceDialog = true
+                },
+                modifier = Modifier.align(Alignment.BottomCenter),
+            )
+        }
         val offer = state.offer
         if (offer != null && panel == Panel.None && state.selection == null && state.page != null) {
             Offer(offer, viewModel::acceptOffer, viewModel::declineOffer, Modifier.align(Alignment.BottomCenter))
@@ -428,6 +461,49 @@ fun ReaderScreen(file: File, onClose: () -> Unit, viewModel: ReaderViewModel = v
             onDismiss = { panel = Panel.None },
         )
         Panel.None, Panel.Menu, Panel.Styles -> Unit
+    }
+
+    // Voice selection dialog before starting TTS.
+    if (ttsVoiceDialog) {
+        // Load voices when the dialog opens.
+        LaunchedEffect(Unit) { viewModel.loadTtsVoicesIfNeeded() }
+        AlertDialog(
+            onDismissRequest = { ttsVoiceDialog = false },
+            title = { Text(stringResource(R.string.tts_voice)) },
+            text = {
+                Column {
+                    if (state.tts.voices.isEmpty()) {
+                        Text(
+                            stringResource(R.string.tts_loading_voices),
+                            modifier = Modifier.padding(vertical = 10.dp, horizontal = 4.dp),
+                        )
+                    }
+                    for (voice in state.tts.voices) {
+                        Text(
+                            voice.name,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    ttsVoiceDialog = false
+                                    viewModel.selectTtsVoice(voice.id)
+                                    if (ttsVoiceDialogStartsTts) viewModel.startOrToggleTts()
+                                }
+                                .padding(vertical = 10.dp, horizontal = 4.dp),
+                            fontWeight = if (voice.id == state.tts.selectedVoice) FontWeight.Bold else FontWeight.Normal,
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                if (state.tts.voices.isNotEmpty() && ttsVoiceDialogStartsTts) {
+                    TextButton(onClick = {
+                        ttsVoiceDialog = false
+                        viewModel.startOrToggleTts()
+                    }) { Text(stringResource(R.string.action_skip)) }
+                }
+                TextButton(onClick = { ttsVoiceDialog = false }) { Text(stringResource(R.string.action_cancel)) }
+            },
+        )
     }
 }
 
@@ -504,10 +580,19 @@ private fun PageView(page: Page, turned: Int, pageTurn: PageTurn, hidden: Boolea
 @Composable
 private fun Marks(state: ReaderState, offsetX: Int, ink: Color) {
     val rects = state.selection?.rects ?: state.quoteTouch?.rects
+    val ttsRects = state.tts.highlightRects
     Canvas(Modifier.fillMaxSize()) {
         rects?.forEach { rect ->
             drawRect(
                 color = SELECTION,
+                topLeft = Offset((rect.left - offsetX).toFloat(), rect.top.toFloat()),
+                size = Size(rect.width().toFloat(), rect.height().toFloat()),
+            )
+        }
+        // TTS sentence highlight.
+        ttsRects.forEach { rect ->
+            drawRect(
+                color = TTS_HIGHLIGHT,
                 topLeft = Offset((rect.left - offsetX).toFloat(), rect.top.toFloat()),
                 size = Size(rect.width().toFloat(), rect.height().toFloat()),
             )
@@ -669,6 +754,7 @@ private const val EDGE_SHARE = 0.15f
 private const val MIN_BRIGHTNESS = 0.01f
 private const val TURN_MILLIS = 180
 private val SELECTION = Color(0x553D8BFD)
+private val TTS_HIGHLIGHT = Color(0x33FFD700)
 private val HANDLE = Color(0xFF3D8BFD)
 private val HANDLE_SIZE = 40.dp
 private val HANDLE_STEM = 6.dp

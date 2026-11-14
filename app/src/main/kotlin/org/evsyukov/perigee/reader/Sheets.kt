@@ -54,6 +54,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.testTag
@@ -66,6 +67,7 @@ import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
@@ -273,6 +275,27 @@ internal fun SettingsSheet(
                     onChange { it.copy(fullSizeFootnotes = on) }
                 }
 
+                // ─── TTS ───────────────────────────────────
+                Text(
+                    stringResource(R.string.setting_tts),
+                    Modifier.padding(top = 16.dp).testTag("tts-section"),
+                    style = MaterialTheme.typography.titleSmall,
+                )
+                TtsUrlField(
+                    label = R.string.setting_tts_synth,
+                    value = prefs.ttsSynthUrl,
+                    placeholder = stringResource(R.string.tts_url_placeholder),
+                    hint = stringResource(R.string.tts_synth_hint),
+                    tag = "tts-synth",
+                ) { url -> onChange { it.copy(ttsSynthUrl = url) } }
+                TtsUrlField(
+                    label = R.string.setting_tts_voices,
+                    value = prefs.ttsVoicesUrl,
+                    placeholder = stringResource(R.string.tts_url_placeholder),
+                    hint = stringResource(R.string.tts_voices_hint),
+                    tag = "tts-voices",
+                ) { url -> onChange { it.copy(ttsVoicesUrl = url) } }
+
                 Choice(
                     R.string.setting_tap_scheme, prefs.tapScheme, TapScheme.entries,
                     label = {
@@ -456,6 +479,43 @@ private fun Toggle(label: Int, checked: Boolean, tag: String? = null, onChange: 
 
 /** A test tag, for the rows that have one. */
 private fun Modifier.tagged(tag: String?): Modifier = if (tag == null) this else testTag(tag)
+
+/** TTS server URL field: an editable text box with a label and a hint below.
+ *  Keeps a local copy of the text while the user edits, and commits to the
+ *  backing store only on focus loss — this avoids cursor jumps that happen
+ *  when every keystroke writes to DataStore asynchronously. */
+@Composable
+private fun TtsUrlField(
+    label: Int,
+    value: String,
+    placeholder: String,
+    hint: String,
+    tag: String,
+    onChange: (String) -> Unit,
+) {
+    var text by remember(value) { mutableStateOf(value) }
+    Column(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+        SettingLabel(label)
+        OutlinedTextField(
+            value = text,
+            onValueChange = { text = it },
+            modifier = Modifier
+                .fillMaxWidth()
+                .testTag(tag)
+                .onFocusChanged { state ->
+                    if (!state.isFocused && text != value) onChange(text)
+                },
+            placeholder = { Text(placeholder, style = MaterialTheme.typography.bodySmall) },
+            singleLine = true,
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
+        )
+        Text(
+            hint,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
 
 // ---------------------------------------------------------------- contents
 
