@@ -23,6 +23,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.gestures.detectDragGestures
@@ -87,6 +88,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
@@ -158,9 +160,9 @@ fun ReaderScreen(file: File, onClose: () -> Unit, viewModel: ReaderViewModel = v
     val density = LocalDensity.current
     val scope = rememberCoroutineScope()
     var panel by rememberSaveable { mutableStateOf(Panel.None) }
-    var ttsVoiceDialog by remember { mutableStateOf(false) }
+    var ttsVoiceDialog by rememberSaveable { mutableStateOf(false) }
     /** When true, selecting a voice also starts playback (first launch). When false, only changes voice. */
-    var ttsVoiceDialogStartsTts by remember { mutableStateOf(true) }
+    var ttsVoiceDialogStartsTts by rememberSaveable { mutableStateOf(true) }
 
     LaunchedEffect(viewModel, file) { viewModel.open(file) }
     val close = {
@@ -592,7 +594,7 @@ private fun Marks(state: ReaderState, offsetX: Int, ink: Color) {
         // TTS sentence highlight.
         ttsRects.forEach { rect ->
             drawRect(
-                color = TTS_HIGHLIGHT,
+                color = ink.copy(alpha = 0.25f),
                 topLeft = Offset((rect.left - offsetX).toFloat(), rect.top.toFloat()),
                 size = Size(rect.width().toFloat(), rect.height().toFloat()),
             )
@@ -754,7 +756,6 @@ private const val EDGE_SHARE = 0.15f
 private const val MIN_BRIGHTNESS = 0.01f
 private const val TURN_MILLIS = 180
 private val SELECTION = Color(0x553D8BFD)
-private val TTS_HIGHLIGHT = Color(0x33FFD700)
 private val HANDLE = Color(0xFF3D8BFD)
 private val HANDLE_SIZE = 40.dp
 private val HANDLE_STEM = 6.dp

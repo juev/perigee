@@ -295,6 +295,13 @@ internal fun SettingsSheet(
                     hint = stringResource(R.string.tts_voices_hint),
                     tag = "tts-voices",
                 ) { url -> onChange { it.copy(ttsVoicesUrl = url) } }
+                TtsUrlField(
+                    label = R.string.setting_tts_header,
+                    value = prefs.ttsCustomHeader,
+                    placeholder = stringResource(R.string.tts_header_placeholder),
+                    hint = stringResource(R.string.tts_header_hint),
+                    tag = "tts-header",
+                ) { header -> onChange { it.copy(ttsCustomHeader = header) } }
 
                 Choice(
                     R.string.setting_tap_scheme, prefs.tapScheme, TapScheme.entries,

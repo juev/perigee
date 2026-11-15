@@ -486,12 +486,15 @@
     <string name="server_collection_search_hint">Find in this collection</string>
     <string name="server_account_sync">Account and syncing</string>
 
-    <string name="setting_tts">TTS</string>
-    <string name="setting_tts_synth">Synthesize (POST)</string>
-    <string name="setting_tts_voices">Voices (GET)</string>
+    <string name="setting_tts">External TTS</string>
+    <string name="setting_tts_synth">Server URL (POST)</string>
+    <string name="setting_tts_voices">Voices URL (GET)</string>
     <string name="tts_url_placeholder">https://example.com</string>
     <string name="tts_synth_hint">POST /v1/audio/speech — синтез речи. Пример: https://example.com/v1/audio/speech</string>
     <string name="tts_voices_hint">GET /v1/audio/voices — список голосов. Пример: https://example.com/v1/audio/voices</string>
+    <string name="setting_tts_header">Custom Header</string>
+    <string name="tts_header_placeholder">Authorization: Bearer xxx</string>
+    <string name="tts_header_hint">Header: Value — отправляется с каждым запросом синтеза</string>
 
     <string name="action_tts">TTS</string>
     <string name="action_skip">Skip</string>

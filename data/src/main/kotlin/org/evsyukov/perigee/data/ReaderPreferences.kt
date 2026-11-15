@@ -114,6 +114,8 @@ data class ReaderPrefs(
     val ttsSynthUrl: String = "",
     /** TTS: URL for voice list (GET voices). Empty = native Android TTS. */
     val ttsVoicesUrl: String = "",
+    /** TTS: custom HTTP header in "Name: Value" format (e.g. "Authorization: Bearer xxx"). */
+    val ttsCustomHeader: String = "",
 ) {
     /** Choosing a scheme by hand; it becomes the one the day/night switch goes to on its side, light or dark. */
     fun withScheme(scheme: ColorScheme): ReaderPrefs =
@@ -214,6 +216,7 @@ class ReaderPreferences private constructor(private val store: DataStore<Prefere
             userCss = p[USER_CSS] ?: d.userCss,
             ttsSynthUrl = p[TTS_SYNTH_URL] ?: d.ttsSynthUrl,
             ttsVoicesUrl = p[TTS_VOICES_URL] ?: d.ttsVoicesUrl,
+            ttsCustomHeader = p[TTS_CUSTOM_HEADER] ?: d.ttsCustomHeader,
         )
     }
 
@@ -257,6 +260,7 @@ class ReaderPreferences private constructor(private val store: DataStore<Prefere
         p[USER_CSS] = v.userCss
         p[TTS_SYNTH_URL] = v.ttsSynthUrl
         p[TTS_VOICES_URL] = v.ttsVoicesUrl
+        p[TTS_CUSTOM_HEADER] = v.ttsCustomHeader
     }
 
     /** A value written by a newer version that this one does not know reads as the default. */
@@ -306,6 +310,7 @@ class ReaderPreferences private constructor(private val store: DataStore<Prefere
         private val USER_CSS = stringPreferencesKey("user_css")
         private val TTS_SYNTH_URL = stringPreferencesKey("tts_synth_url")
         private val TTS_VOICES_URL = stringPreferencesKey("tts_voices_url")
+        private val TTS_CUSTOM_HEADER = stringPreferencesKey("tts_custom_header")
 
         /** How many versions of the owner's CSS before the current one are kept. */
         const val USER_CSS_KEPT = 3

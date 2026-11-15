@@ -88,6 +88,12 @@ data class TtsState(
     val speed: Float = 1.0f,
     val voices: List<TtsVoice> = emptyList(),
     val selectedVoice: String = "",
+    /** Monotonic generation counter: incremented on stop() to guard late callbacks. */
+    val generation: Int = 0,
+    /** Set when TTS is unavailable (init failed, no server, no voices). */
+    val unavailable: Boolean = false,
+    /** A user-visible error message, or null when nothing went wrong. */
+    val error: String? = null,
 )
 
 /** What a touch on the page turned out to be, for the screen to act on. */
@@ -388,6 +394,7 @@ class ReaderViewModel internal constructor(
                 turnsWaiting--
             }
             show(page, turned = screens.coerceIn(-1, 1))
+            ttsController?.onPageChanged()
         }
     }
 
@@ -397,6 +404,7 @@ class ReaderViewModel internal constructor(
         val page = open.goTo(xpointer) ?: return@act
         if (from != null && page.index != _state.value.page?.index) jumpedFrom(from)
         show(page)
+        ttsController?.onPageChanged()
     }
 
     /** Jumps to a share of the book, 0..1, as from the progress line. */
@@ -406,6 +414,7 @@ class ReaderViewModel internal constructor(
         if (target == shown.index) return@act
         jumpedFrom(shown.xpointer)
         show(open.goToPage(target))
+        ttsController?.onPageChanged()
     }
 
     /** Returns to where the last jump was made from. */
@@ -413,6 +422,7 @@ class ReaderViewModel internal constructor(
         val from = history.removeLastOrNull() ?: return@act
         saveHistory()
         show(open.goTo(from) ?: return@act)
+        ttsController?.onPageChanged()
     }
 
     /** Remembers a place a jump is made from, here and in the library, for Back after a restart too. */
