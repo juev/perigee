@@ -418,6 +418,26 @@ class SyncRoundTest {
     }
 
     @Test
+    fun aSuccessfulUploadWithAnUnmatchedBookKeepsItsEventsForTheNextRound() = runBlocking<Unit> {
+        val missing = shared("missing-from-page-stats.fb2")
+        library.addPageRead(missing.id, 1, 10, clock / 1000 - 240, 30)
+        library.addPageRead(missing.id, 2, 10, clock / 1000 - 120, 45)
+        server.files.remove(missing.id)
+
+        val first = orbit.sync()
+        assertEquals(1, server.asked("/koreader/plugin/page-stats").size)
+        assertTrue(server.pagesRead.isEmpty())
+        assertEquals("unmatched events are still in the outbox after a successful HTTP reply", listOf(1, 2),
+            library.pageReadsToSend(10).filter { it.bookId == missing.id }.map { it.page })
+        assertEquals(0, first.pagesSent)
+
+        server.files[missing.id] = 7L to 70L
+        assertEquals(2, orbit.sync().pagesSent)
+        assertEquals(listOf(1, 2), server.pagesRead.map { it.getInt("page") })
+        assertTrue(library.pageReadsToSend(10).isEmpty())
+    }
+
+    @Test
     fun pagesReadLongAgoInBooksTheServerNeverHadAreDropped() = runBlocking<Unit> {
         shared("anchor.fb2")
         val file = File(context.cacheDir, "local-only.fb2").apply { writeText("never on the server ${System.nanoTime()}") }
