@@ -58,4 +58,19 @@ class ReadingOutboxTest {
         assertEquals(times, server.pagesRead.map { it.getLong("startTime") })
         assertTrue(library.pageReadsToSend(10).isEmpty())
     }
+
+    @Test
+    fun anOldOfflineReadReachesTheServerWhenTheBookIsMatchedLater() = runBlocking<Unit> {
+        val file = File(context.cacheDir, "old-read.fb2").apply { writeText("A book read while offline") }
+        val book = library.open(file, "Old read", "")
+        val at = clock / 1000 - 100L * 86_400
+        library.addPageRead(book.id, 4, 10, at, 30)
+        assertEquals(0, orbit.sync().pagesSent)
+
+        server.files[book.id] = 7L to 70L
+        library.onServer(book.id, 7, 70)
+        assertEquals("pending activity must not expire", 1, orbit.sync().pagesSent)
+        assertEquals(at, server.pagesRead.single().getLong("startTime"))
+        assertEquals(0, orbit.sync().pagesSent)
+    }
 }

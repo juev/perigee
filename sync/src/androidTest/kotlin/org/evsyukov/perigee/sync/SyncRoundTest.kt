@@ -440,7 +440,7 @@ class SyncRoundTest {
     }
 
     @Test
-    fun pagesReadLongAgoInBooksTheServerNeverHadAreDropped() = runBlocking<Unit> {
+    fun pagesReadLongAgoInBooksTheServerDidNotHaveAreKept() = runBlocking<Unit> {
         shared("anchor.fb2")
         val file = File(context.cacheDir, "local-only.fb2").apply { writeText("never on the server ${System.nanoTime()}") }
         val local = library.open(file, "local", "")
@@ -449,11 +449,11 @@ class SyncRoundTest {
 
         assertEquals(0, orbit.sync().pagesSent)
 
-        // The book reaches the server at last: what was read lately is told, what was read a season ago is gone.
+        // The book reaches the server at last: both events keep their original dates.
         server.files[local.id] = 8L to 80L
         library.onServer(local.id, 8, 80)
-        assertEquals(1, orbit.sync().pagesSent)
-        assertEquals(2, server.pagesRead.single().getInt("page"))
+        assertEquals(2, orbit.sync().pagesSent)
+        assertEquals(listOf(1, 2), server.pagesRead.map { it.getInt("page") })
     }
 
     @Test

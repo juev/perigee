@@ -1223,7 +1223,6 @@ class BookOrbit(
     /** The pages read go up in parts the server takes; it tells apart what it was sent twice. */
     private suspend fun syncPagesRead(): SyncReport {
         val account = accounts.current() ?: throw SignedOutException()
-        library.forgetPageReadsBefore(now() / 1000 - PAGE_READS_KEPT_SECONDS)
         var sent = 0
         var cursor = 0L
         while (true) {
@@ -1489,7 +1488,7 @@ class BookOrbit(
         private const val PAGE_READS_BATCH = 500
         private const val PAGE_READS_BOOKS = 50
         private const val MAX_PAGE_SECONDS = 86_400
-        private const val PAGE_READS_KEPT_SECONDS = 90L * 24 * 3600
+
 
         /** Two places this close, as shares of the book, are the same place. */
         private const val SAME_PLACE = 0.001f
