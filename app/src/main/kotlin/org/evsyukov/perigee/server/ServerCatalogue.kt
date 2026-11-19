@@ -68,7 +68,7 @@ internal fun Catalogue(padding: PaddingValues, state: ServerState, model: Server
         PullToRefreshBox(
             isRefreshing = state.syncing,
             onRefresh = model::syncNow,
-            modifier = Modifier.fillMaxSize().padding(inner),
+            modifier = Modifier.fillMaxSize(),
         ) {
         LazyColumn(Modifier.fillMaxSize().testTag("server-books"), state = list, contentPadding = inner) {
                 item("filters") {

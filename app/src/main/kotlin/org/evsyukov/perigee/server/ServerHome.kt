@@ -47,7 +47,7 @@ internal fun Home(padding: PaddingValues, state: ServerState, model: ServerViewM
         PullToRefreshBox(
             isRefreshing = state.syncing,
             onRefresh = model::syncNow,
-            modifier = Modifier.fillMaxSize().padding(inner),
+            modifier = Modifier.fillMaxSize(),
         ) {
         LazyColumn(Modifier.fillMaxSize().testTag("server-home"), state = list, contentPadding = inner) {
                 val channel = state.channel

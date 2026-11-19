@@ -87,7 +87,7 @@ private fun CollectionList(padding: PaddingValues, state: ServerState, model: Se
         PullToRefreshBox(
             isRefreshing = state.syncing,
             onRefresh = model::syncNow,
-            modifier = Modifier.fillMaxSize().padding(inner),
+            modifier = Modifier.fillMaxSize(),
         ) {
             LazyColumn(Modifier.fillMaxSize().testTag("server-collections"), state = list, contentPadding = inner) {
                 item("new") {
@@ -218,7 +218,7 @@ private fun CollectionBooks(
         PullToRefreshBox(
             isRefreshing = state.syncing,
             onRefresh = model::syncNow,
-            modifier = Modifier.fillMaxSize().padding(inner),
+            modifier = Modifier.fillMaxSize(),
         ) {
             LazyColumn(Modifier.fillMaxSize().testTag("server-collection-books"), state = list, contentPadding = inner) {
                 item("about") {
