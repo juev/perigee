@@ -18,10 +18,17 @@ import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Snackbar
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
@@ -65,38 +72,61 @@ import org.evsyukov.perigee.ui.ShelfIcon
  * achievements it awards, in its own words. Every block is asked of the server and drawn as it answered;
  * one the server does not have is left out, and the rest of the page stays.
  */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun Profile(padding: PaddingValues, state: ServerState, model: ServerViewModel, list: LazyListState) {
     val page = state.profile
     Centred(padding) { inner ->
-        LazyColumn(Modifier.fillMaxSize().testTag("server-profile"), state = list, contentPadding = inner) {
-            page.failure?.let { failure -> item("failure") { Failure(failure, model::retryProfile) } }
-            val profile = page.profile
-            if (profile != null) item("reader") { Reader(profile, model) }
-            val reading = page.reading
-            val summary = reading?.summary
-            if (summary != null) item("numbers") { Numbers(summary) }
-            if (reading?.goal != null || reading?.streak != null) {
-                item("year") { GoalAndStreak(reading?.goal, reading?.streak) }
-            }
-            if (reading != null && reading.daysKnown) item("days") { ReadingDays(reading.days) }
-            val achievements = page.achievements
-            when {
-                achievements != null && achievements.categories.isNotEmpty() -> {
-                    item("achievements") { AchievementsSummary(achievements) }
-                    for (category in achievements.categories) {
-                        item("category-${category.key}") { CategoryHeader(category) }
-                        items(category.achievements, key = { "${category.key}/${it.key}" }) { achievement ->
-                            AchievementRow(achievement)
+        PullToRefreshBox(
+            isRefreshing = page.loading,
+            onRefresh = model::refreshProfile,
+            modifier = Modifier.fillMaxSize().padding(inner),
+        ) {
+            LazyColumn(Modifier.fillMaxSize().testTag("server-profile"), state = list) {
+                page.failure?.takeIf { !page.loaded || it != ServerFailure.Unreachable }?.let { failure ->
+                    item("failure") { Failure(failure, model::refreshProfile) }
+                }
+                val profile = page.profile
+                if (profile != null) item("reader") { Reader(profile, model) }
+                val reading = page.reading
+                val summary = reading?.summary
+                if (summary != null) item("numbers") { Numbers(summary) }
+                if (reading?.goal != null || reading?.streak != null) {
+                    item("year") { GoalAndStreak(reading?.goal, reading?.streak) }
+                }
+                if (reading != null && reading.daysKnown) item("days") { ReadingDays(reading.days) }
+                val achievements = page.achievements
+                when {
+                    achievements != null && achievements.categories.isNotEmpty() -> {
+                        item("achievements") { AchievementsSummary(achievements) }
+                        for (category in achievements.categories) {
+                            item("category-${category.key}") { CategoryHeader(category) }
+                            items(category.achievements, key = { "${category.key}/${it.key}" }) { achievement ->
+                                AchievementRow(achievement)
+                            }
                         }
                     }
-                }
-                // A server that answered and has nothing to award says so, rather than showing a heading alone.
-                page.loaded && page.failure == null -> item("no-achievements") {
-                    EmptyState(ShelfIcon, stringResource(R.string.server_profile_no_achievements))
+                    // A server that answered and has nothing to award says so, rather than showing a heading alone.
+                    page.loaded -> item("no-achievements") {
+                        EmptyState(ShelfIcon, stringResource(R.string.server_profile_no_achievements))
+                    }
                 }
             }
         }
+        ProfileRefreshBanner(page.failure, Modifier.fillMaxWidth().padding(inner).padding(horizontal = 8.dp, vertical = 4.dp))
+    }
+}
+
+/** The failure notice sits over the top of the list, independently of its scroll position. */
+@Composable
+private fun ProfileRefreshBanner(failure: ServerFailure?, modifier: Modifier) {
+    val host = remember { SnackbarHostState() }
+    val message = stringResource(R.string.server_profile_refresh_failed)
+    LaunchedEffect(failure, message) {
+        if (failure == ServerFailure.Unreachable) host.showSnackbar(message, duration = SnackbarDuration.Short)
+    }
+    SnackbarHost(host, modifier) { data ->
+        Snackbar(data, Modifier.testTag("server-profile-refresh-failed"))
     }
 }
 

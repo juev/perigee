@@ -446,12 +446,11 @@ class ServerViewModel(
 
     /** Shows another part of the screen. What each part was looked up by, and how far it was read, stays. */
     fun show(section: Section) {
+        val previous = _state.value.section
         _state.update { it.copy(section = section) }
         val state = _state.value
         if (section == Section.Collections && !state.collections.loaded && !state.collections.loading) loadCollections()
-        // The reader's own page is asked of the server when it is first opened, and not again: it is the server's
-        // own record, and coming back to it is not a reason to ask again.
-        if (section == Section.Profile && !state.profile.loaded && !state.profile.loading) loadProfile()
+        if (section == Section.Profile && previous != section) refreshProfile()
     }
 
     /** Looks the server's books up by a phrase; an empty one shows them all. The catalogue's filters stay. */
@@ -509,11 +508,12 @@ class ServerViewModel(
     }
 
     /**
-     * The reader's own page, asked when it is first opened and when it is tried again: who they are on the
-     * server, what it awards them and what it has counted of their reading. Each answer is the server's own; a
-     * page it does not have leaves its block empty rather than failing the rest.
+     * Refreshes the reader's own page without discarding its last successful load. A route the server
+     * does not have leaves its block empty rather than failing the rest.
      */
-    private fun loadProfile() {
+    fun refreshProfile() {
+        val state = _state.value
+        if (state.section != Section.Profile || state.account == null || state.sessionOver || state.profile.loading) return
         val at = epoch
         _state.update { it.copy(profile = it.profile.copy(loading = true, failure = null)) }
         tracked {
@@ -538,9 +538,6 @@ class ServerViewModel(
             }
         }
     }
-
-    /** Asks the reader's page again, as after the server could not be reached. */
-    fun retryProfile() = loadProfile()
 
     /** The reader's picture, fetched once while the screen lives; null when they have none. */
     suspend fun picture(profile: RemoteProfile): ImageBitmap? {

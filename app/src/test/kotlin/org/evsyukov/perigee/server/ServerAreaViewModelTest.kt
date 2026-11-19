@@ -1022,7 +1022,7 @@ class ServerAreaViewModelTest {
         assertNull("nothing of it is shown as the server's word", failed.profile.profile)
 
         server.summaryAnswer = null
-        model.retryProfile()
+        model.refreshProfile()
         val again = until("the page came") { it.profile.loaded && it.profile.failure == null }
         assertEquals(12, again.profile.reading?.summary?.tracked)
     }

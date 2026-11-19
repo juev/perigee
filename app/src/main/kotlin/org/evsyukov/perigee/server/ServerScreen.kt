@@ -116,6 +116,9 @@ fun ServerScreen(onOpen: (File) -> Unit, onClose: () -> Unit, model: ServerViewM
     val signedIn = account != null && !state.sessionOver
     val inCollection = state.section == Section.Collections && state.collection != null
 
+    // The activity keeps the selected tab when the server screen is reopened from the library.
+    LaunchedEffect(model) { model.refreshProfile() }
+
     // Each part keeps its place while another is shown, and while a book's page lies over it.
     val homeList = rememberLazyListState()
     val catalogueList = rememberLazyListState()
@@ -202,7 +205,7 @@ fun ServerScreen(onOpen: (File) -> Unit, onClose: () -> Unit, model: ServerViewM
                     Section.Catalogue -> state.loading
                     Section.Collections -> state.collection?.loading ?: state.collections.loading
                     Section.Home -> state.loading && state.channel == null
-                    Section.Profile -> state.profile.loading
+                    Section.Profile -> false // The pull-to-refresh indicator also covers automatic refreshes.
                 }
                 if (signedIn && busy) LinearProgressIndicator(Modifier.fillMaxWidth().testTag("server-loading"))
             }

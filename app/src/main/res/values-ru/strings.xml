@@ -403,6 +403,7 @@
     <string name="server_home_empty_text">Здесь появятся книги, которые вы читаете, хотите прочитать и добавляете на сервер. А пока загляните в каталог.</string>
     <string name="server_home_unsupported">У этой версии сервера нет полок главной страницы. Его книги — в каталоге и в коллекциях.</string>
     <string name="server_profile_picture">Фотография профиля</string>
+    <string name="server_profile_refresh_failed">Не удалось обновить профиль</string>
     <string name="server_profile_tracked">Отслеживается</string>
     <string name="server_profile_in_progress">Читается</string>
     <string name="server_profile_completed">Прочитано</string>
