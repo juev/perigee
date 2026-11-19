@@ -128,7 +128,7 @@ Ordinary browsing, collections and the reader's own marks of a book go through t
 
 ### The reader's own page
 
-The fourth part under the top bar, **Profile**: who the reader is on the server, what it has counted of their reading, and the achievements it awards. It refreshes each time the reader opens Profile, including when returning from another tab. Pull down from the top of the list to refresh without leaving the page. Only one refresh runs at a time; the last successful data stays visible while the refresh runs. If the server cannot be reached, a temporary banner at the top of Profile says the refresh failed, even if the list is scrolled. The previous data stays visible, and a failed first load still offers Retry. All the data comes through the reader's server session.
+The fourth part under the top bar, **Profile**: who the reader is on the server, what it has counted of their reading, and the achievements it awards. It refreshes each time the reader opens Profile, including when returning from another tab. Pull down from the top of the list to sync reading and refresh without leaving the page. Only one refresh runs at a time; the last successful data stays visible while the refresh runs. If the server cannot be reached, a temporary banner at the top of Profile says the refresh failed, even if the list is scrolled. The previous data stays visible, and a failed first load still offers Retry. All the data comes through the reader's server session.
 
 - `GET auth/me`: the name the server shows (`name`, else `username`), the user name, and `avatarUrl`, which says whether it has a picture to ask for. The picture is `GET users/:id/avatar`, fetched once, when the server names it by a path of its own; one it names by an address elsewhere, as a provider's, is not fetched, and a circle of the reader's initials stands in.
 - `GET user-statistics/summary`: books tracked, in progress and finished, and the mean progress, drawn as three numbers and a line.
@@ -137,6 +137,12 @@ The fourth part under the top bar, **Profile**: who the reader is on the server,
 - `GET achievements`: the server's catalogue, grouped in its own categories (`categories[].label`, `earnedCount`, `totalCount`), each achievement with `name`, `description`, `rarity`, `threshold`, `earned`, `awardedAt` and `currentProgress`. What is earned shows the day it was awarded, what is not shows `currentProgress` of `threshold`, and a category says how many of it the reader has. The names and descriptions are asked for in the language the app is in (`Accept-Language` from the device's locale); the server falls back to English by itself.
 - A part the server has nothing for — no achievements at all — says so; a request that fails says why, with a retry, and nothing else of the page is lost.
 - The routes this page uses are open to the reader's session on every version the app is made for, 3.3.0 and later. The server's older, per-widget `GET dashboard/widgets/<type>` routes and the `user-statistics/activity-*` ones are not used: from 3.7.0 they are refused to anything but the official apps, which sign an App Attest assertion this app cannot make, and the batch and `user-statistics` routes carry the same data without it.
+
+### Pulling to sync, and being told when it stops
+
+Each part of the server's screen — the home page, the catalogue, the collections and an open collection, the reader's page and a book's page — is pulled down from its top to sync: what the reader did in books goes up first, then the part in sight is asked for again with the phrase and filters it has. A pull and a round of syncing are one at a time; what is shown stays until the answer comes, and a pull that failed says so in a short notice over the screen without emptying what is there. A reader signed in nowhere has nothing to pull: the forms are what the screen shows.
+
+While the app is open it says once, over whatever screen is shown, that reading is not reaching the server — no network, a server that cannot be reached, or something only the reader can settle (a sign-in, the device password, a server version). It says so when it stops working rather than at every attempt, and says nothing for a reader signed in nowhere.
 
 ### A book's page
 
@@ -230,7 +236,9 @@ The server keeps a review of a book for each reader, up to 10 000 characters, wi
 
 ### Pages read
 
-The reading screen times each page: from when it is shown to when another is, the book is closed, or the app is put away. Less than 5 seconds is not a page read, and no page counts for more than 120 — the bounds KOReader counts by. The times are kept in `page_reads` and go up through `POST koreader/plugin/page-stats`, at most 500 to a request; the server makes reading sessions and statistics of them, and tells apart what it was sent twice. Pages read in a book the server has not are kept for 90 days, in case the book gets there.
+The reading screen times each page: from when it is shown to when another is, the book is closed, or the app is put away. Less than 5 seconds is not a page read, and no page counts for more than 120 — the bounds KOReader counts by. The times are kept in `page_reads`, which is the app's own history of reading: a row is marked as taken by the server rather than removed, so the reading a reader did is theirs whether or not a server has it, and it is kept for as long as the book is in the library.
+
+What still waits goes up through `POST koreader/plugin/page-stats`, at most 500 events and 50 books to a request, oldest first, and the queue is walked by row so a book the server does not have does not hold back the books after it. A row is marked as taken only when the server acknowledged it: a hash in `unmatched`, or one with no well-formed result, stays and is sent again — the server tells apart what it was sent twice by the book's file, the device and the page's own time, so nothing is counted twice. Nothing expires: reading done offline, or in a book the server came to have weeks later, goes up when it can.
 
 ### Quotes and bookmarks
 

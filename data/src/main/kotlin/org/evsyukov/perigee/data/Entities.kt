@@ -312,11 +312,11 @@ data class RemotePosition(
     val at: Long,
 )
 
-/** A page the reader spent time on, for the server's statistics; kept until the server has it. */
+/** A page the reader spent time on; delivery to bookOrbit does not remove local history. */
 @Entity(
     tableName = "page_reads",
     foreignKeys = [ForeignKey(Book::class, ["id"], ["bookId"], onDelete = ForeignKey.CASCADE)],
-    indices = [Index("bookId")],
+    indices = [Index("bookId"), Index("startedAt")],
 )
 data class PageRead(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
@@ -327,4 +327,5 @@ data class PageRead(
     /** Seconds since 1970. */
     val startedAt: Long,
     val seconds: Int,
+    @ColumnInfo(defaultValue = "0") val sent: Boolean = false,
 )

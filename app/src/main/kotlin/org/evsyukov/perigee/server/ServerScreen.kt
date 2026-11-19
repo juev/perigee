@@ -48,6 +48,10 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.PrimaryTabRow
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.Snackbar
+import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Tab
@@ -149,7 +153,18 @@ fun ServerScreen(onOpen: (File) -> Unit, onClose: () -> Unit, model: ServerViewM
         }
     }
 
+    val snacker = remember { SnackbarHostState() }
+    val syncFailed = stringResource(R.string.server_sync_failed)
+    // A pull that did not go through says so once, over whatever part is shown.
+    LaunchedEffect(state.syncFailure, syncFailed) {
+        if (state.syncFailure != null) {
+            snacker.showSnackbar(syncFailed, duration = SnackbarDuration.Short)
+            model.syncFailureShown()
+        }
+    }
+
     Scaffold(
+        snackbarHost = { SnackbarHost(snacker) { data -> Snackbar(data, Modifier.testTag("server-sync-failed")) } },
         topBar = {
             Column {
                 if (searching) {
@@ -305,6 +320,7 @@ internal fun failureText(failure: ServerFailure): String = stringResource(
         ServerFailure.NotFound -> R.string.server_not_found
         ServerFailure.NameTaken -> R.string.server_name_taken
         ServerFailure.NotSaved -> R.string.server_not_saved
+        ServerFailure.NeedsReader -> R.string.server_sync_needs_reader
     },
 )
 

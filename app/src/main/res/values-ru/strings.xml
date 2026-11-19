@@ -403,6 +403,11 @@
     <string name="server_home_empty_text">Здесь появятся книги, которые вы читаете, хотите прочитать и добавляете на сервер. А пока загляните в каталог.</string>
     <string name="server_home_unsupported">У этой версии сервера нет полок главной страницы. Его книги — в каталоге и в коллекциях.</string>
     <string name="server_profile_picture">Фотография профиля</string>
+    <string name="sync_trouble_offline">Нет сети: чтение не доходит до сервера</string>
+    <string name="sync_trouble_unreachable">Сервер недоступен: чтение не синхронизируется</string>
+    <string name="sync_trouble_reader">Синхронизация ждёт вас: войдите или укажите пароль устройства</string>
+    <string name="server_sync_needs_reader">Синхронизация ждёт вас: войдите снова или укажите пароль устройства</string>
+    <string name="server_sync_failed">Не удалось синхронизировать чтение с сервером</string>
     <string name="server_profile_refresh_failed">Не удалось обновить профиль</string>
     <string name="server_profile_tracked">Отслеживается</string>
     <string name="server_profile_in_progress">Читается</string>

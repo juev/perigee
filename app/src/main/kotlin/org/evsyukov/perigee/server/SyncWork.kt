@@ -41,7 +41,7 @@ internal enum class SyncOutcome {
  */
 internal suspend fun syncRound(orbit: BookOrbit, accounts: Accounts): SyncOutcome {
     if (accounts.current() == null) return SyncOutcome.Done
-    return try {
+    val outcome = try {
         orbit.sync()
         accounts.roundDone()
         SyncOutcome.Done
@@ -55,6 +55,13 @@ internal suspend fun syncRound(orbit: BookOrbit, accounts: Accounts): SyncOutcom
         accounts.roundUnreachable()
         SyncOutcome.Later
     }
+    // Once per outage, for the app to say while the reader is in it; a round that goes through clears it.
+    when (outcome) {
+        SyncOutcome.Done -> SyncHealth.healthy()
+        SyncOutcome.Later -> SyncHealth.failed(SyncTrouble.Unreachable)
+        SyncOutcome.Waiting -> SyncHealth.failed(SyncTrouble.NeedsReader)
+    }
+    return outcome
 }
 
 /** Runs a round of syncing when there is a network, and again later when the server could not be reached. */
@@ -104,10 +111,18 @@ internal object SyncWork {
      * other devices shows up here; the first one shortly. Runs until cancelled.
      */
     suspend fun whileInSight(context: Context): Nothing {
+        val signedIn = Accounts.get(context.applicationContext).current() != null
+        if (signedIn && !Network.online(context)) SyncHealth.failed(SyncTrouble.Offline)
         soon(context)
         while (true) {
             delay(IN_SIGHT_PERIOD)
-            again(context)
+            // No network: the round the system would keep would not even start, and the reader is told instead.
+            val asked = Accounts.get(context.applicationContext)
+            when {
+                asked.current() == null -> SyncHealth.forget()
+                !Network.online(context) -> SyncHealth.failed(SyncTrouble.Offline)
+                else -> again(context)
+            }
         }
     }
 

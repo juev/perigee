@@ -418,7 +418,29 @@ class SyncRoundTest {
     }
 
     @Test
-    fun pagesReadLongAgoInBooksTheServerNeverHadAreDropped() = runBlocking<Unit> {
+    fun aSuccessfulUploadWithAnUnmatchedBookKeepsItsEventsForTheNextRound() = runBlocking<Unit> {
+        val missing = shared("missing-from-page-stats.fb2")
+        // Keep unrelated annotation exchange from discovering the missing hash first.
+        library.setStatus(missing.id, ReadingStatus.ToRead)
+        library.addPageRead(missing.id, 1, 10, clock / 1000 - 240, 30)
+        library.addPageRead(missing.id, 2, 10, clock / 1000 - 120, 45)
+        server.files.remove(missing.id)
+
+        val first = orbit.sync()
+        assertEquals(1, server.asked("/koreader/plugin/page-stats").size)
+        assertTrue(server.pagesRead.isEmpty())
+        assertEquals("unmatched events are still in the outbox after a successful HTTP reply", listOf(1, 2),
+            library.pageReadsToSend(10).filter { it.bookId == missing.id }.map { it.page })
+        assertEquals(0, first.pagesSent)
+
+        server.files[missing.id] = 7L to 70L
+        assertEquals(2, orbit.sync().pagesSent)
+        assertEquals(listOf(1, 2), server.pagesRead.map { it.getInt("page") })
+        assertTrue(library.pageReadsToSend(10).isEmpty())
+    }
+
+    @Test
+    fun pagesReadLongAgoInBooksTheServerDidNotHaveAreKept() = runBlocking<Unit> {
         shared("anchor.fb2")
         val file = File(context.cacheDir, "local-only.fb2").apply { writeText("never on the server ${System.nanoTime()}") }
         val local = library.open(file, "local", "")
@@ -427,11 +449,11 @@ class SyncRoundTest {
 
         assertEquals(0, orbit.sync().pagesSent)
 
-        // The book reaches the server at last: what was read lately is told, what was read a season ago is gone.
+        // The book reaches the server at last: both events keep their original dates.
         server.files[local.id] = 8L to 80L
         library.onServer(local.id, 8, 80)
-        assertEquals(1, orbit.sync().pagesSent)
-        assertEquals(2, server.pagesRead.single().getInt("page"))
+        assertEquals(2, orbit.sync().pagesSent)
+        assertEquals(listOf(1, 2), server.pagesRead.map { it.getInt("page") })
     }
 
     @Test

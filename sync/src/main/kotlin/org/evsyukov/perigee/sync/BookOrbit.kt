@@ -1223,12 +1223,16 @@ class BookOrbit(
     /** The pages read go up in parts the server takes; it tells apart what it was sent twice. */
     private suspend fun syncPagesRead(): SyncReport {
         val account = accounts.current() ?: throw SignedOutException()
-        library.forgetPageReadsBefore(now() / 1000 - PAGE_READS_KEPT_SECONDS)
         var sent = 0
+        var cursor = 0L
         while (true) {
-            val reads = library.pageReadsToSend(PAGE_READS_BATCH)
-            val part = reads.groupBy { it.bookId }.entries.take(PAGE_READS_BOOKS)
-            if (part.isEmpty()) break
+            val hashes = HashSet<String>()
+            val reads = library.pageReadsToSend(PAGE_READS_BATCH, afterId = cursor).takeWhile {
+                it.bookId in hashes || hashes.size < PAGE_READS_BOOKS && hashes.add(it.bookId)
+            }
+            if (reads.isEmpty()) break
+            cursor = reads.last().id
+            val part = reads.groupBy { it.bookId }
             val books = JSONArray()
             for ((bookId, events) in part) {
                 val list = JSONArray()
@@ -1242,8 +1246,22 @@ class BookOrbit(
             }
             val body = JSONObject()
                 .put("deviceId", account.deviceId).put("deviceModel", DEVICE_MODEL).put("pluginVersion", clientVersion).put("books", books)
-            device("POST", "/koreader/plugin/page-stats", body)
-            val told = part.flatMap { it.value }
+            val answer = device("POST", "/koreader/plugin/page-stats", body).json()
+            val unmatched = answer?.optJSONArray("unmatched")
+            val skipped = (0 until (unmatched?.length() ?: 0)).map { unmatched?.optString(it)?.lowercase() }.toSet()
+            val results = HashMap<String, MutableList<JSONObject>>()
+            answer?.optJSONArray("results").each { result ->
+                results.getOrPut(result.optString("hash").lowercase()) { ArrayList() }.add(result)
+            }
+            val told = part.flatMap { (hash, events) ->
+                val entry = results[hash.lowercase()]?.singleOrNull()
+                val accepted = entry?.optInt("accepted", -1) ?: -1
+                val duplicates = entry?.optInt("duplicates", -1) ?: -1
+                val watermark = entry?.optLong("watermark", 0) ?: 0
+                if (hash.lowercase() !in skipped && accepted in 0..events.size && duplicates == events.size - accepted &&
+                    watermark == events.maxOf { it.startedAt.coerceAtLeast(1) }
+                ) events else emptyList()
+            }
             library.pageReadsSent(told)
             sent += told.size
         }
@@ -1470,7 +1488,7 @@ class BookOrbit(
         private const val PAGE_READS_BATCH = 500
         private const val PAGE_READS_BOOKS = 50
         private const val MAX_PAGE_SECONDS = 86_400
-        private const val PAGE_READS_KEPT_SECONDS = 90L * 24 * 3600
+
 
         /** Two places this close, as shares of the book, are the same place. */
         private const val SAME_PLACE = 0.001f

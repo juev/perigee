@@ -1078,6 +1078,7 @@ class FakeOrbit : AutoCloseable {
             if (path == "/koreader/plugin/page-stats") {
                 val books = body.getJSONArray("books")
                 val unmatched = JSONArray()
+                val results = JSONArray()
                 for (i in 0 until books.length()) {
                     val book = books.getJSONObject(i)
                     if (book.getString("hash") !in files) {
@@ -1085,12 +1086,18 @@ class FakeOrbit : AutoCloseable {
                         continue
                     }
                     val events = book.getJSONArray("events")
+                    var duplicates = 0
+                    var watermark = 0L
                     for (j in 0 until events.length()) {
                         val event = events.getJSONObject(j).put("hash", book.getString("hash"))
-                        if (pagesRead.any { it.toString() == event.toString() }) pagesTwice++ else pagesRead += event
+                        watermark = maxOf(watermark, event.getLong("startTime"))
+                        if (pagesRead.any { it.toString() == event.toString() }) duplicates++ else pagesRead += event
                     }
+                    pagesTwice += duplicates
+                    results.put(JSONObject().put("hash", book.getString("hash")).put("accepted", events.length() - duplicates)
+                        .put("duplicates", duplicates).put("watermark", watermark))
                 }
-                return Answer(201, JSONObject().put("results", JSONArray()).put("unmatched", unmatched).toString())
+                return Answer(201, JSONObject().put("results", results).put("unmatched", unmatched).toString())
             }
             val hashes = body.getJSONArray("hashes")
             val matches = JSONArray()
