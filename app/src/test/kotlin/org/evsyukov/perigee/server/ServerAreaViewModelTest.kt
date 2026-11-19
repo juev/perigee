@@ -17,6 +17,7 @@ import org.evsyukov.perigee.data.Covers
 import org.evsyukov.perigee.data.FileHash
 import org.evsyukov.perigee.data.Library
 import org.evsyukov.perigee.data.LibraryPreferences
+import org.evsyukov.perigee.data.ReadingStatus
 import org.evsyukov.perigee.data.LibraryPrefs
 import org.evsyukov.perigee.data.LocalBook
 import org.evsyukov.perigee.engine.BookDescription
@@ -935,6 +936,31 @@ class ServerAreaViewModelTest {
         assertEquals(1, server.pagesRead.size)
         assertEquals(1, pulled.books.size)
         assertTrue(library.pageReadsToSend(10).isEmpty())
+    }
+
+    @Test
+    fun aSecondPullWhileTheFirstIsUnderWayStartsNothing() = runBlocking<Unit> {
+        serverHas(book(7, "Seven", 70))
+        signIn()
+        until("the shelves came") { it.shelves.isNotEmpty() }
+        val local = library.open(bookFile, "Local copy", "")
+        server.files[local.id] = 7L to 70L
+        library.onServer(local.id, 7, 70)
+        library.setStatus(local.id, ReadingStatus.Reading)
+        // The round asks the catalogue as the first thing that can be held.
+        server.hold("/books/query")
+        // The round's own asking is the one page of two hundred; the screen's catalogue asks for fifty.
+        fun roundAsked() = server.asked("/books/query").count { it.body.contains("\"size\":200") }
+        try {
+            model.syncNow()
+            until("the round asked for the books' states") { roundAsked() == 1 }
+            model.syncNow()
+            pass(300)
+            assertEquals("a pull at a time", 1, roundAsked())
+        } finally {
+            server.release("/books/query")
+        }
+        until("the pull is over") { !it.syncing }
     }
 
     @Test

@@ -850,10 +850,7 @@ class ServerScreenTest {
         try {
             list.performTouchInput { swipeDown() }
             waitFor("the pull syncs reading and asks the server again") { server.asked("/auth/me").size == 2 }
-            assertTrue("the pull is under way", model.state.value.syncing)
             rule.onNodeWithText("Reader Name").assertIsDisplayed()
-            // A second pull while the first is under way does not start another.
-            list.performTouchInput { swipeDown() }
         } finally {
             server.release("/auth/me")
         }
