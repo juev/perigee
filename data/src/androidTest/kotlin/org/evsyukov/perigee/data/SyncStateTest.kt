@@ -189,8 +189,9 @@ class SyncStateTest {
         library.onServer(local, 8, 80)
         assertEquals(listOf(1, 4), library.pageReadsToSend(10).map { it.page }.sorted())
 
-        library.forgetPageReadsBefore(120)
-        assertEquals(listOf(4), library.pageReadsToSend(10).map { it.page })
+        val history = library.readingActivity(0, 200).first()
+        assertEquals(listOf(3, 1, 4), history.map { it.page })
+        assertEquals(listOf(true, false, false), history.map { it.sent })
     }
 
     /** A book of the library the server has as its book 7, with nothing waiting to be sent. */

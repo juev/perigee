@@ -3,6 +3,7 @@ package org.evsyukov.perigee.server
 import android.app.Application
 import androidx.test.core.app.ApplicationProvider
 import java.io.File
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.evsyukov.perigee.FakeAndroidKeyStore
 import org.evsyukov.perigee.data.Accounts
@@ -72,5 +73,22 @@ class ReadingOutboxTest {
         assertEquals("pending activity must not expire", 1, orbit.sync().pagesSent)
         assertEquals(at, server.pagesRead.single().getLong("startTime"))
         assertEquals(0, orbit.sync().pagesSent)
+    }
+
+    @Test
+    fun anAcknowledgedReadRemainsPartOfLocalHistory() = runBlocking<Unit> {
+        val file = File(context.cacheDir, "history.fb2").apply { writeText("A book with local activity") }
+        val book = library.open(file, "History", "")
+        server.files[book.id] = 7L to 70L
+        library.onServer(book.id, 7, 70)
+        val at = clock / 1000 - 3600
+        library.addPageRead(book.id, 7, 10, at, 45)
+        val before = library.readingActivity(at - 1, at + 1).first()
+        assertEquals(listOf(45), before.map { it.seconds })
+
+        assertEquals(1, orbit.sync().pagesSent)
+        assertTrue(library.pageReadsToSend(10).isEmpty())
+        val after = library.readingActivity(at - 1, at + 1).first()
+        assertEquals("upload must not subtract from local reading history", before.map { it.id to it.seconds }, after.map { it.id to it.seconds })
     }
 }

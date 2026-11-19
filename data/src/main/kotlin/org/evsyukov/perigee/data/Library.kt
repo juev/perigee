@@ -322,10 +322,12 @@ class Library internal constructor(internal val database: ReadingDatabase, priva
     /** Pages read in books the server has, oldest first, that it was not told of yet. */
     suspend fun pageReadsToSend(limit: Int, afterId: Long = 0): List<PageRead> = dao.pageReadsToSend(limit, afterId)
 
-    suspend fun pageReadsSent(reads: Collection<PageRead>) = dao.deletePageReads(reads.map { it.id })
+    /** Activity measured by this installation, independent of the current bookOrbit account. */
+    fun readingActivity(since: Long, until: Long): Flow<List<PageRead>> = dao.pageReads(since, until)
 
-    /** Pages read in books the server never came to have are not kept for ever. */
-    suspend fun forgetPageReadsBefore(startedAt: Long) = dao.deletePageReadsBefore(startedAt)
+    suspend fun pageReadsSent(reads: Collection<PageRead>) {
+        if (reads.isNotEmpty()) dao.markPageReadsSent(reads.map { it.id })
+    }
 
     fun bookmarks(bookId: String): Flow<List<Bookmark>> = dao.bookmarks(bookId)
 

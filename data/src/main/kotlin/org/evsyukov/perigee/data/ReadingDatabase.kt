@@ -59,7 +59,7 @@ internal interface ReadingDao {
     @Query("SELECT path FROM books WHERE path != ''")
     suspend fun copies(): List<String>
 
-    @Query("SELECT EXISTS(SELECT 1 FROM page_reads WHERE bookId = :bookId)")
+    @Query("SELECT EXISTS(SELECT 1 FROM page_reads WHERE bookId = :bookId AND sent = 0)")
     suspend fun hasPageReads(bookId: String): Boolean
 
     @Query("UPDATE OR IGNORE bookmarks SET bookId = :to WHERE bookId = :from")
@@ -180,14 +180,14 @@ internal interface ReadingDao {
     @Insert
     suspend fun insert(read: PageRead)
 
-    @Query("SELECT p.* FROM page_reads p JOIN books b ON b.id = p.bookId WHERE p.id > :afterId AND b.serverFileId IS NOT NULL ORDER BY p.id LIMIT :limit")
+    @Query("SELECT * FROM page_reads WHERE startedAt >= :since AND startedAt < :until ORDER BY startedAt, id")
+    fun pageReads(since: Long, until: Long): Flow<List<PageRead>>
+
+    @Query("SELECT p.* FROM page_reads p JOIN books b ON b.id = p.bookId WHERE p.id > :afterId AND p.sent = 0 AND b.serverFileId IS NOT NULL ORDER BY p.id LIMIT :limit")
     suspend fun pageReadsToSend(limit: Int, afterId: Long): List<PageRead>
 
-    @Query("DELETE FROM page_reads WHERE id IN (:ids)")
-    suspend fun deletePageReads(ids: List<Long>)
-
-    @Query("DELETE FROM page_reads WHERE startedAt < :before")
-    suspend fun deletePageReadsBefore(before: Long)
+    @Query("UPDATE page_reads SET sent = 1 WHERE id IN (:ids)")
+    suspend fun markPageReadsSent(ids: List<Long>)
 
     @Query("SELECT * FROM folders ORDER BY name COLLATE NOCASE")
     fun folders(): Flow<List<Folder>>
@@ -481,7 +481,7 @@ internal class RatingsTimedApart : AutoMigrationSpec {
         Book::class, Bookmark::class, Quote::class, Folder::class, BookCollection::class, CollectionBook::class,
         Catalog::class, Account::class, RemotePosition::class, PageRead::class,
     ],
-    version = 15,
+    version = 16,
     autoMigrations = [
         AutoMigration(from = 1, to = 2), AutoMigration(from = 2, to = 3), AutoMigration(from = 3, to = 4),
         AutoMigration(from = 4, to = 5), AutoMigration(from = 5, to = 6), AutoMigration(from = 6, to = 7),
@@ -489,6 +489,7 @@ internal class RatingsTimedApart : AutoMigrationSpec {
         AutoMigration(from = 9, to = 10), AutoMigration(from = 10, to = 11), AutoMigration(from = 11, to = 12),
         AutoMigration(from = 12, to = 13), AutoMigration(from = 13, to = 14),
         AutoMigration(from = 14, to = 15, spec = RatingsTimedApart::class),
+        AutoMigration(from = 15, to = 16),
     ],
 )
 internal abstract class ReadingDatabase : RoomDatabase() {

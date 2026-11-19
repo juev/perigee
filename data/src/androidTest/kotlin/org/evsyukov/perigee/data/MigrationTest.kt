@@ -157,6 +157,26 @@ class MigrationTest {
         }
     }
 
+    @Test
+    fun existingPageEventsSurviveTheLocalHistoryMigration() = runBlocking<Unit> {
+        helper.createDatabase(NAME, 15).use { db ->
+            db.execSQL("INSERT INTO books (id, path, title, author, xpointer, progress, openedAt, serverBookId, serverFileId) " +
+                "VALUES ('reading', '', 'Reading', '', '/body/p[2]', 0.25, 1000, 7, 70)")
+            db.execSQL("INSERT INTO page_reads (id, bookId, page, totalPages, startedAt, seconds) VALUES (17, 'reading', 2, 8, 100, 30)")
+        }
+        helper.runMigrationsAndValidate(NAME, 16, true).close()
+        val database = Room.databaseBuilder(instrumentation.targetContext, ReadingDatabase::class.java, NAME).build()
+        try {
+            val library = Library(database) { 1000 }
+            val read = library.readingActivity(0, 200).first().single()
+            assertEquals(PageRead(17, "reading", 2, 8, 100, 30), read)
+            assertEquals(listOf(read), library.pageReadsToSend(10))
+            assertEquals("/body/p[2]", library.book("reading")?.xpointer)
+        } finally {
+            database.close()
+        }
+    }
+
     private companion object {
         const val NAME = "migration-test.db"
     }
