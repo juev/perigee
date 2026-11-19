@@ -987,21 +987,28 @@ class ServerAreaViewModelTest {
     }
 
     @Test
-    fun theReadersPageIsAskedOnceUntilItIsTriedAgain() {
+    fun reopeningProfileFetchesFreshDataWithoutClearingThePreviousPage() {
         serverHas(book(7, "Listed Title", 70))
         signIn()
         model.show(Section.Profile)
         until("the page came") { it.profile.loaded }
-        model.show(Section.Catalogue)
-        model.show(Section.Profile)
-        repeat(5) { pass(20) }
-        assertEquals(1, server.asked("/auth/me").size)
-        assertEquals(1, server.asked("/achievements").size)
 
-        model.retryProfile()
-        val state = until("the page is asked again") { !it.profile.loading && it.profile.loaded }
-        assertEquals(2, server.asked("/auth/me").size)
-        assertEquals("the reader's page came again whole", 12, state.profile.reading?.summary?.tracked)
+        server.summaryAnswer = Answer(200, """{"trackedBooks":15,"startedBooks":10,"inProgressBooks":2,"completedBooks":8,"meanProgressPercent":42}""")
+        server.hold("/user-statistics/summary")
+        try {
+            model.show(Section.Catalogue)
+            model.show(Section.Profile)
+            assertTrue("reopening Profile starts a refresh", model.state.value.profile.loading)
+            val pending = until("the refreshed summary was requested") { server.asked("/user-statistics/summary").size == 2 }
+            assertEquals(12, pending.profile.reading?.summary?.tracked)
+            assertEquals(2, server.asked("/auth/me").size)
+            assertEquals(2, server.asked("/achievements").size)
+        } finally {
+            server.release("/user-statistics/summary")
+        }
+        val refreshed = until("the refreshed page came") { !it.profile.loading }
+        assertEquals(15, refreshed.profile.reading?.summary?.tracked)
+        assertNull(refreshed.profile.failure)
     }
 
     @Test

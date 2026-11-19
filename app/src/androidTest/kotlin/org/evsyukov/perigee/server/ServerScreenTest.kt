@@ -808,19 +808,49 @@ class ServerScreenTest {
     }
 
     @Test
+    fun reopeningProfileOfflineShowsABannerAboveTheScrolledContent() {
+        serverHas(book(7, "Listed Title", 70))
+        show()
+        signIn()
+        part(Section.Profile)
+        waitForText("Reader Name")
+        val list = rule.onNodeWithTag("server-profile")
+        list.performScrollToKey("achievements")
+        assertTrue(list.fetchSemanticsNode().config[SemanticsProperties.VerticalScrollAxisRange].value() > 0f)
+
+        part(Section.Catalogue)
+        server.profileAnswer = Answer.Dropped
+        part(Section.Profile)
+        val banner = hasTestTag("server-profile-refresh-failed")
+        waitForShown("the profile refresh banner", banner)
+        rule.onNode(banner).assertIsDisplayed().assert(!hasAnyAncestor(hasTestTag("server-profile")))
+        rule.onNodeWithText(string(R.string.server_profile_achievements_count, 2, 3)).assertIsDisplayed()
+        assertEquals("Reader Name", model.state.value.profile.profile?.name)
+
+        part(Section.Catalogue)
+        server.profileAnswer = Answer(200, """{"id":1,"username":"reader","name":"Updated Reader"}""")
+        part(Section.Profile)
+        waitFor("the refreshed reader is loaded") { model.state.value.profile.profile?.name == "Updated Reader" }
+        rule.onNode(banner).assertDoesNotExist()
+        list.performScrollToKey("reader")
+        rule.onNodeWithText("Updated Reader").assertIsDisplayed()
+    }
+
+    @Test
     fun readersPageThatCannotBeReachedIsToldThereWithAWayToAskAgain() {
         serverHas(book(7, "Listed Title", 70))
-        server.profileAnswer = Answer(500, """{"statusCode":500,"message":"Internal server error"}""")
+        server.profileAnswer = Answer.Dropped
         show()
         signIn()
         part(Section.Profile)
         waitForText(string(R.string.server_unreachable))
         rule.onNodeWithText(string(R.string.server_unreachable)).assertIsDisplayed()
+        rule.onNodeWithTag("server-profile-refresh-failed").assertIsDisplayed()
 
         server.profileAnswer = null
         rule.onNodeWithText(string(R.string.action_retry)).performClick()
         waitForText("Reader Name")
-        assertEquals("asked again whole", 2, server.seen.count { it.path == "/api/v1/auth/me" })
+        assertEquals("one successful profile load", 1, server.asked("/achievements").size)
     }
 
     private companion object {
