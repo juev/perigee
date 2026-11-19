@@ -33,6 +33,7 @@ import androidx.compose.ui.test.performScrollToKey
 import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performTextReplacement
 import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.swipeDown
 import androidx.compose.ui.unit.Density
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import java.io.File
@@ -834,6 +835,37 @@ class ServerScreenTest {
         rule.onNode(banner).assertDoesNotExist()
         list.performScrollToKey("reader")
         rule.onNodeWithText("Updated Reader").assertIsDisplayed()
+    }
+
+    @Test
+    fun pullingDownRefreshesProfileWithoutLeavingThePage() {
+        serverHas(book(7, "Listed Title", 70))
+        show()
+        signIn()
+        part(Section.Profile)
+        waitForText("Reader Name")
+        val list = rule.onNodeWithTag("server-profile")
+        server.profileAnswer = Answer(200, """{"id":1,"username":"reader","name":"Updated Reader"}""")
+        server.hold("/auth/me")
+        try {
+            list.performTouchInput { swipeDown() }
+            waitFor("the pull starts another profile request") { server.asked("/auth/me").size == 2 }
+            assertTrue(model.state.value.profile.loading)
+            rule.onNodeWithText("Reader Name").assertIsDisplayed()
+            list.performTouchInput { swipeDown() }
+        } finally {
+            server.release("/auth/me")
+        }
+        waitForText("Updated Reader")
+        assertEquals(2, server.asked("/auth/me").size)
+        assertEquals(2, server.asked("/achievements").size)
+
+        server.profileAnswer = Answer.Dropped
+        list.performTouchInput { swipeDown() }
+        val banner = hasTestTag("server-profile-refresh-failed")
+        waitForShown("the failed pull shows the profile refresh banner", banner)
+        rule.onNode(banner).assertIsDisplayed()
+        assertEquals("Updated Reader", model.state.value.profile.profile?.name)
     }
 
     @Test
