@@ -391,6 +391,7 @@
     <string name="server_home_empty_text">Books you read, want to read and add to the server appear here. Meanwhile, look through the catalogue.</string>
     <string name="server_home_unsupported">This version of the server has no home shelves. Its books are in the catalogue and in collections.</string>
     <string name="server_profile_picture">Profile picture</string>
+    <string name="server_profile_refresh_failed">Could not refresh the profile</string>
     <string name="server_profile_tracked">Tracked</string>
     <string name="server_profile_in_progress">In progress</string>
     <string name="server_profile_completed">Finished</string>
