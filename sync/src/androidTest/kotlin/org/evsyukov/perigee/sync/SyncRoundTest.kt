@@ -420,6 +420,8 @@ class SyncRoundTest {
     @Test
     fun aSuccessfulUploadWithAnUnmatchedBookKeepsItsEventsForTheNextRound() = runBlocking<Unit> {
         val missing = shared("missing-from-page-stats.fb2")
+        // Keep unrelated annotation exchange from discovering the missing hash first.
+        library.setStatus(missing.id, ReadingStatus.ToRead)
         library.addPageRead(missing.id, 1, 10, clock / 1000 - 240, 30)
         library.addPageRead(missing.id, 2, 10, clock / 1000 - 120, 45)
         server.files.remove(missing.id)

@@ -320,7 +320,7 @@ class Library internal constructor(internal val database: ReadingDatabase, priva
         dao.insert(PageRead(bookId = bookId, page = page, totalPages = totalPages, startedAt = startedAt, seconds = seconds))
 
     /** Pages read in books the server has, oldest first, that it was not told of yet. */
-    suspend fun pageReadsToSend(limit: Int): List<PageRead> = dao.pageReadsToSend(limit)
+    suspend fun pageReadsToSend(limit: Int, afterId: Long = 0): List<PageRead> = dao.pageReadsToSend(limit, afterId)
 
     suspend fun pageReadsSent(reads: Collection<PageRead>) = dao.deletePageReads(reads.map { it.id })
 

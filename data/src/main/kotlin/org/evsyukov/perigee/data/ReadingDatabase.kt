@@ -180,8 +180,8 @@ internal interface ReadingDao {
     @Insert
     suspend fun insert(read: PageRead)
 
-    @Query("SELECT p.* FROM page_reads p JOIN books b ON b.id = p.bookId WHERE b.serverFileId IS NOT NULL ORDER BY p.id LIMIT :limit")
-    suspend fun pageReadsToSend(limit: Int): List<PageRead>
+    @Query("SELECT p.* FROM page_reads p JOIN books b ON b.id = p.bookId WHERE p.id > :afterId AND b.serverFileId IS NOT NULL ORDER BY p.id LIMIT :limit")
+    suspend fun pageReadsToSend(limit: Int, afterId: Long): List<PageRead>
 
     @Query("DELETE FROM page_reads WHERE id IN (:ids)")
     suspend fun deletePageReads(ids: List<Long>)
