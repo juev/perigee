@@ -78,8 +78,8 @@ internal fun Profile(padding: PaddingValues, state: ServerState, model: ServerVi
     val page = state.profile
     Centred(padding) { inner ->
         PullToRefreshBox(
-            isRefreshing = page.loading,
-            onRefresh = model::refreshProfile,
+            isRefreshing = state.syncing,
+            onRefresh = model::syncNow,
             modifier = Modifier.fillMaxSize().padding(inner),
         ) {
             LazyColumn(Modifier.fillMaxSize().testTag("server-profile"), state = list) {

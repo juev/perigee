@@ -91,4 +91,15 @@ class ReadingOutboxTest {
         val after = library.readingActivity(at - 1, at + 1).first()
         assertEquals("upload must not subtract from local reading history", before.map { it.id to it.seconds }, after.map { it.id to it.seconds })
     }
+
+    @Test
+    fun aBookMatchedToAnExistingServerBookSendsItsReads() = runBlocking<Unit> {
+        val file = File(context.cacheDir, "matched.fb2").apply { writeText("matched") }
+        val book = library.open(file, "Matched", "")
+        server.files[book.id] = 7L to 70L
+        library.onServer(book.id, 7, 70)
+        library.addPageRead(book.id, 1, 10, clock / 1000 - 100, 30)
+        val report = orbit.sync()
+        assertEquals("requests: ${server.seen.map { it.path }}", 1, report.pagesSent)
+    }
 }

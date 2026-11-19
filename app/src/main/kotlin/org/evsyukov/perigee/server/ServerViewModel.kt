@@ -10,6 +10,7 @@ import androidx.lifecycle.viewModelScope
 import java.io.File
 import java.io.IOException
 import java.util.UUID
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -100,6 +101,9 @@ enum class ServerFailure {
 
     /** The server answered and did not take the change, as for a rating it keeps locked. */
     NotSaved,
+
+    /** Syncing cannot go on until the reader does something: signs in again, gives the device password, updates. */
+    NeedsReader,
 }
 
 /** How far a book is on its way from the server into the library. */
@@ -162,6 +166,10 @@ data class ServerState(
     /** Something done to a collection that the server did not take, told until it is put away. */
     val collectionFailure: ServerFailure? = null,
     val collectionBusy: Boolean = false,
+    /** A pull that syncs reading activity and reloads the part in sight; one at a time. */
+    val syncing: Boolean = false,
+    /** How the last pull went, until the reader puts it away. */
+    val syncFailure: ServerFailure? = null,
     /** The pages opened before [opened], from one book to another beside it, oldest first: the way back goes through them. */
     val trail: List<RemoteBook> = emptyList(),
     /** The books the server lists beside [opened]; a kind not here is not asked for it. */
@@ -244,6 +252,63 @@ class ServerViewModel(
 
     /** The number of the last change asked for; the answer to an earlier one does not end a later one's waiting. */
     private var askings = 0L
+
+    /** The pull under way, so a second one waits for it rather than running beside it. */
+    private var pulling: Job? = null
+
+    /**
+     * The reader pulled the part in sight: reading activity goes to the server, and that part is asked for anew
+     * with the phrase and filters it has. What was shown stays until the answer comes, and a failed pull says so.
+     */
+    fun syncNow() {
+        val state = _state.value
+        if (state.account == null || state.sessionOver || pulling?.isActive == true) return
+        val at = epoch
+        val section = state.section
+        val opened = state.opened
+        // Marked before the job starts: a reader pulling again at once must not start another.
+        _state.update { it.copy(syncing = true, syncFailure = null) }
+        pulling = viewModelScope.launch(start = CoroutineStart.UNDISPATCHED) {
+            val failure = try {
+                when (syncRound(orbit, accounts)) {
+                    SyncOutcome.Later -> ServerFailure.Unreachable
+                    SyncOutcome.Done -> {
+                        if (at == epoch) reload(at, section, opened)
+                        null
+                    }
+                    // The round did not go through, and none of this changes until the reader acts.
+                    SyncOutcome.Waiting -> ServerFailure.NeedsReader
+                }
+            } catch (e: IOException) {
+                if (at == epoch) failureOf(e) else null
+            }
+            _state.update { it.copy(syncing = false, syncFailure = failure) }
+        }
+    }
+
+    /** The part in sight asked for again after a pull, without its books leaving the screen meanwhile. */
+    private suspend fun reload(at: Int, section: Section, opened: RemoteBook?) {
+        if (at != epoch) return
+        val state = _state.value
+        when (section) {
+            Section.Home -> loadShelves(quietly = true)
+            Section.Catalogue -> {
+                page = 0
+                show()
+            }
+            Section.Collections -> {
+                if (state.collection == null) loadCollections() else pageOfCollection(0)
+            }
+            Section.Profile -> refreshProfile()
+        }
+        val book = opened ?: return
+        if (at != epoch) return
+        details.remove(book.id)
+        if (_state.value.opened?.id == book.id) askDetail(book)
+    }
+
+    /** The pull's failure has been said as long as it was to be; the next one is a new word on it. */
+    fun syncFailureShown() = _state.update { it.copy(syncFailure = null) }
 
     private fun tracked(block: suspend () -> Unit): Job {
         val job = viewModelScope.launch { block() }

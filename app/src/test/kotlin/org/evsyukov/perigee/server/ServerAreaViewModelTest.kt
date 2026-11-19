@@ -919,6 +919,46 @@ class ServerAreaViewModelTest {
     }
 
     @Test
+    fun aPullSendsWaitingReadingActivityAndReloadsTheCatalogue() = runBlocking<Unit> {
+        serverHas(book(7, "Seven", 70))
+        signIn()
+        until("the shelves came") { it.shelves.isNotEmpty() }
+        val local = library.open(bookFile, "Local copy", "")
+        server.files[local.id] = 7L to 70L
+        library.onServer(local.id, 7, 70)
+        library.addPageRead(local.id, page = 1, totalPages = 10, startedAt = 1_699_999_000, seconds = 40)
+        assertEquals("the event is pending before the pull", 1, library.pageReadsToSend(10).size)
+        model.syncNow()
+        val pulled = until("the pull finished (pending=${library.pageReadsToSend(10).size}, failure=${model.state.value.syncFailure})") {
+            !it.syncing && server.asked("/koreader/plugin/page-stats").isNotEmpty()
+        }
+        assertEquals(1, server.pagesRead.size)
+        assertEquals(1, pulled.books.size)
+        assertTrue(library.pageReadsToSend(10).isEmpty())
+    }
+
+    @Test
+    fun aPullWithoutTheServerIsToldOnceAndLeavesTheList() = runBlocking<Unit> {
+        serverHas(book(7, "Seven", 70))
+        signIn()
+        model.show(Section.Catalogue)
+        val shown = until("the catalogue came") { it.books.isNotEmpty() }
+        // Something of the reader's still waits for the server, so the round really tries the devices' channel.
+        val local = library.open(bookFile, "Local copy", "")
+        server.files[local.id] = 7L to 70L
+        library.onServer(local.id, 7, 70)
+        library.savePosition(local.id, "/body/p[1]", 0f)
+        library.savePosition(local.id, "/body/p[9]", 0.4f)
+        server.down = true
+        model.syncNow()
+        val failed = until("the pull failed") { !it.syncing && it.syncFailure != null }
+        assertEquals(ServerFailure.Unreachable, failed.syncFailure)
+        assertEquals("what was shown stays", shown.books.map { it.id }, failed.books.map { it.id })
+        model.syncFailureShown()
+        assertNull(model.state.value.syncFailure)
+    }
+
+    @Test
     fun theReadersPageShowsWhoTheyAreWhatTheyEarnedAndWhatTheyRead() {
         serverHas(book(7, "Listed Title", 70))
         signIn()

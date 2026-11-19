@@ -29,6 +29,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -59,42 +60,49 @@ import org.evsyukov.perigee.ui.ShelfIcon
  * The server's catalogue: all its books the app reads, or those its phrase and filters find, in the order
  * chosen, a part at a time. The filters show above the list, each to be taken off by itself.
  */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun Catalogue(padding: PaddingValues, state: ServerState, model: ServerViewModel, onOpen: (File) -> Unit, list: LazyListState) {
     var filtering by rememberSaveable { mutableStateOf(false) }
     Centred(padding) { inner ->
+        PullToRefreshBox(
+            isRefreshing = state.syncing,
+            onRefresh = model::syncNow,
+            modifier = Modifier.fillMaxSize().padding(inner),
+        ) {
         LazyColumn(Modifier.fillMaxSize().testTag("server-books"), state = list, contentPadding = inner) {
-            item("filters") {
-                FilterLine(state.filters, onOpen = { filtering = true }, onChange = model::filter)
-            }
-            state.failure?.let { failure ->
-                item("failure") {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
-                        Failure(failure, model::retry)
-                        if (failure == ServerFailure.Unsupported && state.filters != CatalogueQuery()) {
-                            TextButton(onClick = { model.filter(CatalogueQuery()) }) { Text(stringResource(R.string.server_filters_clear)) }
+                item("filters") {
+                    FilterLine(state.filters, onOpen = { filtering = true }, onChange = model::filter)
+                }
+                state.failure?.let { failure ->
+                    item("failure") {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
+                            Failure(failure, model::retry)
+                            if (failure == ServerFailure.Unsupported && state.filters != CatalogueQuery()) {
+                                TextButton(onClick = { model.filter(CatalogueQuery()) }) { Text(stringResource(R.string.server_filters_clear)) }
+                            }
                         }
                     }
                 }
-            }
-            if (state.books.isEmpty() && !state.loading && state.failure == null) {
-                item("empty") {
-                    when {
-                        state.query.isNotEmpty() -> EmptyState(
-                            Icons.Filled.Search, stringResource(R.string.nothing_found), text = stringResource(R.string.nothing_found_for, state.query),
-                        )
-                        state.filters.filtered -> EmptyState(ShelfIcon, stringResource(R.string.server_filtered_empty)) {
-                            OutlinedButton(onClick = { model.filter(CatalogueQuery()) }) { Text(stringResource(R.string.server_filters_clear)) }
+                if (state.books.isEmpty() && !state.loading && state.failure == null) {
+                    item("empty") {
+                        when {
+                            state.query.isNotEmpty() -> EmptyState(
+                                Icons.Filled.Search, stringResource(R.string.nothing_found), text = stringResource(R.string.nothing_found_for, state.query),
+                            )
+                            state.filters.filtered -> EmptyState(ShelfIcon, stringResource(R.string.server_filtered_empty)) {
+                                OutlinedButton(onClick = { model.filter(CatalogueQuery()) }) { Text(stringResource(R.string.server_filters_clear)) }
+                            }
+                            else -> EmptyState(ShelfIcon, stringResource(R.string.catalog_page_empty))
                         }
-                        else -> EmptyState(ShelfIcon, stringResource(R.string.catalog_page_empty))
                     }
                 }
-            }
-            itemsIndexed(state.books, key = { _, book -> book.id }) { index, book ->
-                // Reaching the last line asks for what follows it.
-                if (index == state.books.lastIndex && state.more) LaunchedEffect(state.books.size) { model.more() }
-                BookRow(book, state, model, onOpen, onClick = { model.openBook(book) })
-                HorizontalDivider()
+                itemsIndexed(state.books, key = { _, book -> book.id }) { index, book ->
+                    // Reaching the last line asks for what follows it.
+                    if (index == state.books.lastIndex && state.more) LaunchedEffect(state.books.size) { model.more() }
+                    BookRow(book, state, model, onOpen, onClick = { model.openBook(book) })
+                    HorizontalDivider()
+                }
             }
         }
     }

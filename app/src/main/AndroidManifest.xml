@@ -2,6 +2,8 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <!-- For the catalogs books are downloaded from. -->
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Whether there is a network to sync reading over, for the reader to be told when there is none. -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
     <!-- Plain HTTP is allowed: a catalog is often a server at home, reached by its address on the local network. -->
     <application

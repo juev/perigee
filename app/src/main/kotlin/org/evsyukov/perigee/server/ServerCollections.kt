@@ -27,7 +27,9 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -53,6 +55,7 @@ import org.evsyukov.perigee.ui.ShelfIcon
  * The reader's collections on the server and those other readers share, or the books of the one opened.
  * Only the reader's own can be renamed or deleted; deleting one leaves its books where they are.
  */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun Collections(
     padding: PaddingValues,
@@ -81,28 +84,34 @@ private fun CollectionList(padding: PaddingValues, state: ServerState, model: Se
     var deleting by remember { mutableStateOf<RemoteCollection?>(null) }
     val collections = state.collections
     Centred(padding) { inner ->
-        LazyColumn(Modifier.fillMaxSize().testTag("server-collections"), state = list, contentPadding = inner) {
-            item("new") {
-                OutlinedButton(
-                    enabled = !state.collectionBusy, onClick = { creating = true },
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp).testTag("server-collection-new"),
-                ) {
-                    Icon(Icons.Filled.Add, null, Modifier.padding(end = 8.dp))
-                    Text(stringResource(R.string.collection_new))
+        PullToRefreshBox(
+            isRefreshing = state.syncing,
+            onRefresh = model::syncNow,
+            modifier = Modifier.fillMaxSize().padding(inner),
+        ) {
+            LazyColumn(Modifier.fillMaxSize().testTag("server-collections"), state = list, contentPadding = inner) {
+                item("new") {
+                    OutlinedButton(
+                        enabled = !state.collectionBusy, onClick = { creating = true },
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp).testTag("server-collection-new"),
+                    ) {
+                        Icon(Icons.Filled.Add, null, Modifier.padding(end = 8.dp))
+                        Text(stringResource(R.string.collection_new))
+                    }
                 }
-            }
-            collections.failure?.let { failure -> item("failure") { Failure(failure, model::loadCollections) } }
-            if (collections.loaded && collections.list.isEmpty() && collections.failure == null) {
-                item("empty") {
-                    EmptyState(ShelfIcon, stringResource(R.string.server_collections_empty), text = stringResource(R.string.server_collections_empty_text))
+                collections.failure?.let { failure -> item("failure") { Failure(failure, model::loadCollections) } }
+                if (collections.loaded && collections.list.isEmpty() && collections.failure == null) {
+                    item("empty") {
+                        EmptyState(ShelfIcon, stringResource(R.string.server_collections_empty), text = stringResource(R.string.server_collections_empty_text))
+                    }
                 }
-            }
-            items(collections.list, key = { it.id }) { collection ->
-                CollectionRow(
-                    collection, busy = state.collectionBusy, onClick = { model.openCollection(collection) },
-                    onRename = { renaming = collection }, onDelete = { deleting = collection },
-                )
-                HorizontalDivider()
+                items(collections.list, key = { it.id }) { collection ->
+                    CollectionRow(
+                        collection, busy = state.collectionBusy, onClick = { model.openCollection(collection) },
+                        onRename = { renaming = collection }, onDelete = { deleting = collection },
+                    )
+                    HorizontalDivider()
+                }
             }
         }
     }
@@ -206,34 +215,40 @@ private fun CollectionBooks(
     list: LazyListState,
 ) {
     Centred(padding) { inner ->
-        LazyColumn(Modifier.fillMaxSize().testTag("server-collection-books"), state = list, contentPadding = inner) {
-            item("about") {
-                Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
-                    Text(view.collection.name, style = MaterialTheme.typography.titleMedium)
-                    Text(ownership(view.collection), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-            }
-            view.failure?.let { failure -> item("failure") { Failure(failure, model::retryCollection) } }
-            // Empty only once the server has no more of it: a first part of books the app does not read is not "no books".
-            if (view.loaded && view.books.isEmpty() && !view.more && !view.loading && view.failure == null) {
-                item("empty") {
-                    if (view.query.isEmpty()) {
-                        EmptyState(ShelfIcon, stringResource(R.string.server_collection_empty))
-                    } else {
-                        EmptyState(Icons.Filled.Search, stringResource(R.string.nothing_found), text = stringResource(R.string.nothing_found_for, view.query))
+        PullToRefreshBox(
+            isRefreshing = state.syncing,
+            onRefresh = model::syncNow,
+            modifier = Modifier.fillMaxSize().padding(inner),
+        ) {
+            LazyColumn(Modifier.fillMaxSize().testTag("server-collection-books"), state = list, contentPadding = inner) {
+                item("about") {
+                    Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
+                        Text(view.collection.name, style = MaterialTheme.typography.titleMedium)
+                        Text(ownership(view.collection), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
-            }
-            items(view.books, key = { it.id }) { book ->
-                BookRow(book, state, model, onOpen, onClick = { model.openBook(book) })
-                HorizontalDivider()
-            }
-            // Reaching the end asks for the part that follows, by the parts the server gave, not the books shown:
-            // a part of only books the app does not read shows nothing, and the one after it is asked for all the same.
-            if (view.more && view.failure == null) {
-                item("more") {
-                    LaunchedEffect(view.pages) { model.moreOfCollection() }
-                    LinearProgressIndicator(Modifier.fillMaxWidth().padding(16.dp).testTag("server-collection-more"))
+                view.failure?.let { failure -> item("failure") { Failure(failure, model::retryCollection) } }
+                // Empty only once the server has no more of it: a first part of books the app does not read is not "no books".
+                if (view.loaded && view.books.isEmpty() && !view.more && !view.loading && view.failure == null) {
+                    item("empty") {
+                        if (view.query.isEmpty()) {
+                            EmptyState(ShelfIcon, stringResource(R.string.server_collection_empty))
+                        } else {
+                            EmptyState(Icons.Filled.Search, stringResource(R.string.nothing_found), text = stringResource(R.string.nothing_found_for, view.query))
+                        }
+                    }
+                }
+                items(view.books, key = { it.id }) { book ->
+                    BookRow(book, state, model, onOpen, onClick = { model.openBook(book) })
+                    HorizontalDivider()
+                }
+                // Reaching the end asks for the part that follows, by the parts the server gave, not the books shown:
+                // a part of only books the app does not read shows nothing, and the one after it is asked for all the same.
+                if (view.more && view.failure == null) {
+                    item("more") {
+                        LaunchedEffect(view.pages) { model.moreOfCollection() }
+                        LinearProgressIndicator(Modifier.fillMaxWidth().padding(16.dp).testTag("server-collection-more"))
+                    }
                 }
             }
         }

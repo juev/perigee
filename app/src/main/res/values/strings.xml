@@ -391,6 +391,11 @@
     <string name="server_home_empty_text">Books you read, want to read and add to the server appear here. Meanwhile, look through the catalogue.</string>
     <string name="server_home_unsupported">This version of the server has no home shelves. Its books are in the catalogue and in collections.</string>
     <string name="server_profile_picture">Profile picture</string>
+    <string name="sync_trouble_offline">No network: reading is not reaching the server</string>
+    <string name="sync_trouble_unreachable">The server cannot be reached: reading is not syncing</string>
+    <string name="sync_trouble_reader">Syncing needs you: sign in or give the device password</string>
+    <string name="server_sync_needs_reader">Syncing needs you: sign in again or give the device password</string>
+    <string name="server_sync_failed">Could not sync reading with the server</string>
     <string name="server_profile_refresh_failed">Could not refresh the profile</string>
     <string name="server_profile_tracked">Tracked</string>
     <string name="server_profile_in_progress">In progress</string>

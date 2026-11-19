@@ -11,11 +11,13 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -38,38 +40,45 @@ import org.evsyukov.perigee.ui.ShelfIcon
  * that is empty is not shown; one that could not be filled, or that the server has not, says so in its
  * own place and leaves the others as they are.
  */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun Home(padding: PaddingValues, state: ServerState, model: ServerViewModel, list: LazyListState) {
     Centred(padding) { inner ->
+        PullToRefreshBox(
+            isRefreshing = state.syncing,
+            onRefresh = model::syncNow,
+            modifier = Modifier.fillMaxSize().padding(inner),
+        ) {
         LazyColumn(Modifier.fillMaxSize().testTag("server-home"), state = list, contentPadding = inner) {
-            val channel = state.channel
-            if (channel != null && channel != DeviceChannel.Ready) {
-                item("channel") { Channel(channel, state, model::devicePassword, model::newDevicePassword) }
-            }
-            val account = state.account
-            if (channel == DeviceChannel.Ready && account != null) item("sync") { Synced(account, state.unsent) }
-            // The server not answering is the home page's business too; a filter of the catalogue it refuses is not.
-            state.failure?.takeIf { it != ServerFailure.Unsupported }?.let { failure ->
-                item("failure") { Failure(failure, model::retry) }
-            }
-            val shelves = ShelfKind.DEFAULT.map { it to state.shelves[it] }
-            val answered = shelves.mapNotNull { it.second }.filter { it != ShelfState.Loading }
-            when {
-                answered.size == shelves.size && answered.all { it == ShelfState.Unsupported } -> item("unsupported") {
-                    EmptyState(ShelfIcon, stringResource(R.string.server_home_unsupported)) {
-                        OutlinedButton(onClick = { model.show(Section.Catalogue) }) { Text(stringResource(R.string.server_open_catalogue)) }
-                    }
+                val channel = state.channel
+                if (channel != null && channel != DeviceChannel.Ready) {
+                    item("channel") { Channel(channel, state, model::devicePassword, model::newDevicePassword) }
                 }
-                answered.size == shelves.size && answered.all { it is ShelfState.Shown && it.books.isEmpty() && it.leftOut == 0 } -> item("empty") {
-                    EmptyState(ShelfIcon, stringResource(R.string.server_home_empty), text = stringResource(R.string.server_home_empty_text)) {
-                        OutlinedButton(onClick = { model.show(Section.Catalogue) }) { Text(stringResource(R.string.server_open_catalogue)) }
-                    }
+                val account = state.account
+                if (channel == DeviceChannel.Ready && account != null) item("sync") { Synced(account, state.unsent) }
+                // The server not answering is the home page's business too; a filter of the catalogue it refuses is not.
+                state.failure?.takeIf { it != ServerFailure.Unsupported }?.let { failure ->
+                    item("failure") { Failure(failure, model::retry) }
                 }
-                else -> {
-                    for ((kind, shelf) in shelves) {
-                        // A shelf the server has, and has nothing on, is not shown at all.
-                        if (shelf is ShelfState.Shown && shelf.books.isEmpty() && shelf.leftOut == 0) continue
-                        item(kind.type) { ShelfRow(kind, shelf ?: ShelfState.Loading, state, model) }
+                val shelves = ShelfKind.DEFAULT.map { it to state.shelves[it] }
+                val answered = shelves.mapNotNull { it.second }.filter { it != ShelfState.Loading }
+                when {
+                    answered.size == shelves.size && answered.all { it == ShelfState.Unsupported } -> item("unsupported") {
+                        EmptyState(ShelfIcon, stringResource(R.string.server_home_unsupported)) {
+                            OutlinedButton(onClick = { model.show(Section.Catalogue) }) { Text(stringResource(R.string.server_open_catalogue)) }
+                        }
+                    }
+                    answered.size == shelves.size && answered.all { it is ShelfState.Shown && it.books.isEmpty() && it.leftOut == 0 } -> item("empty") {
+                        EmptyState(ShelfIcon, stringResource(R.string.server_home_empty), text = stringResource(R.string.server_home_empty_text)) {
+                            OutlinedButton(onClick = { model.show(Section.Catalogue) }) { Text(stringResource(R.string.server_open_catalogue)) }
+                        }
+                    }
+                    else -> {
+                        for ((kind, shelf) in shelves) {
+                            // A shelf the server has, and has nothing on, is not shown at all.
+                            if (shelf is ShelfState.Shown && shelf.books.isEmpty() && shelf.leftOut == 0) continue
+                            item(kind.type) { ShelfRow(kind, shelf ?: ShelfState.Loading, state, model) }
+                        }
                     }
                 }
             }

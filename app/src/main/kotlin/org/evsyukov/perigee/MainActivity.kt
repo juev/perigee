@@ -2,6 +2,7 @@ package org.evsyukov.perigee
 
 import android.content.Context
 import android.os.Bundle
+import android.widget.Toast
 import android.view.KeyEvent
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -33,6 +34,8 @@ import org.evsyukov.perigee.opds.OpdsScreen
 import org.evsyukov.perigee.reader.ReaderScreen
 import org.evsyukov.perigee.reader.VolumeKeyHost
 import org.evsyukov.perigee.server.ServerScreen
+import org.evsyukov.perigee.server.SyncHealth
+import org.evsyukov.perigee.server.SyncTrouble
 import org.evsyukov.perigee.server.SyncWork
 import org.evsyukov.perigee.ui.PerigeeTheme
 
@@ -86,6 +89,21 @@ class MainActivity : ComponentActivity(), VolumeKeyHost {
                         lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) { SyncWork.whileInSight(this@MainActivity) }
                     }
                     LaunchedEffect(Unit) { SyncWork.followAccount(this@MainActivity) }
+                    // Reading that stops reaching the server is said once, for a few seconds, over the screen itself.
+                    LaunchedEffect(Unit) {
+                        lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                            SyncHealth.trouble.collect { trouble ->
+                                if (trouble != null) {
+                                    val said = when (trouble) {
+                                        SyncTrouble.Offline -> R.string.sync_trouble_offline
+                                        SyncTrouble.Unreachable -> R.string.sync_trouble_unreachable
+                                        SyncTrouble.NeedsReader -> R.string.sync_trouble_reader
+                                    }
+                                    Toast.makeText(this@MainActivity, said, Toast.LENGTH_LONG).show()
+                                }
+                            }
+                        }
+                    }
                     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
                         if (uri != null) imports.take(listOf(uri))
                     }

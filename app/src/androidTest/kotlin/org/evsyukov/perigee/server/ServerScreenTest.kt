@@ -849,21 +849,24 @@ class ServerScreenTest {
         server.hold("/auth/me")
         try {
             list.performTouchInput { swipeDown() }
-            waitFor("the pull starts another profile request") { server.asked("/auth/me").size == 2 }
-            assertTrue(model.state.value.profile.loading)
+            waitFor("the pull syncs reading and asks the server again") { server.asked("/auth/me").size == 2 }
+            assertTrue("the pull is under way", model.state.value.syncing)
             rule.onNodeWithText("Reader Name").assertIsDisplayed()
+            // A second pull while the first is under way does not start another.
             list.performTouchInput { swipeDown() }
         } finally {
             server.release("/auth/me")
         }
         waitForText("Updated Reader")
+        waitFor("the pull is over") { !model.state.value.syncing }
         assertEquals(2, server.asked("/auth/me").size)
         assertEquals(2, server.asked("/achievements").size)
 
+        // A pull whose reload fails says so in the part itself, and keeps what was shown.
         server.profileAnswer = Answer.Dropped
         list.performTouchInput { swipeDown() }
         val banner = hasTestTag("server-profile-refresh-failed")
-        waitForShown("the failed pull shows the profile refresh banner", banner)
+        waitForShown("the failed pull shows the profile banner", banner)
         rule.onNode(banner).assertIsDisplayed()
         assertEquals("Updated Reader", model.state.value.profile.profile?.name)
     }
