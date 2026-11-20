@@ -54,6 +54,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import java.io.File
 import java.time.LocalTime
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.evsyukov.perigee.R
@@ -339,6 +340,45 @@ class ReaderScreenTest {
             rule.runOnIdle { local.speechCommand(SpeechCommand.Stop) }
             assertNull("old speech cannot fetch another chunk after Stop", runBlocking { run.load(run.start, 4000) })
             assertFalse("old speech cannot move the reader after Stop", runBlocking { run.moveTo(first.range.start) })
+        } finally {
+            rule.runOnIdle { local.close() }
+        }
+    }
+
+    @Test
+    fun aManualPageTurnRetargetsThePlayingReadAloudSession() {
+        val requests = mutableListOf<SpeechRequest>()
+        val turns = mutableListOf<Deferred<String?>>()
+        val playing = SpeechState(SpeechPhase.Playing, rate = 1.25f)
+        val local = ReaderViewModel(activity.application, Library.get(activity),
+            startSpeechService = { _, run ->
+                requests += run
+                run.state.value = playing
+                run.followPageTurn = { turns += it }
+            }, bookOpened = {})
+        try {
+            edgeToEdge()
+            rule.setContent { MaterialTheme { ReaderScreen(book, onClose = {}, viewModel = local) } }
+            rule.waitUntil(TIMEOUT) { local.state.value.page != null && !local.state.value.busy }
+            val first = checkNotNull(local.state.value.page)
+            assertEquals(0, first.index)
+            openMenu()
+            rule.onNodeWithTag("readAloud").performClick()
+            val run = rule.runOnIdle { requests.single() }
+            rule.waitUntil(TIMEOUT) { local.speech.value == playing }
+
+            rule.runOnIdle { local.turn(1) }
+            rule.waitUntil(TIMEOUT) { local.state.value.page?.index == first.turnStep }
+            assertEquals("turning a page must not end the playing session", playing, local.speech.value)
+            val target = rule.runOnIdle {
+                assertEquals(listOf(run), requests)
+                turns.single()
+            }
+            rule.waitUntil(TIMEOUT) { target.isCompleted }
+            val destination = checkNotNull(local.state.value.page).xpointer
+            assertTrue("the fixture must have distinct positions on the two pages", first.xpointer != destination)
+            assertEquals("speech must seek to the actual new page", destination, runBlocking { target.await() })
+            assertNotNull("the original speech source must remain usable", runBlocking { run.load(destination, 2000) })
         } finally {
             rule.runOnIdle { local.close() }
         }

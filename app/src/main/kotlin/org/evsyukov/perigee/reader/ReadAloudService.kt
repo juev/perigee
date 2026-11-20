@@ -30,6 +30,7 @@ import java.util.UUID
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
@@ -56,6 +57,7 @@ internal class SpeechRequest(
     val token: String = UUID.randomUUID().toString()
     val state = MutableStateFlow(SpeechState())
     var dispatch: ((SpeechCommand, Float) -> Unit)? = null
+    var followPageTurn: ((Deferred<String?>) -> Unit)? = null
 }
 
 /** Owns synthesis, media controls and audio focus while an explicitly started session is alive. */
