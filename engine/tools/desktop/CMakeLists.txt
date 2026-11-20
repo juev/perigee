@@ -154,3 +154,13 @@ target_compile_definitions(gaps PRIVATE GAPS_DATA_DIR="${CRENGINE_DIR}/cr3gui/da
 # The precedence of the owner's CSS (issue #150), checked on the styles the engine resolves.
 add_executable(owner-css owner-css.cpp)
 target_link_libraries(owner-css PRIVATE crengine)
+
+# Exercise the same logical-text iterator the Android bridge uses, without an SDK.
+add_executable(read-aloud read-aloud.cpp)
+target_include_directories(read-aloud PRIVATE ../../src/main/cpp/jni)
+target_link_libraries(read-aloud PRIVATE crengine)
+enable_testing()
+add_test(NAME read-aloud COMMAND read-aloud
+    "${CMAKE_CURRENT_SOURCE_DIR}/../../src/main/assets/crengine/fonts/Roboto-Variable.ttf"
+    "${CRENGINE_DIR}/cr3gui/data/fb2.css"
+    "${CMAKE_CURRENT_SOURCE_DIR}/read-aloud.fb2")

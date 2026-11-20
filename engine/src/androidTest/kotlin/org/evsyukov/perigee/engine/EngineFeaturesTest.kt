@@ -97,6 +97,25 @@ class EngineFeaturesTest {
         assertNull(doc.pageOf("/body/DocFragment[99]/body/p[1]/text().0"))
     }
 
+    @Test
+    fun readAloudCanResumeInsideAnEpubParagraphAfterRepagination() {
+        val file = TestBooks.epub(dir)
+        val (start, expected) = open(file).use { doc ->
+            val hit = doc.search(TestBooks.SPLIT_WORD).single()
+            val start = hit.range.start
+            val whole = checkNotNull(doc.readAloudSpan(start, 4000))
+            assertTrue(whole.range.text.startsWith(TestBooks.SPLIT_WORD))
+            start to whole.range.text
+        }
+        val head = open(file).use { doc -> checkNotNull(doc.readAloudSpan(start, 12)) }
+        assertEquals(12, head.range.text.length)
+        open(file, base.copy(fontSize = 40)).use { doc ->
+            val tail = checkNotNull(doc.readAloudSpan(checkNotNull(head.next), 4000))
+            assertEquals(head.range.end, tail.range.start)
+            assertEquals(expected, head.range.text + tail.range.text)
+        }
+    }
+
     // --- search
 
     @Test

@@ -314,6 +314,37 @@ class ReaderScreenTest {
     }
 
     @Test
+    fun readingMenuOffersAnExplicitReadAloudAction() {
+        show()
+        waitForBook()
+        openMenu()
+        rule.onNodeWithTag("readAloud").assertIsDisplayed()
+    }
+
+    @Test
+    fun theReadAloudActionRequestsRealBookTextAndStopInvalidatesTheSource() {
+        var request: SpeechRequest? = null
+        val local = ReaderViewModel(activity.application, Library.get(activity),
+            startSpeechService = { _, run -> request = run }, bookOpened = {})
+        try {
+            edgeToEdge()
+            rule.setContent { MaterialTheme { ReaderScreen(book, onClose = {}, viewModel = local) } }
+            rule.waitUntil(TIMEOUT) { local.state.value.page != null && !local.state.value.busy }
+            openMenu()
+            assertNull("opening a book must not start speech", request)
+            rule.onNodeWithTag("readAloud").performClick()
+            val run = rule.runOnIdle { checkNotNull(request) }
+            val first = runBlocking { checkNotNull(run.load(run.start, 4000)) }
+            assertTrue(first.range.text.isNotBlank())
+            rule.runOnIdle { local.speechCommand(SpeechCommand.Stop) }
+            assertNull("old speech cannot fetch another chunk after Stop", runBlocking { run.load(run.start, 4000) })
+            assertFalse("old speech cannot move the reader after Stop", runBlocking { run.moveTo(first.range.start) })
+        } finally {
+            rule.runOnIdle { local.close() }
+        }
+    }
+
+    @Test
     fun touchingTheRightPartTurnsForwardAndTheLeftPartBack() {
         show()
         waitForBook()

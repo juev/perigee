@@ -154,6 +154,10 @@ fun ReaderScreen(file: File, onClose: () -> Unit, viewModel: ReaderViewModel = v
     val density = LocalDensity.current
     val scope = rememberCoroutineScope()
     var panel by rememberSaveable { mutableStateOf(Panel.None) }
+    val speech by viewModel.speech.collectAsStateWithLifecycle()
+    LaunchedEffect(speech?.phase) {
+        if (speech?.phase == SpeechPhase.Failed || speech?.phase == SpeechPhase.NoVoice) panel = Panel.Menu
+    }
 
     LaunchedEffect(viewModel, file) { viewModel.open(file) }
     val close = {
@@ -402,6 +406,9 @@ fun ReaderScreen(file: File, onClose: () -> Unit, viewModel: ReaderViewModel = v
                 onToggleBookmark = viewModel::toggleBookmark,
                 onGoBack = viewModel::goBack,
                 onSeek = viewModel::goToProgress,
+                speech = speech,
+                onStartSpeech = { viewModel.startSpeech() },
+                onSpeech = viewModel::speechCommand,
             )
         }
         SelectionBars(state, viewModel, Modifier.align(Alignment.BottomCenter))

@@ -4,6 +4,15 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <!-- Whether there is a network to sync reading over, for the reader to be told when there is none. -->
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.TTS_SERVICE" />
+        </intent>
+    </queries>
 
     <!-- Plain HTTP is allowed: a catalog is often a server at home, reached by its address on the local network. -->
     <application
@@ -14,6 +23,10 @@
         android:label="${perigeeLabel}"
         android:supportsRtl="true"
         android:theme="@style/Theme.Perigee">
+        <service
+            android:name=".reader.ReadAloudService"
+            android:exported="false"
+            android:foregroundServiceType="mediaPlayback" />
         <!-- A turned screen is laid out again by Compose in the same activity: making the activity anew
              would add its own wait to the book's new layout. -->
         <activity

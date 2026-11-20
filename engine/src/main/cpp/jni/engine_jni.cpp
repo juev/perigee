@@ -29,6 +29,7 @@
 #include "face_size.h"
 #include "owner_css.h"
 #include "page_reading_blocks.h"
+#include "read_aloud_span.h"
 
 namespace {
 
@@ -657,6 +658,26 @@ Java_org_evsyukov_perigee_engine_NativeEngine_textBetween(
     if (from.isNull() || to.isNull()) return nullptr;
     ldomXRange range(from, to);
     return toJava(env, range.getRangeText());
+}
+
+JNIEXPORT jobjectArray JNICALL
+Java_org_evsyukov_perigee_engine_NativeEngine_readAloudSpan(
+        JNIEnv* env, jobject, jlong handle, jstring start, jint maxUtf16) {
+    auto* doc = viewOf(handle)->getDocument();
+    if (!doc) return nullptr;
+    auto span = perigee::readAloudSpan(doc->createXPointer(toCre(env, start)), std::min(maxUtf16, 4000));
+    if (span.text.empty()) return nullptr;
+    return toJava(env, {span.start.toString(), span.end.toString(), span.text,
+                       span.next.isNull() ? lString32() : span.next.toString()});
+}
+
+JNIEXPORT jstring JNICALL
+Java_org_evsyukov_perigee_engine_NativeEngine_previousReadAloudStart(
+        JNIEnv* env, jobject, jlong handle, jstring start) {
+    auto* doc = viewOf(handle)->getDocument();
+    if (!doc) return nullptr;
+    auto at = perigee::previousReadAloudStart(doc->createXPointer(toCre(env, start)));
+    return at.isNull() ? nullptr : toJava(env, at.toString());
 }
 
 JNIEXPORT jint JNICALL

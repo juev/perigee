@@ -12,6 +12,9 @@ import java.util.concurrent.atomic.AtomicInteger
 /** A stretch of text between two xpointers; [end] names the first character left out. */
 data class TextRange(val start: String, val end: String, val text: String)
 
+/** A bounded piece of prose and the next logical position, independent of pagination. */
+data class ReadAloudSpan(val range: TextRange, val next: String?)
+
 /** A table-of-contents line. [depth] is 1 for the top level, [page] is zero-based. */
 data class TocEntry(val title: String, val xpointer: String, val depth: Int, val page: Int)
 
@@ -127,6 +130,15 @@ class EngineDocument private constructor(
 
     /** Text between two xpointers, or null when either does not resolve in this book. */
     fun textBetween(start: String, end: String): String? = NativeEngine.textBetween(checked(), start, end)
+
+    /** Returns no span when [start] is invalid or no speakable text remains. */
+    fun readAloudSpan(start: String, maxUtf16: Int): ReadAloudSpan? =
+        NativeEngine.readAloudSpan(checked(), start, maxUtf16)?.let { (from, to, text, next) ->
+            ReadAloudSpan(TextRange(from, to, text), next.ifEmpty { null })
+        }
+
+    /** Start of this block if inside one, or of the block before it. Null at the beginning. */
+    fun previousReadAloudStart(start: String): String? = NativeEngine.previousReadAloudStart(checked(), start)
 
     /** How far the current page is into the book, 0..1. */
     val progress: Float get() = NativeEngine.positionPermyriad(checked()) / 10000f

@@ -11,6 +11,16 @@
 
     <string name="action_back">Назад</string>
     <string name="action_search">Поиск</string>
+    <string name="read_aloud">Читать вслух</string>
+    <string name="speech_from_selection">Читать отсюда</string>
+    <string name="speech_previous">Предыдущий абзац</string>
+    <string name="speech_next">Дальше</string>
+    <string name="speech_pause">Пауза</string>
+    <string name="speech_resume">Продолжить</string>
+    <string name="speech_stop">Остановить</string>
+    <string name="speech_rate">Скорость: %1$s×</string>
+    <string name="speech_no_voice">Для этой книги нет установленного офлайн-голоса. Установите голос в настройках синтеза речи Android и повторите попытку.</string>
+    <string name="speech_failed">Не удалось продолжить чтение вслух. Проверьте настройки синтеза речи Android и повторите попытку.</string>
     <string name="action_contents">Оглавление</string>
     <string name="action_settings">Настройки</string>
     <string name="action_bookmark_add">Добавить закладку</string>
