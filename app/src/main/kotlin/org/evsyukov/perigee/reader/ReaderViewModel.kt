@@ -9,6 +9,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import java.io.File
 import kotlin.math.roundToInt
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.Job
@@ -376,8 +377,20 @@ class ReaderViewModel internal constructor(
         // Touches made while the book is laid out, or faster than pages come,
         // must not pile up and then fire all at once.
         val open = reader ?: return false
-        if (_state.value.busy || turnsWaiting >= MAX_TURNS_WAITING) return false
-        stopSpeech()
+        val shown = _state.value
+        if (shown.busy || turnsWaiting >= MAX_TURNS_WAITING) return false
+        val run = speechRequest?.takeIf {
+            when (it.state.value.phase) {
+                SpeechPhase.Starting, SpeechPhase.Playing, SpeechPhase.Paused -> true
+                else -> false
+            }
+        }
+        if (run != null) {
+            val page = shown.page ?: return false
+            if (turnsWaiting == 0 && page.index == turnTarget(page, screens)) return false
+            enqueueSpeechTurn(open, run, screens)
+            return true
+        }
         turnsWaiting++
         // The reader is reading: the second copy waits for the next pause.
         prepareSpareLater(SPARE_AFTER_TURN_MILLIS)
@@ -391,6 +404,38 @@ class ReaderViewModel internal constructor(
             show(page, turned = screens.coerceIn(-1, 1))
         }
         return true
+    }
+
+    private fun turnTarget(page: Page, screens: Int): Int {
+        val last = page.pageCount - 1
+        return (page.index + screens * page.turnStep).coerceIn(0, last - last % page.turnStep)
+    }
+
+    private fun enqueueSpeechTurn(open: BookReader, run: SpeechRequest, screens: Int) {
+        val target = CompletableDeferred<String?>()
+        val bookFile = file
+        turnsWaiting++
+        prepareSpareLater(SPARE_AFTER_TURN_MILLIS)
+        // Retire the old utterance before rendering can yield to its completion callback.
+        run.seekAfterPageTurn(target)
+        viewModelScope.launch {
+            try {
+                layout.withLock {
+                    if (reader !== open || file != bookFile) return@withLock
+                    val before = _state.value.page ?: return@withLock
+                    val wanted = turnTarget(before, screens)
+                    // A cancelled speech move can already have changed the native cursor. Turn
+                    // relative to the last published page, not to that unseen position.
+                    val page = if (wanted == before.index) before else open.goToPage(wanted)
+                    if (reader !== open || file != bookFile) return@withLock
+                    if (page !== before) show(page, turned = screens.coerceIn(-1, 1))
+                    target.complete(page.xpointer)
+                }
+            } finally {
+                turnsWaiting--
+                target.complete(null)
+            }
+        }
     }
 
     /** Jumps to a place, remembering where the reader came from. */
@@ -629,7 +674,11 @@ class ReaderViewModel internal constructor(
 
     private fun navigate(block: suspend (BookReader) -> Unit) {
         stopSpeech()
-        act(block)
+        val bookFile = file
+        act { open ->
+            // A jump supersedes speech but must not be overwritten by a page turn already in flight.
+            layout.withLock { if (reader === open && file == bookFile) block(open) }
+        }
     }
 
     internal fun startSpeech(fromSelection: Boolean = false) {
@@ -654,7 +703,7 @@ class ReaderViewModel internal constructor(
                     if (speechRequest !== run || reader !== open || state.value.book?.id != book.id) return@withLock false
                     val page = open.goTo(at) ?: return@withLock false
                     if (speechRequest !== run) return@withLock false
-                    show(page)
+                    show(page, turned = state.value.turned.takeIf { state.value.page === page } ?: 0)
                     true
                 }
             },
