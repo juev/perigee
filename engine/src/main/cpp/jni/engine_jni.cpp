@@ -671,6 +671,21 @@ Java_org_evsyukov_perigee_engine_NativeEngine_readAloudSpan(
                        span.next.isNull() ? lString32() : span.next.toString()});
 }
 
+JNIEXPORT jobjectArray JNICALL
+Java_org_evsyukov_perigee_engine_NativeEngine_speechRange(
+        JNIEnv* env, jobject, jlong handle, jstring start, jint length, jint from, jint to) {
+    if (length > 4000 || from < 0 || from >= to || to > length) return nullptr;
+    auto* doc = viewOf(handle)->getDocument();
+    if (!doc) return nullptr;
+    const auto anchor = toCre(env, start);
+    perigee::SpeechSlice slice{from, to, {}, {}};
+    auto span = perigee::readAloudSpan(doc->createXPointer(anchor), std::max(length, 2), &slice);
+    if (slice.start.isNull() || slice.end.isNull() || span.start.toString() != anchor) return nullptr;
+    // Compare replayed text in Kotlin: toCre uses JNI modified UTF-8 on input, which
+    // cannot be passed to crengine's standard UTF-8 decoder for supplementary text.
+    return toJava(env, {slice.start.toString(), slice.end.toString(), span.text});
+}
+
 JNIEXPORT jstring JNICALL
 Java_org_evsyukov_perigee_engine_NativeEngine_previousReadAloudStart(
         JNIEnv* env, jobject, jlong handle, jstring start) {
