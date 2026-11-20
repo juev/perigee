@@ -22,20 +22,20 @@ import org.junit.runners.model.Statement
  * string "null" into a null value (`SettingsState.internValue`), and a null value is put back by
  * removing the setting.
  */
-class ImmersiveNoticeSeen : TestRule {
+class ImmersiveNoticeSeen(private val automationFlags: Int = 0) : TestRule {
     override fun apply(base: Statement, description: Description) = object : Statement() {
         override fun evaluate() {
             val before = read()
             var failure: Throwable? = null
             try {
-                write(CONFIRMED)
+                write(CONFIRMED, automationFlags)
                 base.evaluate()
             } catch (e: Throwable) {
                 failure = e
                 throw e
             } finally {
                 try {
-                    write(before)
+                    write(before, automationFlags)
                 } catch (e: Throwable) {
                     // The test's own failure comes first; one that passed fails on the setting left behind.
                     if (failure != null) failure.addSuppressed(e) else throw e
@@ -58,8 +58,8 @@ class ImmersiveNoticeSeen : TestRule {
          * Sets the setting, or removes it for null, under the shell's right to write secure settings,
          * held for the write only; then reads it back, as a write that returned is not one that took.
          */
-        fun write(value: String?) {
-            val automation = instrumentation.uiAutomation
+        fun write(value: String?, automationFlags: Int = 0) {
+            val automation = instrumentation.getUiAutomation(automationFlags)
             automation.adoptShellPermissionIdentity(Manifest.permission.WRITE_SECURE_SETTINGS)
             try {
                 if (value == null) {

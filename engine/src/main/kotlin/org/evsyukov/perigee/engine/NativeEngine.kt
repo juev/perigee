@@ -118,5 +118,8 @@ internal object NativeEngine {
     /** Href, xpointer of the link and xpointer of its target ("" when outside the book); null when there is no link. */
     external fun linkAt(handle: Long, x: Int, y: Int): Array<String>?
 
+    /** Flat rows: anchor, text, heading flag, and four physical bitmap coordinates. */
+    external fun pageReadingBlocks(handle: Long): Array<String>
+
     external fun renderPage(handle: Long, bitmap: Bitmap)
 }

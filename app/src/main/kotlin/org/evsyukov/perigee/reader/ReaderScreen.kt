@@ -7,12 +7,9 @@ import android.view.WindowManager
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.LocalActivity
 import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutHorizontally
@@ -81,7 +78,10 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
@@ -257,17 +257,46 @@ fun ReaderScreen(file: File, onClose: () -> Unit, viewModel: ReaderViewModel = v
                     var fromBottomEdge by remember { mutableStateOf(false) }
                     val menuOpen by rememberUpdatedState(panel == Panel.Menu)
                     val pageLabel = stringResource(R.string.page_description, shown.index + 1, shown.pageCount)
+                    val hidden = abs(shown.bitmap.height - area.height) > area.height / 10
+                    val reading = !hidden && !state.busy && panel == Panel.None && state.fontTrial == null &&
+                        state.selection == null && state.quoteTouch == null && state.offer == null
+                    val stillReading by rememberUpdatedState(reading)
+                    val nextPage = stringResource(R.string.accessibility_next_page)
+                    val previousPage = stringResource(R.string.accessibility_previous_page)
+                    val openControls = stringResource(R.string.accessibility_open_reader_controls)
                     PageView(
                         page = shown,
                         turned = state.turned,
                         pageTurn = prefs.pageTurn,
                         // A page laid out for the other orientation is not shown cut to this one while the
                         // book is laid out again: the screen stays the colour of the page until it is.
-                        hidden = abs(shown.bitmap.height - area.height) > area.height / 10,
+                        hidden = hidden,
                         modifier = Modifier
                             .fillMaxSize()
                             .testTag("page")
-                            .semantics { contentDescription = pageLabel }
+                            .semantics {
+                                contentDescription = pageLabel
+                                if (reading) {
+                                    // An accessibility click goes directly to the menu, not to a
+                                    // coordinate that could also be a link or a page-turn zone.
+                                    onClick(label = openControls) {
+                                        if (!stillReading || panel != Panel.None || viewModel.state.value.page !== shown) {
+                                            false
+                                        } else {
+                                            panel = Panel.Menu
+                                            true
+                                        }
+                                    }
+                                    customActions = buildList {
+                                        if (shown.index > 0) add(CustomAccessibilityAction(previousPage) {
+                                            stillReading && viewModel.turnFromAccessibility(shown, -1)
+                                        })
+                                        if (shown.index + shown.turnStep < shown.pageCount) add(CustomAccessibilityAction(nextPage) {
+                                            stillReading && viewModel.turnFromAccessibility(shown, 1)
+                                        })
+                                    }
+                                }
+                            }
                             .pointerInput(offsetX) {
                                 // Holding a finger starts a selection (below) and is not a touch:
                                 // naming a long-press handler keeps it from ending as one.
@@ -347,6 +376,9 @@ fun ReaderScreen(file: File, onClose: () -> Unit, viewModel: ReaderViewModel = v
                                 )
                             },
                     )
+                    if (reading) {
+                        ReadingSemantics(shown, area, offsetX, file.absolutePath)
+                    }
                     Marks(state, offsetX, ink)
                     state.selection?.let { SelectionHandles(it, offsetX, viewModel::stretch) }
                     ProgressLine(
@@ -362,7 +394,9 @@ fun ReaderScreen(file: File, onClose: () -> Unit, viewModel: ReaderViewModel = v
         if (state.busy) {
             CircularProgressIndicator(Modifier.align(Alignment.Center).testTag("busy"), color = ink.copy(alpha = 0.5f))
         }
-        AnimatedVisibility(panel == Panel.Menu && state.page != null, enter = fadeIn(), exit = fadeOut()) {
+        // Swap the menu and reading semantics together. Fading the menu attaches transparent
+        // controls on entry and leaves outgoing controls in the tree after returning to the page.
+        if (panel == Panel.Menu && state.page != null) {
             ReaderMenu(
                 state = state,
                 onClose = close,

@@ -359,10 +359,24 @@ class ReaderViewModel internal constructor(
 
     /** One screen forward or back. */
     fun turn(screens: Int) {
+        enqueueTurn(screens)
+    }
+
+    /** Do not apply an action from a retired page, or queue another accessibility turn in flight. */
+    internal fun turnFromAccessibility(page: Page, screens: Int): Boolean {
+        val canTurn = when (screens) {
+            -1 -> page.index > 0
+            1 -> page.index + page.turnStep < page.pageCount
+            else -> false
+        }
+        return canTurn && _state.value.page === page && turnsWaiting == 0 && enqueueTurn(screens)
+    }
+
+    private fun enqueueTurn(screens: Int): Boolean {
         // Touches made while the book is laid out, or faster than pages come,
         // must not pile up and then fire all at once.
-        val open = reader ?: return
-        if (_state.value.busy || turnsWaiting >= MAX_TURNS_WAITING) return
+        val open = reader ?: return false
+        if (_state.value.busy || turnsWaiting >= MAX_TURNS_WAITING) return false
         stopSpeech()
         turnsWaiting++
         // The reader is reading: the second copy waits for the next pause.
@@ -376,6 +390,7 @@ class ReaderViewModel internal constructor(
             }
             show(page, turned = screens.coerceIn(-1, 1))
         }
+        return true
     }
 
     /** Jumps to a place, remembering where the reader came from. */

@@ -4,6 +4,7 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
+import androidx.annotation.StringRes
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -85,8 +86,8 @@ internal fun ReaderMenu(
         Surface(Modifier.align(Alignment.TopCenter).fillMaxWidth().swallowTouches().testTag("top-bar"), tonalElevation = 3.dp, shadowElevation = 4.dp) {
             Column(Modifier.windowInsetsPadding(WindowInsets.safeDrawing).padding(horizontal = 4.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    IconButton(onClick = onClose) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.action_back))
+                    IconButton(onClick = onClose, modifier = menuButtonLabel(R.string.action_back)) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null)
                     }
                     Column(Modifier.weight(1f).padding(horizontal = 4.dp)) {
                         Text(
@@ -100,11 +101,15 @@ internal fun ReaderMenu(
                             Text(author, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         }
                     }
-                    IconButton(onClick = onSearch) { Icon(Icons.Filled.Search, stringResource(R.string.action_search)) }
-                    IconButton(onClick = onContents) {
-                        Icon(Icons.AutoMirrored.Filled.List, stringResource(R.string.action_contents))
+                    IconButton(onClick = onSearch, modifier = menuButtonLabel(R.string.action_search)) {
+                        Icon(Icons.Filled.Search, contentDescription = null)
                     }
-                    IconButton(onClick = onSettings) { Icon(Icons.Filled.Settings, stringResource(R.string.action_settings)) }
+                    IconButton(onClick = onContents, modifier = menuButtonLabel(R.string.action_contents)) {
+                        Icon(Icons.AutoMirrored.Filled.List, contentDescription = null)
+                    }
+                    IconButton(onClick = onSettings, modifier = menuButtonLabel(R.string.action_settings)) {
+                        Icon(Icons.Filled.Settings, contentDescription = null)
+                    }
                 }
                 state.chapter?.let {
                     Text(
@@ -119,13 +124,16 @@ internal fun ReaderMenu(
             }
         }
 
-        // The menu stays composed while it fades out, even if the book is gone by then.
         val page = state.page
         if (page != null) Surface(Modifier.align(Alignment.BottomCenter).fillMaxWidth().swallowTouches(), tonalElevation = 3.dp, shadowElevation = 4.dp) {
             Column(Modifier.windowInsetsPadding(WindowInsets.navigationBars).padding(horizontal = 12.dp, vertical = 4.dp)) {
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    IconButton(onClick = onGoBack, enabled = state.canGoBack) {
-                        Icon(Icons.Filled.Refresh, stringResource(R.string.action_go_back))
+                    IconButton(
+                        onClick = onGoBack,
+                        modifier = menuButtonLabel(R.string.action_go_back),
+                        enabled = state.canGoBack,
+                    ) {
+                        Icon(Icons.Filled.Refresh, contentDescription = null)
                     }
                     Text(
                         stringResource(R.string.page_of, page.index + 1, page.pageCount),
@@ -133,10 +141,13 @@ internal fun ReaderMenu(
                         style = MaterialTheme.typography.titleMedium,
                     )
                     val marked = state.pageBookmark != null
-                    IconButton(onClick = onToggleBookmark) {
+                    IconButton(
+                        onClick = onToggleBookmark,
+                        modifier = menuButtonLabel(if (marked) R.string.action_bookmark_remove else R.string.action_bookmark_add),
+                    ) {
                         Icon(
                             Icons.Filled.Star,
-                            stringResource(if (marked) R.string.action_bookmark_remove else R.string.action_bookmark_add),
+                            contentDescription = null,
                             tint = if (marked) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
@@ -155,6 +166,13 @@ internal fun ReaderMenu(
             }
         }
     }
+}
+
+/** The actionable node owns the name; its drawn icon is decorative. */
+@Composable
+private fun menuButtonLabel(@StringRes label: Int): Modifier {
+    val description = stringResource(label)
+    return Modifier.semantics { contentDescription = description }
 }
 
 /**

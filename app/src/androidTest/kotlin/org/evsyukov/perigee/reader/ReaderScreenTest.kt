@@ -1,5 +1,10 @@
 package org.evsyukov.perigee.reader
 
+import android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_BACK
+import android.accessibilityservice.AccessibilityServiceInfo
+import android.app.UiAutomation
+import android.graphics.Rect
+import android.view.accessibility.AccessibilityNodeInfo
 import androidx.activity.ComponentActivity
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.Box
@@ -11,6 +16,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.toPixelMap
+import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.ComposeTimeoutException
@@ -45,6 +51,7 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModelProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.platform.app.InstrumentationRegistry
 import java.io.File
 import java.time.LocalTime
 import kotlinx.coroutines.flow.first
@@ -57,6 +64,7 @@ import org.evsyukov.perigee.data.PageTurn
 import org.evsyukov.perigee.data.ReaderPreferences
 import org.evsyukov.perigee.data.ReaderPrefs
 import org.evsyukov.perigee.data.TapScheme
+import org.evsyukov.perigee.library.ImmersiveNoticeSeen
 import org.evsyukov.perigee.server.Server
 import org.evsyukov.perigee.sync.BookOrbit
 import org.evsyukov.perigee.sync.FakeOrbit
@@ -75,7 +83,11 @@ import org.junit.runner.RunWith
 /** The reading screen as the reader uses it: requirements R1 and R3. */
 @RunWith(AndroidJUnit4::class)
 class ReaderScreenTest {
-    @get:Rule
+    // Keep the first-run system overlay out of the test, and restore it after closing the Activity.
+    @get:Rule(order = 0)
+    val noticeSeen = ImmersiveNoticeSeen(UiAutomation.FLAG_DONT_SUPPRESS_ACCESSIBILITY_SERVICES)
+
+    @get:Rule(order = 1)
     val rule = createAndroidComposeRule<ComponentActivity>()
 
     @get:Rule
@@ -159,6 +171,146 @@ class ReaderScreenTest {
         assertEquals(0, shownPage())
         val pages = model().state.value.page!!.pageCount
         rule.onNodeWithContentDescription(string(R.string.page_description, 1, pages)).assertIsDisplayed()
+    }
+
+    @Test
+    fun theRenderedPageExposesBookTextWithoutImageRecognition() {
+        show()
+        waitForBook()
+        assertEquals(0, shownPage())
+        val pages = model().state.value.page!!.pageCount
+        rule.onNodeWithContentDescription(string(R.string.page_description, 1, pages)).assertIsDisplayed()
+
+        // Ask for actual semantic text, not a content description or characters found in the bitmap.
+        rule.onNodeWithText("Chapter 1, paragraph 1.", substring = true).assertIsDisplayed()
+    }
+
+    @Test
+    fun androidAccessibilityTreeExposesTheChapterHeadingAndParagraph() {
+        show()
+        waitForBook()
+        val automation = InstrumentationRegistry.getInstrumentation()
+            .getUiAutomation(UiAutomation.FLAG_DONT_SUPPRESS_ACCESSIBILITY_SERVICES)
+        val previousFlags = automation.serviceInfo.flags
+        fun flags(value: Int) {
+            automation.serviceInfo = automation.serviceInfo.apply { flags = value }
+        }
+        fun AccessibilityNodeInfo.hasVisibleText(match: (AccessibilityNodeInfo) -> Boolean): Boolean =
+            (isVisibleToUser && match(this)) || (0 until childCount).any { getChild(it)?.hasVisibleText(match) == true }
+        try {
+            flags(previousFlags or AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS)
+            rule.waitUntil(TIMEOUT) {
+                automation.windows.mapNotNull { it.root }.any { root ->
+                    root.packageName?.toString() == activity.packageName &&
+                        root.hasVisibleText { it.isHeading && it.text?.toString() == "Chapter 1" } &&
+                        root.hasVisibleText { it.text?.startsWith("Chapter 1, paragraph 1.") == true }
+                }
+            }
+        } finally {
+            flags(previousFlags)
+        }
+    }
+
+    @Test
+    fun readingPageCanBeTurnedBothWaysUsingAccessibilityActions() {
+        show()
+        waitForBook()
+        assertEquals(0, shownPage())
+        val pages = model().state.value.page!!.pageCount
+        assertTrue("the fixture needs more than two pages", pages > 2)
+        val firstParagraph = rule.onNodeWithText("Chapter 1, paragraph 1.", substring = true)
+        firstParagraph.assertIsDisplayed()
+
+        fun actions(index: Int) = rule.onNodeWithContentDescription(string(R.string.page_description, index + 1, pages))
+            .fetchSemanticsNode().config.getOrNull(SemanticsActions.CustomActions).orEmpty()
+
+        val firstActions = actions(0)
+        assertEquals("first page offers only the forward page action", 1, firstActions.size)
+        val forward = firstActions.single()
+        assertTrue(rule.runOnIdle { forward.action() })
+        waitForPage(1)
+        firstParagraph.assertDoesNotExist()
+
+        val nextActions = actions(1)
+        assertEquals("interior page offers both page actions", 2, nextActions.size)
+        assertTrue(nextActions.any { it.label == forward.label })
+        val backward = nextActions.single { it.label != forward.label }
+        assertTrue(rule.runOnIdle { backward.action() })
+        waitForPage(0)
+        firstParagraph.assertIsDisplayed()
+    }
+
+    @Test
+    fun androidAccessibilityOpensReaderControlsAndBackReturnsToTheSamePage() {
+        show()
+        waitForBook()
+        val page = model().state.value.page!!
+        val pageLabel = string(R.string.page_description, page.index + 1, page.pageCount)
+        val settingsLabel = string(R.string.action_settings)
+        val automation = InstrumentationRegistry.getInstrumentation()
+            .getUiAutomation(UiAutomation.FLAG_DONT_SUPPRESS_ACCESSIBILITY_SERVICES)
+        val previousFlags = automation.serviceInfo.flags
+        fun flags(value: Int) {
+            automation.serviceInfo = automation.serviceInfo.apply { flags = value }
+        }
+        fun findNode(visibleOnly: Boolean = true, match: (AccessibilityNodeInfo) -> Boolean): AccessibilityNodeInfo? {
+            fun search(node: AccessibilityNodeInfo): AccessibilityNodeInfo? {
+                if ((!visibleOnly || node.isVisibleToUser) && match(node)) return node
+                return (0 until node.childCount).firstNotNullOfOrNull { node.getChild(it)?.let(::search) }
+            }
+            return automation.windows.asSequence().mapNotNull { it.root }
+                .filter { it.packageName?.toString() == activity.packageName }.firstNotNullOfOrNull(::search)
+        }
+        fun pageNode() = findNode { it.contentDescription?.toString() == pageLabel }
+        fun paragraph() = findNode { it.text?.startsWith("Chapter 1, paragraph 1.") == true }
+        fun settingsButton() = findNode { it.contentDescription?.toString() == settingsLabel && it.isClickable }
+        fun waitForProjection(phase: String, condition: () -> Boolean) {
+            try {
+                rule.waitUntil(TIMEOUT, condition)
+            } catch (failure: ComposeTimeoutException) {
+                val label = findNode(visibleOnly = false) { it.contentDescription?.toString() == settingsLabel }
+                val labelBounds = label?.let { node -> Rect().also(node::getBoundsInScreen) }
+                val labelVisible = label?.isVisibleToUser
+                val labelClickable = label?.isClickable
+                val parentClickable = label?.parent?.isClickable
+                val projectionMatches = settingsButton() != null
+                val paragraphProjected = paragraph() != null
+                // refresh() asks the provider directly. It is a diagnostic, not a way to pass the wait.
+                val labelRefreshed = label?.refresh()
+                val refreshedBounds = label?.let { node -> Rect().also(node::getBoundsInScreen) }
+                val menuComposed = rule.onAllNodesWithTag("position").fetchSemanticsNodes().isNotEmpty()
+                val paragraphComposed = rule.onAllNodesWithText("Chapter 1, paragraph 1.", substring = true)
+                    .fetchSemanticsNodes().isNotEmpty()
+                throw AssertionError(
+                    "$phase: menuComposed=$menuComposed paragraphComposed=$paragraphComposed " +
+                        "menuButtonInAndroid=$projectionMatches paragraphInAndroid=$paragraphProjected " +
+                        "settingsLabelInAndroid=${label != null} labelVisible=$labelVisible labelBounds=$labelBounds " +
+                        "labelClickable=$labelClickable parentClickable=$parentClickable " +
+                        "labelRefreshed=$labelRefreshed refreshedVisible=${label?.isVisibleToUser} " +
+                        "refreshedBounds=$refreshedBounds " +
+                        "activityFocused=${rule.runOnUiThread { activity.hasWindowFocus() }}",
+                    failure,
+                )
+            }
+        }
+        try {
+            flags(previousFlags or AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS)
+            rule.waitUntil(TIMEOUT) { pageNode() != null && paragraph() != null }
+            assertTrue(
+                "the visible page exposes a click to open reader controls",
+                pageNode()?.actionList?.any { it.id == AccessibilityNodeInfo.ACTION_CLICK } == true,
+            )
+            assertTrue(pageNode()?.performAction(AccessibilityNodeInfo.ACTION_CLICK) == true)
+            waitForProjection("after the Android click") { settingsButton() != null && paragraph() == null }
+
+            // Back is also the global action exposed by Android to accessibility services.
+            rule.waitUntil(TIMEOUT) { rule.runOnUiThread { activity.hasWindowFocus() } }
+            assertTrue(automation.performGlobalAction(GLOBAL_ACTION_BACK))
+            waitForProjection("after Android Back") { settingsButton() == null && paragraph() != null && pageNode() != null }
+            assertEquals("returning from the controls keeps the reading location", page.xpointer, model().state.value.page?.xpointer)
+        } finally {
+            flags(previousFlags)
+        }
     }
 
     @Test
