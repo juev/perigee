@@ -120,7 +120,6 @@ internal fun ReaderMenu(
             }
         }
 
-        // The menu stays composed while it fades out, even if the book is gone by then.
         val page = state.page
         if (page != null) Surface(Modifier.align(Alignment.BottomCenter).fillMaxWidth().swallowTouches(), tonalElevation = 3.dp, shadowElevation = 4.dp) {
             Column(Modifier.windowInsetsPadding(WindowInsets.navigationBars).padding(horizontal = 12.dp, vertical = 4.dp)) {
