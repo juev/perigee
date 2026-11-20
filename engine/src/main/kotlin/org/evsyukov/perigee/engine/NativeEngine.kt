@@ -77,6 +77,8 @@ internal object NativeEngine {
     external fun xpointer(handle: Long): String
     external fun goToXPointer(handle: Long, xpointer: String): Boolean
     external fun textBetween(handle: Long, start: String, end: String): String?
+    external fun readAloudSpan(handle: Long, start: String, maxUtf16: Int): Array<String>?
+    external fun previousReadAloudStart(handle: Long, start: String): String?
 
     /** Position in the book in 1/10000 units. */
     external fun positionPermyriad(handle: Long): Int

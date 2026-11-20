@@ -161,7 +161,9 @@ jobs:
         if: failure() && matrix.server
         run: docker compose -f contract/docker-compose.yml logs --tail 300 app
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        if: failure()
+        # The app suite also has capability-based skips (e.g. TTS voice provisioning).
+        # Keep the successful report so a skipped device check is not mistaken for a pass.
+        if: failure() || matrix.name == 'app'
         with:
           name: device-reports-${{ strategy.job-index }}
           path: |

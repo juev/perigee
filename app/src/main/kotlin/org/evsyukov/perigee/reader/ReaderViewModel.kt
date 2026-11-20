@@ -1,6 +1,7 @@
 package org.evsyukov.perigee.reader
 
 import android.app.Application
+import android.content.Context
 import android.util.Log
 import android.graphics.Point
 import android.graphics.Rect
@@ -139,6 +140,7 @@ class ReaderViewModel internal constructor(
     application: Application,
     private val library: Library,
     private val store: ReadingStore = ReadingStore.of(library),
+    private val startSpeechService: (Context, SpeechRequest) -> Unit = { context, run -> ReadAloudService.start(context, run) },
     /** Asks the server about a book just opened, or come back to, see [Server.bookOpened]. */
     private val bookOpened: suspend (bookId: String) -> Unit,
 ) : AndroidViewModel(application) {
@@ -159,6 +161,11 @@ class ReaderViewModel internal constructor(
         preferences.previousUserCss.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
     private var reader: BookReader? = null
+    private var speechLanguage = ""
+    private var speechRequest: SpeechRequest? = null
+    private var speechObserver: Job? = null
+    private val _speech = MutableStateFlow<SpeechState?>(null)
+    internal val speech = _speech.asStateFlow()
     private var file: File? = null
     private var viewport: Viewport? = null
     private var applied: Triple<Int, Int, EngineSettings>? = null
@@ -206,6 +213,7 @@ class ReaderViewModel internal constructor(
     /** Shows [file]; the same file again changes nothing. */
     fun open(file: File) {
         if (this.file == file) return
+        stopSpeech()
         this.file = file
         viewModelScope.launch {
             closeBook()
@@ -215,6 +223,7 @@ class ReaderViewModel internal constructor(
 
     /** Puts the book away; the screen is free to show another. */
     fun close() {
+        stopSpeech()
         file = null
         viewModelScope.launch {
             closeBook()
@@ -226,9 +235,9 @@ class ReaderViewModel internal constructor(
      * The reader goes to the place they got to elsewhere. It is a jump like
      * any other: Back returns to where they were.
      */
-    fun acceptOffer() = act { open ->
-        val offer = _state.value.offer ?: return@act
-        val shown = _state.value.page ?: return@act
+    fun acceptOffer() = navigate { open ->
+        val offer = _state.value.offer ?: return@navigate
+        val shown = _state.value.page ?: return@navigate
         // A place that cannot be found in this copy of the book is gone to by how far into the book it is.
         val page = offer.xpointer?.let { open.goTo(it) } ?: open.goToPage((offer.progress * (shown.pageCount - 1)).roundToInt())
         if (page.index != shown.index) jumpedFrom(shown.xpointer)
@@ -354,6 +363,7 @@ class ReaderViewModel internal constructor(
         // must not pile up and then fire all at once.
         val open = reader ?: return
         if (_state.value.busy || turnsWaiting >= MAX_TURNS_WAITING) return
+        stopSpeech()
         turnsWaiting++
         // The reader is reading: the second copy waits for the next pause.
         prepareSpareLater(SPARE_AFTER_TURN_MILLIS)
@@ -369,27 +379,27 @@ class ReaderViewModel internal constructor(
     }
 
     /** Jumps to a place, remembering where the reader came from. */
-    fun goTo(xpointer: String) = act { open ->
+    fun goTo(xpointer: String) = navigate { open ->
         val from = _state.value.page?.xpointer
-        val page = open.goTo(xpointer) ?: return@act
+        val page = open.goTo(xpointer) ?: return@navigate
         if (from != null && page.index != _state.value.page?.index) jumpedFrom(from)
         show(page)
     }
 
     /** Jumps to a share of the book, 0..1, as from the progress line. */
-    fun goToProgress(share: Float) = act { open ->
-        val shown = _state.value.page ?: return@act
+    fun goToProgress(share: Float) = navigate { open ->
+        val shown = _state.value.page ?: return@navigate
         val target = (share * (shown.pageCount - 1)).toInt()
-        if (target == shown.index) return@act
+        if (target == shown.index) return@navigate
         jumpedFrom(shown.xpointer)
         show(open.goToPage(target))
     }
 
     /** Returns to where the last jump was made from. */
-    fun goBack() = act { open ->
-        val from = history.removeLastOrNull() ?: return@act
+    fun goBack() = navigate { open ->
+        val from = history.removeLastOrNull() ?: return@navigate
         saveHistory()
-        show(open.goTo(from) ?: return@act)
+        show(open.goTo(from) ?: return@navigate)
     }
 
     /** Remembers a place a jump is made from, here and in the library, for Back after a restart too. */
@@ -602,6 +612,63 @@ class ReaderViewModel internal constructor(
         viewModelScope.launch { block(open) }
     }
 
+    private fun navigate(block: suspend (BookReader) -> Unit) {
+        stopSpeech()
+        act(block)
+    }
+
+    internal fun startSpeech(fromSelection: Boolean = false) {
+        val open = reader ?: return
+        val shown = state.value
+        val book = shown.book ?: return
+        if (shown.busy || turnsWaiting != 0) return
+        val start = if (fromSelection) shown.selection?.range?.start ?: return else open.position
+        stopSpeech()
+        lateinit var run: SpeechRequest
+        run = SpeechRequest(
+            language = speechLanguage,
+            start = start,
+            load = { at, limit ->
+                if (speechRequest === run) open.read { it.readAloudSpan(at, limit) } else null
+            },
+            previous = { at ->
+                if (speechRequest === run) open.read { it.previousReadAloudStart(at) } else null
+            },
+            moveTo = { at ->
+                layout.withLock {
+                    if (speechRequest !== run || reader !== open || state.value.book?.id != book.id) return@withLock false
+                    val page = open.goTo(at) ?: return@withLock false
+                    if (speechRequest !== run) return@withLock false
+                    show(page)
+                    true
+                }
+            },
+        )
+        speechRequest = run
+        _speech.value = run.state.value
+        speechObserver = viewModelScope.launch {
+            run.state.collect { live ->
+                if (speechRequest === run) _speech.value = live.takeUnless { it.phase == SpeechPhase.Ended }
+            }
+        }
+        clearSelection()
+        startSpeechService(getApplication(), run)
+    }
+
+    internal fun speechCommand(command: SpeechCommand, rate: Float = 1f) {
+        if (command == SpeechCommand.Stop) stopSpeech()
+        else speechRequest?.dispatch?.invoke(command, rate)
+    }
+
+    private fun stopSpeech() {
+        val run = speechRequest
+        speechRequest = null
+        speechObserver?.cancel()
+        speechObserver = null
+        if (run != null) ReadAloudService.stop(run)
+        _speech.value = null
+    }
+
     /**
      * Brings the engine in line with what was asked for last: the file, the
      * viewport, the preferences. Requests that arrive while a book is opening
@@ -654,6 +721,7 @@ class ReaderViewModel internal constructor(
             applied = target
             Diagnostics.event("reader.open") { traced(settings, width, height) }
             val info = open.read { it.info() }
+            speechLanguage = info.language
             val book = library.open(file, info.title, info.authors)
             book.xpointer?.let { open.goTo(it) }
             history.addAll(book.jumpedFrom)
@@ -734,7 +802,9 @@ class ReaderViewModel internal constructor(
         // The page shown is looked at from here, before anything is written: the app put away while
         // the place or the page before is being written ends this page, not the one before.
         val was = looking
-        val left = if (was == null || was.page != page.index || was.pageCount != page.pageCount) {
+        val left = if (away) {
+            null
+        } else if (was == null || was.page != page.index || was.pageCount != page.pageCount) {
             looking = Looking(book.id, page.index, page.pageCount, now)
             was
         } else {
@@ -769,6 +839,7 @@ class ReaderViewModel internal constructor(
             "size=${settings.fontSize} w=$width h=$height"
 
     override fun onCleared() {
+        stopSpeech()
         // Closing waits for the engine thread, which outlives this model.
         reader?.let { open -> GlobalScope.launch { open.close() } }
     }

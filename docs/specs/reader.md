@@ -44,6 +44,14 @@ All of these are methods of `EngineDocument`.
 
 Points and rectangles are in pixels of the bitmap the page is drawn into. The app converts from screen coordinates when it shows the bitmap shifted or cropped.
 
+### Read aloud
+
+**Read aloud** in the reader menu starts at the current saved reading position. Select text and choose **Read from here** to start at the selection instead. Speech follows the main text of the book in order, independently of pagination. Detached, marked footnotes and endnotes are skipped; their inline references remain part of the text. Long paragraphs are divided into bounded utterances. **Next** skips the current utterance; **Previous paragraph** takes you to the start of the current paragraph from inside it, or to the preceding paragraph from its start.
+
+Use the reader menu to pause, resume, skip, change speed or stop. Pausing or changing speed can replay the current utterance from its start. Android media controls are available during the session; speech continues with the screen off, but interruptions and headset disconnection pause it until explicitly resumed. The visible page and stored position follow the speech position; turning or jumping by hand, putting the book back, or removing the app's task stops reading aloud. Reopening or restoring the process never starts speech automatically. Reflow and rotation are not page-based seeks.
+
+The app uses installed offline voices offered by the Android text-to-speech engine for the book's declared language, or the engine's installed default if the book does not declare one. There is no Perigee speech server. The installed Android engine receives the current utterance for synthesis; install a suitable offline voice in Android settings if none is available.
+
 ### Highlights
 
 `renderPage(bitmap, highlights)` and `BookReader.setHighlights` tint ranges on the page. On a light page the colour is multiplied in, like a marker on paper: the page takes the colour and the text stays as dark as it was. On a dark page the colour is laid over at partial opacity, because multiplying would leave nothing to see.

@@ -77,6 +77,9 @@ internal fun ReaderMenu(
     onToggleBookmark: () -> Unit,
     onGoBack: () -> Unit,
     onSeek: (Float) -> Unit,
+    speech: SpeechState?,
+    onStartSpeech: () -> Unit,
+    onSpeech: (SpeechCommand, Float) -> Unit,
 ) {
     Box(Modifier.fillMaxSize()) {
         Surface(Modifier.align(Alignment.TopCenter).fillMaxWidth().swallowTouches().testTag("top-bar"), tonalElevation = 3.dp, shadowElevation = 4.dp) {
@@ -112,6 +115,7 @@ internal fun ReaderMenu(
                         overflow = TextOverflow.Ellipsis,
                     )
                 }
+                SpeechControls(speech, onStartSpeech, onSpeech)
             }
         }
 
@@ -158,6 +162,36 @@ internal fun ReaderMenu(
  * fall through to the page underneath and close the menu or turn the page.
  */
 private fun Modifier.swallowTouches(): Modifier = pointerInput(Unit) { detectTapGestures { } }
+
+@Composable
+private fun SpeechControls(speech: SpeechState?, onStart: () -> Unit, onCommand: (SpeechCommand, Float) -> Unit) {
+    val phase = speech?.phase
+    if (phase == null || phase == SpeechPhase.Ended || phase == SpeechPhase.NoVoice || phase == SpeechPhase.Failed) {
+        val error = when (phase) {
+            SpeechPhase.NoVoice -> R.string.speech_no_voice
+            SpeechPhase.Failed -> R.string.speech_failed
+            else -> null
+        }
+        if (error != null) Text(stringResource(error), Modifier.padding(horizontal = 12.dp), color = MaterialTheme.colorScheme.error)
+        TextButton(onClick = onStart, modifier = Modifier.testTag("readAloud")) { Text(stringResource(R.string.read_aloud)) }
+        return
+    }
+    val paused = phase == SpeechPhase.Paused
+    val rate = speech?.rate ?: return
+    Row(Modifier.horizontalScroll(rememberScrollState()), verticalAlignment = Alignment.CenterVertically) {
+        IconButton(onClick = { onCommand(SpeechCommand.Previous, rate) }) {
+            Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.speech_previous))
+        }
+        TextButton(onClick = { onCommand(if (paused) SpeechCommand.Play else SpeechCommand.Pause, rate) }) {
+            Text(stringResource(if (paused) R.string.speech_resume else R.string.speech_pause))
+        }
+        TextButton(onClick = { onCommand(SpeechCommand.Next, rate) }) { Text(stringResource(R.string.speech_next)) }
+        TextButton(onClick = { onCommand(SpeechCommand.Stop, rate) }) { Text(stringResource(R.string.speech_stop)) }
+        TextButton(onClick = { onCommand(SpeechCommand.Rate, if (rate >= 2f) 0.5f else rate + 0.25f) }) {
+            Text(stringResource(R.string.speech_rate, rate.toString()))
+        }
+    }
+}
 
 /** Actions for the text being selected, or for the quote that was touched. */
 @Composable
@@ -234,6 +268,9 @@ internal fun SelectionBars(state: ReaderState, viewModel: ReaderViewModel, modif
                 } else {
                     IconButton(modifier = action, onClick = { webSearch(context, text) }) {
                         Icon(Icons.Filled.Search, stringResource(R.string.action_web_search))
+                    }
+                    TextButton(onClick = { viewModel.startSpeech(fromSelection = true) }) {
+                        Text(stringResource(R.string.speech_from_selection))
                     }
                 }
             }

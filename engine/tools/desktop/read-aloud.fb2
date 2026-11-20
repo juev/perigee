@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<FictionBook xmlns="http://www.gribuser.ru/xml/fictionbook/2.0" xmlns:l="http://www.w3.org/1999/xlink">
+ <description><title-info><genre>prose</genre><author><nickname>Fixture</nickname></author><book-title>Speech continuity fixture</book-title><lang>ru</lang></title-info></description>
+ <body>
+  <section><title><p>First chapter</p></title>
+   <p>Нач<emphasis>ало</emphasis> — это 🌔; латиница and Кириллица. <a type="note" l:href="#n1">1</a> Конец абзаца.</p>
+   <p>Repetition. Repetition.</p>
+  </section>
+  <section><title><p>Second chapter</p></title><p>Последний абзац. Final tail.</p></section>
+ </body>
+ <body name="notes"><section id="n1"><p>Detached note marker.</p></section></body>
+</FictionBook>
