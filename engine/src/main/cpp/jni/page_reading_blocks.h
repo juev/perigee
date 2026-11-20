@@ -30,8 +30,9 @@ inline std::vector<ReadingBlock> pageReadingBlocks(LVDocView& view) {
 
         void onText(ldomXRange* range) override {
             auto& start = range->getStart();
-            const int length = range->getEnd().getOffset() - start.getOffset();
-            if (length <= 0) return;
+            int begin = start.getOffset();
+            int end = range->getEnd().getOffset();
+            if (begin >= end) return;
             for (auto* node = start.getNode()->getParentNode(); node; node = node->getParentNode()) {
                 auto style = node->getStyle();
                 if (node->getRendMethod() == erm_invisible ||
@@ -40,30 +41,52 @@ inline std::vector<ReadingBlock> pageReadingBlocks(LVDocView& view) {
             LVArray<lvRect> segments;
             range->getSegmentRects(segments);
             lvRect fragmentBounds;
+            bool crossesLeaf = false;
             for (int i = 0; i < segments.length(); i++) {
                 const auto& rect = segments[i];
                 // Adjacent DOM page ranges can overlap. A rectangle on the other leaf of the
                 // same spread still maps to the bitmap, but does not belong to this traversal.
-                if (rect.isEmpty() || rect.top < leafTop || rect.top >= leafBottom) continue;
+                if (rect.isEmpty()) continue;
+                if (rect.top < leafTop || rect.top >= leafBottom) {
+                    crossesLeaf = true;
+                    continue;
+                }
                 lvPoint top = rect.topLeft(), bottom = rect.bottomRight();
                 if (!view.docToWindowPoint(top) || !view.docToWindowPoint(bottom, true)) continue;
                 lvRect displayed(top.x, top.y, bottom.x, bottom.y);
                 fragmentBounds.extend(displayed);
             }
-            const auto fragment = start.getNode()->getText().substr(start.getOffset(), length);
+            const auto source = start.getNode()->getText();
             auto* owner = start.getThisBlockNode();
             if (fragmentBounds.isEmpty()) {
                 // Preserve a separator between visible inline runs when the separating text
                 // node has no geometry. Never attach undrawn non-whitespace to another run.
-                if (owner == block && !text.empty() && lString32(fragment).trim().empty()) text << fragment;
+                auto whitespace = source.substr(begin, end - begin);
+                if (!crossesLeaf && owner == block && !text.empty() && lString32(whitespace).trim().empty()) {
+                    text << whitespace;
+                }
                 return;
+            }
+            // One DOM text node can span both leaves. Clipping its rectangle alone still
+            // emits the characters from the other page. Resolve the offsets at the edges
+            // only when the actual line geometry crosses the leaf boundary.
+            if (crossesLeaf) {
+                ldomXPointer character(start.getNode(), begin);
+                auto onLeaf = [&](int offset) {
+                    character.setOffset(offset);
+                    lvRect rect;
+                    return character.getRectEx(rect, true) && rect.top >= leafTop && rect.top < leafBottom;
+                };
+                while (begin < end && !onLeaf(begin)) ++begin;
+                while (begin < end && !onLeaf(end - 1)) --end;
+                if (begin == end) return;
             }
             if (owner != block) {
                 flush();
                 block = owner;
             }
-            if (text.empty()) anchor = start.toString();
-            text << fragment;
+            if (text.empty()) anchor = ldomXPointer(start.getNode(), begin).toString();
+            text << source.substr(begin, end - begin);
             bounds.extend(fragmentBounds);
         }
 
