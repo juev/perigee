@@ -84,6 +84,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
@@ -261,6 +262,7 @@ fun ReaderScreen(file: File, onClose: () -> Unit, viewModel: ReaderViewModel = v
                     val stillReading by rememberUpdatedState(reading)
                     val nextPage = stringResource(R.string.accessibility_next_page)
                     val previousPage = stringResource(R.string.accessibility_previous_page)
+                    val openControls = stringResource(R.string.accessibility_open_reader_controls)
                     PageView(
                         page = shown,
                         turned = state.turned,
@@ -273,13 +275,25 @@ fun ReaderScreen(file: File, onClose: () -> Unit, viewModel: ReaderViewModel = v
                             .testTag("page")
                             .semantics {
                                 contentDescription = pageLabel
-                                if (reading) customActions = buildList {
-                                    if (shown.index > 0) add(CustomAccessibilityAction(previousPage) {
-                                        stillReading && viewModel.turnFromAccessibility(shown, -1)
-                                    })
-                                    if (shown.index + shown.turnStep < shown.pageCount) add(CustomAccessibilityAction(nextPage) {
-                                        stillReading && viewModel.turnFromAccessibility(shown, 1)
-                                    })
+                                if (reading) {
+                                    // An accessibility click goes directly to the menu, not to a
+                                    // coordinate that could also be a link or a page-turn zone.
+                                    onClick(label = openControls) {
+                                        if (!stillReading || panel != Panel.None || viewModel.state.value.page !== shown) {
+                                            false
+                                        } else {
+                                            panel = Panel.Menu
+                                            true
+                                        }
+                                    }
+                                    customActions = buildList {
+                                        if (shown.index > 0) add(CustomAccessibilityAction(previousPage) {
+                                            stillReading && viewModel.turnFromAccessibility(shown, -1)
+                                        })
+                                        if (shown.index + shown.turnStep < shown.pageCount) add(CustomAccessibilityAction(nextPage) {
+                                            stillReading && viewModel.turnFromAccessibility(shown, 1)
+                                        })
+                                    }
                                 }
                             }
                             .pointerInput(offsetX) {
