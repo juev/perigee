@@ -1,5 +1,6 @@
 package org.evsyukov.perigee.reader
 
+import android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_BACK
 import android.accessibilityservice.AccessibilityServiceInfo
 import android.app.UiAutomation
 import android.view.accessibility.AccessibilityNodeInfo
@@ -230,6 +231,50 @@ class ReaderScreenTest {
         assertTrue(rule.runOnIdle { backward.action() })
         waitForPage(0)
         firstParagraph.assertIsDisplayed()
+    }
+
+    @Test
+    fun androidAccessibilityOpensReaderControlsAndBackReturnsToTheSamePage() {
+        show()
+        waitForBook()
+        val page = model().state.value.page!!
+        val pageLabel = string(R.string.page_description, page.index + 1, page.pageCount)
+        val settingsLabel = string(R.string.action_settings)
+        val automation = InstrumentationRegistry.getInstrumentation()
+            .getUiAutomation(UiAutomation.FLAG_DONT_SUPPRESS_ACCESSIBILITY_SERVICES)
+        val previousFlags = automation.serviceInfo.flags
+        fun flags(value: Int) {
+            automation.serviceInfo = automation.serviceInfo.apply { flags = value }
+        }
+        fun findNode(match: (AccessibilityNodeInfo) -> Boolean): AccessibilityNodeInfo? {
+            fun search(node: AccessibilityNodeInfo): AccessibilityNodeInfo? {
+                if (node.isVisibleToUser && match(node)) return node
+                return (0 until node.childCount).firstNotNullOfOrNull { node.getChild(it)?.let(::search) }
+            }
+            return automation.windows.asSequence().mapNotNull { it.root }
+                .filter { it.packageName?.toString() == activity.packageName }.firstNotNullOfOrNull(::search)
+        }
+        fun pageNode() = findNode { it.contentDescription?.toString() == pageLabel }
+        fun paragraph() = findNode { it.text?.startsWith("Chapter 1, paragraph 1.") == true }
+        fun settingsButton() = findNode { it.contentDescription?.toString() == settingsLabel && it.isClickable }
+        try {
+            flags(previousFlags or AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS)
+            rule.waitUntil(TIMEOUT) { pageNode() != null && paragraph() != null }
+            assertTrue(
+                "the visible page exposes a click to open reader controls",
+                pageNode()?.actionList?.any { it.id == AccessibilityNodeInfo.ACTION_CLICK } == true,
+            )
+            assertTrue(pageNode()?.performAction(AccessibilityNodeInfo.ACTION_CLICK) == true)
+            rule.waitUntil(TIMEOUT) { settingsButton() != null && paragraph() == null }
+
+            // Back is also the global action exposed by Android to accessibility services.
+            rule.waitUntil(TIMEOUT) { rule.runOnUiThread { activity.hasWindowFocus() } }
+            assertTrue(automation.performGlobalAction(GLOBAL_ACTION_BACK))
+            rule.waitUntil(TIMEOUT) { settingsButton() == null && paragraph() != null && pageNode() != null }
+            assertEquals("returning from the controls keeps the reading location", page.xpointer, model().state.value.page?.xpointer)
+        } finally {
+            flags(previousFlags)
+        }
     }
 
     @Test
