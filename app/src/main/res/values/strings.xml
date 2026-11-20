@@ -9,6 +9,16 @@
 
     <string name="action_back">Back</string>
     <string name="action_search">Search</string>
+    <string name="read_aloud">Read aloud</string>
+    <string name="speech_from_selection">Read from here</string>
+    <string name="speech_previous">Previous paragraph</string>
+    <string name="speech_next">Next</string>
+    <string name="speech_pause">Pause</string>
+    <string name="speech_resume">Resume</string>
+    <string name="speech_stop">Stop</string>
+    <string name="speech_rate">Speed: %1$s×</string>
+    <string name="speech_no_voice">No installed offline voice for this book. Install a voice in Android text-to-speech settings and try again.</string>
+    <string name="speech_failed">Could not continue reading aloud. Check Android text-to-speech settings and try again.</string>
     <string name="action_contents">Contents</string>
     <string name="action_settings">Settings</string>
     <string name="action_bookmark_add">Add a bookmark</string>
