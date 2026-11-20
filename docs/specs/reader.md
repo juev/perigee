@@ -205,7 +205,7 @@ A thin line at the bottom edge of the page shows the position in the book, with 
 
 An active reading page exposes its visible main-flow text as separate nodes in document order, with headings marked. Text and bounds come from the same engine layout as the bitmap; this does not use OCR or depend on built-in read-aloud. For a spread, main-flow fragments are assigned to their own leaf and split at the page boundary.
 
-The page-number node offers the previous and next page actions where another screen exists. Its primary action opens the reading controls without a coordinate tap. The page text is absent from the accessibility tree while the menu is open; Android Back closes the menu and returns to the current reading position. The main-flow projection does not yet expose inline link actions or notes relocated to the foot of the page. Android node tests and a check with the TalkBack service are separate.
+The page-number node offers the previous and next page actions where another screen exists. Its primary action opens the reading controls without a coordinate tap. The page text is absent from the accessibility tree while the menu is open; Android Back closes the menu and returns to the current reading position. A footnote drawn at the bottom of a leaf is exposed after that leaf's main text, at its displayed bounds; a continuation exposes the fragment drawn on that leaf rather than the whole note. Inline link actions are not yet exposed. This projection does not change the visual layout or what Read aloud speaks. Android node tests and a check with the TalkBack service are separate.
 
 ### Settings sheet
 

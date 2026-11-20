@@ -29,8 +29,12 @@ internal fun ReadingSemantics(page: Page, area: IntSize, offsetX: Int, book: Str
     Layout(
         modifier = Modifier.fillMaxSize().semantics { isTraversalGroup = true },
         content = {
+            val occurrences = mutableMapOf<String, Int>()
             visible.forEachIndexed { index, block ->
-                key(book, block.anchor) {
+                // Two leaves can each display a footer for the same source note.
+                val occurrence = occurrences.getOrDefault(block.anchor, 0)
+                occurrences[block.anchor] = occurrence + 1
+                key(book, block.anchor, occurrence) {
                     Box(Modifier.semantics {
                         text = AnnotatedString(block.text)
                         traversalIndex = index.toFloat()
