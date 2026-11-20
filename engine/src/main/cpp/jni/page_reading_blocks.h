@@ -15,14 +15,15 @@ struct ReadingBlock {
     bool heading;
 };
 
-// Walk the rendered main-flow range of each visible leaf in document order.
-// Relocated footers are not in these ranges. Never query the following leaf
-// when there is none: crengine silently falls back to the current page.
+// Walk each visible leaf in reading order: main flow, then its drawn footers.
+// Never query the following leaf when there is none: crengine falls back to the current page.
 inline std::vector<ReadingBlock> pageReadingBlocks(LVDocView& view) {
     class Collector : public ldomNodeCallback {
     public:
-        Collector(LVDocView& view, std::vector<ReadingBlock>& out, int top, int bottom)
-                : view(view), out(out), leafTop(top), leafBottom(bottom) {}
+        Collector(LVDocView& view, std::vector<ReadingBlock>& out, int top, int bottom,
+                  int footerX = 0, lvRect footer = {})
+                : view(view), out(out), leafTop(top), leafBottom(bottom),
+                  footerX(footerX), footer(footer) {}
 
         bool onElement(ldomXPointerEx* at) override {
             return at->getNode()->getRendMethod() != erm_invisible;
@@ -51,9 +52,18 @@ inline std::vector<ReadingBlock> pageReadingBlocks(LVDocView& view) {
                     crossesLeaf = true;
                     continue;
                 }
-                lvPoint top = rect.topLeft(), bottom = rect.bottomRight();
-                if (!view.docToWindowPoint(top) || !view.docToWindowPoint(bottom, true)) continue;
-                lvRect displayed(top.x, top.y, bottom.x, bottom.y);
+                lvRect displayed;
+                if (footer.isEmpty()) {
+                    lvPoint top = rect.topLeft(), bottom = rect.bottomRight();
+                    if (!view.docToWindowPoint(top) || !view.docToWindowPoint(bottom, true)) continue;
+                    displayed = lvRect(top.x, top.y, bottom.x, bottom.y);
+                } else {
+                    // docToWindowPoint only maps main-flow coordinates, not relocated footers.
+                    const int dy = footer.top - leafTop;
+                    displayed = lvRect(rect.left + footerX, rect.top + dy,
+                                       rect.right + footerX, rect.bottom + dy);
+                    if (!displayed.intersect(footer)) continue;
+                }
                 fragmentBounds.extend(displayed);
             }
             const auto source = start.getNode()->getText();
@@ -113,6 +123,8 @@ inline std::vector<ReadingBlock> pageReadingBlocks(LVDocView& view) {
         std::vector<ReadingBlock>& out;
         const int leafTop;
         const int leafBottom;
+        const int footerX;
+        const lvRect footer;
         ldomNode* block = nullptr;
         lString32 anchor;
         lString32 text;
@@ -121,14 +133,64 @@ inline std::vector<ReadingBlock> pageReadingBlocks(LVDocView& view) {
 
     std::vector<ReadingBlock> blocks;
     const int first = view.getCurPage(true);
-    const int end = std::min(view.getPageCount(true), first + view.getVisiblePageCount());
+    const int leaves = view.getVisiblePageCount();
+    const int end = std::min(view.getPageCount(true), first + leaves);
     for (int i = first; i >= 0 && i < end; i++) {
         auto range = view.getPageDocumentRange(i);
-        if (range.isNull()) continue;
         const auto& leaf = *(*view.getPageList())[i];
-        Collector collector(view, blocks, leaf.start, leaf.start + leaf.height);
-        range->forEach(&collector);
-        collector.flush();
+        if (!range.isNull()) {
+            Collector collector(view, blocks, leaf.start, leaf.start + leaf.height);
+            range->forEach(&collector);
+            collector.flush();
+        }
+        if (leaf.footnotes.length() == 0) continue;
+
+        // Match LVDocView::drawPageTo: note segments stack above the bottom margin;
+        // their horizontal origin follows the leaf rectangle, but the spread clips at mid-screen.
+        lvRect pageRect;
+        view.getPageRectangle(i - first, pageRect);
+        const int width = view.GetWidth();
+        const lvRect margins = view.getPageMargins();
+        const int left = leaves == 2 && i != first ? width / 2 : 0;
+        const int right = leaves == 2 && i == first ? width / 2 : width;
+        int y = pageRect.top + view.GetHeight() - margins.bottom;
+        for (int j = 0; j < leaf.footnotes.length(); ++j) y -= leaf.footnotes[j].height;
+        for (int j = 0; j < leaf.footnotes.length(); ++j) {
+            const auto& note = leaf.footnotes[j];
+            const int top = note.start;
+            const int bottom = top + note.height;
+            const lvRect footer(left, y, right, y + note.height);
+            y += note.height;
+            if (footer.isEmpty()) continue;
+
+            // Bound the logical range to this rendered segment, not to the whole note.
+            // Spacing at either end may resolve to a different line or no node.
+            auto pointer = [&](int y, bool start) {
+                return view.getDocument()->createXPointer(lvPoint(start ? 0 : width, y),
+                        start ? PT_DIR_SCAN_FORWARD_LOGICAL_FIRST : PT_DIR_SCAN_BACKWARD_LOGICAL_LAST);
+            };
+            auto within = [&](const ldomXPointer& at, bool end) {
+                if (at.isNull()) return false;
+                // The logical end is exclusive. Its caret may already be on the next line.
+                const int offset = at.getOffset();
+                const int py = end && at.getNode()->isText() && offset > 0
+                        ? ldomXPointer(at.getNode(), offset - 1).toPoint(true).y
+                        : at.toPoint(true).y;
+                return py >= top && py < bottom;
+            };
+            int startY = top;
+            auto start = pointer(startY, true);
+            while (!within(start, false) && ++startY < bottom) start = pointer(startY, true);
+            if (startY == bottom) continue;
+            int endY = bottom - 1;
+            auto limit = pointer(endY, false);
+            while (!within(limit, true) && --endY >= startY) limit = pointer(endY, false);
+            if (endY < startY || ldomXPointerEx(start).compare(ldomXPointerEx(limit)) >= 0) continue;
+            ldomXRange noteRange(start, limit);
+            Collector collector(view, blocks, top, bottom, pageRect.left + margins.left, footer);
+            noteRange.forEach(&collector);
+            collector.flush();
+        }
     }
     return blocks;
 }

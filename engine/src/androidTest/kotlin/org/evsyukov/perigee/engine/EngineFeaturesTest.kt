@@ -312,6 +312,34 @@ class EngineFeaturesTest {
         assertFalse("the first page changes when its footnote joins it", with.sameAs(without))
     }
 
+    @Test
+    fun theCitingPageExposesItsRenderedFootnoteBelowTheBookText() {
+        val file = TestBooks.epub(dir)
+        val (ordinary, ordinaryBlocks) = open(file, base.copy(footnotes = false)).use { doc ->
+            doc.render() to doc.readingBlocks()
+        }
+        open(file, base.copy(footnotes = true)).use { doc ->
+            val rendered = doc.render()
+            val blocks = doc.readingBlocks()
+            val marker = TestBooks.NOTE_WORD
+            assertTrue("the control has no relocated note", ordinaryBlocks.none { marker in it.text })
+            assertTrue("the citing page rendered with a footer", !rendered.sameAs(ordinary))
+            val reference = blocks.first { TestBooks.LINK_TEXT in it.text }
+            val notes = blocks.filter { marker in it.text }
+            assertEquals("the citing page must expose its relocated footnote exactly once", 1, notes.size)
+            val note = notes.single()
+            assertTrue("the footer must follow its citation in reading order", blocks.indexOf(note) > blocks.indexOf(reference))
+            assertTrue("the footer bounds must lie below the citation", note.top >= reference.bottom)
+            val bounds = Rect(note.left, note.top, note.right, note.bottom)
+            assertTrue("footer bounds must fit the rendered page", Rect(0, 0, WIDTH, HEIGHT).contains(bounds))
+            val actual = pixels(rendered, bounds)
+            val control = pixels(ordinary, bounds)
+            assertTrue("footer bounds must contain new ink in the rendered page", actual.indices.any {
+                luminance(actual[it]) + 32 < luminance(control[it])
+            })
+        }
+    }
+
     // The engine reports where note text lies in the flow of the book, not in
     // the footnote area at the bottom of a page, so the note is measured there;
     // the same style sets it in both places.
