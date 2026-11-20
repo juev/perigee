@@ -407,6 +407,8 @@ fun ReaderScreen(file: File, onClose: () -> Unit, viewModel: ReaderViewModel = v
                 onGoBack = viewModel::goBack,
                 onSeek = viewModel::goToProgress,
                 speech = speech,
+                highlightSpokenText = prefs.highlightSpokenText,
+                onHighlightSpokenText = { enabled -> viewModel.updatePrefs { it.copy(highlightSpokenText = enabled) } },
                 onStartSpeech = { viewModel.startSpeech() },
                 onSpeech = viewModel::speechCommand,
             )
