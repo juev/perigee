@@ -14,6 +14,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.toPixelMap
+import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.ComposeTimeoutException
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
@@ -199,6 +201,35 @@ class ReaderScreenTest {
         } finally {
             flags(previousFlags)
         }
+    }
+
+    @Test
+    fun readingPageCanBeTurnedBothWaysUsingAccessibilityActions() {
+        show()
+        waitForBook()
+        assertEquals(0, shownPage())
+        val pages = model().state.value.page!!.pageCount
+        assertTrue("the fixture needs more than two pages", pages > 2)
+        val firstParagraph = rule.onNodeWithText("Chapter 1, paragraph 1.", substring = true)
+        firstParagraph.assertIsDisplayed()
+
+        fun actions(index: Int) = rule.onNodeWithContentDescription(string(R.string.page_description, index + 1, pages))
+            .fetchSemanticsNode().config.getOrNull(SemanticsActions.CustomActions).orEmpty()
+
+        val firstActions = actions(0)
+        assertEquals("first page offers only the forward page action", 1, firstActions.size)
+        val forward = firstActions.single()
+        assertTrue(rule.runOnIdle { forward.action() })
+        waitForPage(1)
+        firstParagraph.assertDoesNotExist()
+
+        val nextActions = actions(1)
+        assertEquals("interior page offers both page actions", 2, nextActions.size)
+        assertTrue(nextActions.any { it.label == forward.label })
+        val backward = nextActions.single { it.label != forward.label }
+        assertTrue(rule.runOnIdle { backward.action() })
+        waitForPage(0)
+        firstParagraph.assertIsDisplayed()
     }
 
     @Test
