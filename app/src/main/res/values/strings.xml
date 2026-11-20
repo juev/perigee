@@ -6,6 +6,8 @@
     <string name="close_book">Close</string>
     <string name="page_of">%1$d of %2$d</string>
     <string name="page_description">Page %1$d of %2$d</string>
+    <string name="accessibility_next_page">Next page</string>
+    <string name="accessibility_previous_page">Previous page</string>
 
     <string name="action_back">Back</string>
     <string name="action_search">Search</string>

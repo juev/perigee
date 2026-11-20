@@ -5,6 +5,8 @@
     <string name="close_book">Закрыть</string>
     <string name="page_of">%1$d из %2$d</string>
     <string name="page_description">Страница %1$d из %2$d</string>
+    <string name="accessibility_next_page">Следующая страница</string>
+    <string name="accessibility_previous_page">Предыдущая страница</string>
 
     <string name="action_back">Назад</string>
     <string name="action_search">Поиск</string>

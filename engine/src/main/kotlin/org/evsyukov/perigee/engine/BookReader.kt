@@ -24,6 +24,8 @@ class Page(
     val colors: PageColors,
     /** Text fragments and bounds from the same layout as [bitmap]. */
     val readingBlocks: List<ReadingBlock> = emptyList(),
+    /** Number of page positions advanced when turning this layout by one screen. */
+    val turnStep: Int = 1,
 )
 
 /** A visible part of a text block; bounds are in physical bitmap pixels. */
@@ -289,7 +291,7 @@ class BookReader private constructor(
         document.renderPage(bitmap, highlights)
         return Page(
             bitmap, document.currentPage, document.pageCount, document.xpointer(), document.progress,
-            settings.colors, document.readingBlocks(),
+            settings.colors, document.readingBlocks(), turnStep = step,
         )
             .also { EngineTrace.sink?.event("page.drawn", "bitmap=${EngineTrace.idOf(bitmap)} page=${it.index} layout=$layout") }
     }

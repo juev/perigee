@@ -81,7 +81,9 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
@@ -254,6 +256,11 @@ fun ReaderScreen(file: File, onClose: () -> Unit, viewModel: ReaderViewModel = v
                     val menuOpen by rememberUpdatedState(panel == Panel.Menu)
                     val pageLabel = stringResource(R.string.page_description, shown.index + 1, shown.pageCount)
                     val hidden = abs(shown.bitmap.height - area.height) > area.height / 10
+                    val reading = !hidden && !state.busy && panel == Panel.None && state.fontTrial == null &&
+                        state.selection == null && state.quoteTouch == null && state.offer == null
+                    val stillReading by rememberUpdatedState(reading)
+                    val nextPage = stringResource(R.string.accessibility_next_page)
+                    val previousPage = stringResource(R.string.accessibility_previous_page)
                     PageView(
                         page = shown,
                         turned = state.turned,
@@ -264,7 +271,17 @@ fun ReaderScreen(file: File, onClose: () -> Unit, viewModel: ReaderViewModel = v
                         modifier = Modifier
                             .fillMaxSize()
                             .testTag("page")
-                            .semantics { contentDescription = pageLabel }
+                            .semantics {
+                                contentDescription = pageLabel
+                                if (reading) customActions = buildList {
+                                    if (shown.index > 0) add(CustomAccessibilityAction(previousPage) {
+                                        stillReading && viewModel.turnFromAccessibility(shown, -1)
+                                    })
+                                    if (shown.index + shown.turnStep < shown.pageCount) add(CustomAccessibilityAction(nextPage) {
+                                        stillReading && viewModel.turnFromAccessibility(shown, 1)
+                                    })
+                                }
+                            }
                             .pointerInput(offsetX) {
                                 // Holding a finger starts a selection (below) and is not a touch:
                                 // naming a long-press handler keeps it from ending as one.
@@ -344,9 +361,7 @@ fun ReaderScreen(file: File, onClose: () -> Unit, viewModel: ReaderViewModel = v
                                 )
                             },
                     )
-                    if (!hidden && !state.busy && panel == Panel.None && state.fontTrial == null &&
-                        state.selection == null && state.quoteTouch == null && state.offer == null
-                    ) {
+                    if (reading) {
                         ReadingSemantics(shown, area, offsetX, file.absolutePath)
                     }
                     Marks(state, offsetX, ink)
