@@ -58,6 +58,14 @@ internal class SpeechRequest(
     val state = MutableStateFlow(SpeechState())
     var dispatch: ((SpeechCommand, Float) -> Unit)? = null
     var followPageTurn: ((Deferred<String?>) -> Unit)? = null
+    // Main-thread only. Keep the newest target even before the service's START is delivered
+    // or if Pause cancels playback while the page is still being rendered.
+    var pageTurn: Deferred<String?>? = null
+
+    fun seekAfterPageTurn(target: Deferred<String?>) {
+        pageTurn = target
+        followPageTurn?.invoke(target)
+    }
 }
 
 /** Owns synthesis, media controls and audio focus while an explicitly started session is alive. */
@@ -105,6 +113,7 @@ class ReadAloudService : Service() {
                 request = offered
                 cursor = offered.start
                 offered.dispatch = ::command
+                offered.followPageTurn = { restartAfterPageTurn(offered) }
                 try {
                     createMedia()
                     startForeground(ID, notification())
@@ -197,7 +206,11 @@ class ReadAloudService : Service() {
         val run = request ?: return
         val phase = run.state.value.phase
         when (command) {
-            SpeechCommand.Play -> if (phase == SpeechPhase.Paused) play()
+            SpeechCommand.Play -> if (phase == SpeechPhase.Paused) {
+                interrupt()
+                publish(SpeechPhase.Starting)
+                play()
+            }
             SpeechCommand.Pause -> if (phase != SpeechPhase.Paused) {
                 interrupt()
                 publish(SpeechPhase.Paused)
@@ -214,9 +227,24 @@ class ReadAloudService : Service() {
         }
     }
 
+    private fun restartAfterPageTurn(run: SpeechRequest) {
+        if (request !== run) return
+        val paused = run.state.value.phase == SpeechPhase.Paused
+        interrupt(keepFocus = !paused)
+        play(paused = paused)
+    }
+
     private fun play(move: SpeechCommand? = null, paused: Boolean = false) {
         val run = request ?: return
         job = scope.launch {
+            run.pageTurn?.let { turn ->
+                val target = turn.await()
+                run.pageTurn = null
+                if (target != null) {
+                    cursor = target
+                    current = null
+                }
+            }
             val at = cursor ?: return@launch finish(SpeechPhase.Ended)
             val previousSpan = current
             val destination = when (move) {
@@ -303,14 +331,16 @@ class ReadAloudService : Service() {
         return true
     }
 
-    private fun interrupt() {
+    private fun interrupt(keepFocus: Boolean = false) {
         job?.cancel()
         job = null
         waiting = null
         tts?.stop()
-        focusOwner = null
-        focus?.let { audio.abandonAudioFocusRequest(it) }
-        focus = null
+        if (!keepFocus) {
+            focusOwner = null
+            focus?.let { audio.abandonAudioFocusRequest(it) }
+            focus = null
+        }
         if (wake.isHeld) wake.release()
     }
 
@@ -334,6 +364,8 @@ class ReadAloudService : Service() {
         media = null
         if (receiverRegistered) { unregisterReceiver(noisy); receiverRegistered = false }
         request?.dispatch = null
+        request?.followPageTurn = null
+        request?.pageTurn = null
         request = null
         cursor = null
         current = null
