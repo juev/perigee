@@ -393,8 +393,9 @@ private fun Stepper(label: Int, value: String, tag: String, onLess: () -> Unit, 
     Column(Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
         SettingLabel(label)
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            val less = stringResource(R.string.action_decrease)
-            val more = stringResource(R.string.action_increase)
+            val setting = stringResource(label)
+            val less = stringResource(R.string.action_decrease_setting, setting)
+            val more = stringResource(R.string.action_increase_setting, setting)
             OutlinedButton(onClick = onLess, Modifier.testTag("$tag-less").semantics { contentDescription = less }) { Text("−") }
             Text(
                 value,
