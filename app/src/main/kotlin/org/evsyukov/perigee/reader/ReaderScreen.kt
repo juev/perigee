@@ -7,12 +7,9 @@ import android.view.WindowManager
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.LocalActivity
 import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutHorizontally
@@ -393,7 +390,9 @@ fun ReaderScreen(file: File, onClose: () -> Unit, viewModel: ReaderViewModel = v
         if (state.busy) {
             CircularProgressIndicator(Modifier.align(Alignment.Center).testTag("busy"), color = ink.copy(alpha = 0.5f))
         }
-        AnimatedVisibility(panel == Panel.Menu && state.page != null, enter = fadeIn(), exit = fadeOut()) {
+        // Swap the menu and reading semantics together. Fading the menu attaches transparent
+        // controls on entry and leaves outgoing controls in the tree after returning to the page.
+        if (panel == Panel.Menu && state.page != null) {
             ReaderMenu(
                 state = state,
                 onClose = close,
