@@ -44,7 +44,13 @@ import org.evsyukov.perigee.engine.ReadAloudSpan
 
 internal enum class SpeechPhase { Starting, Playing, Paused, Ended, Failed, NoVoice }
 internal enum class SpeechCommand { Play, Pause, Previous, Next, Stop, Rate }
-internal data class SpeechState(val phase: SpeechPhase = SpeechPhase.Starting, val rate: Float = 1f)
+/** Logical bounds of the submitted chunk, with no book text in UI state. */
+internal data class SpeechChunk(val start: String, val end: String)
+internal data class SpeechState(
+    val phase: SpeechPhase = SpeechPhase.Starting,
+    val rate: Float = 1f,
+    val chunk: SpeechChunk? = null,
+)
 
 /** An in-process session, created only by a visible reader. No book text in intents or notifications. */
 internal class SpeechRequest(
