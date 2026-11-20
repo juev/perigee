@@ -25,8 +25,8 @@
     <string name="action_note">Note</string>
     <string name="action_save">Save</string>
     <string name="action_cancel">Cancel</string>
-    <string name="action_decrease">Less</string>
-    <string name="action_increase">More</string>
+    <string name="action_decrease_setting">%1$s: decrease</string>
+    <string name="action_increase_setting">%1$s: increase</string>
     <string name="quote_color">Highlight colour %1$d</string>
     <string name="note_hint">Your note</string>
     <string name="progress_line">Position in the book</string>
