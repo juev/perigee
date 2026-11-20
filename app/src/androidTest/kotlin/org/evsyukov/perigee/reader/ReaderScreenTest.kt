@@ -246,9 +246,9 @@ class ReaderScreenTest {
         fun flags(value: Int) {
             automation.serviceInfo = automation.serviceInfo.apply { flags = value }
         }
-        fun findNode(match: (AccessibilityNodeInfo) -> Boolean): AccessibilityNodeInfo? {
+        fun findNode(visibleOnly: Boolean = true, match: (AccessibilityNodeInfo) -> Boolean): AccessibilityNodeInfo? {
             fun search(node: AccessibilityNodeInfo): AccessibilityNodeInfo? {
-                if (node.isVisibleToUser && match(node)) return node
+                if ((!visibleOnly || node.isVisibleToUser) && match(node)) return node
                 return (0 until node.childCount).firstNotNullOfOrNull { node.getChild(it)?.let(::search) }
             }
             return automation.windows.asSequence().mapNotNull { it.root }
@@ -257,6 +257,24 @@ class ReaderScreenTest {
         fun pageNode() = findNode { it.contentDescription?.toString() == pageLabel }
         fun paragraph() = findNode { it.text?.startsWith("Chapter 1, paragraph 1.") == true }
         fun settingsButton() = findNode { it.contentDescription?.toString() == settingsLabel && it.isClickable }
+        fun waitForProjection(phase: String, condition: () -> Boolean) {
+            try {
+                rule.waitUntil(TIMEOUT, condition)
+            } catch (failure: ComposeTimeoutException) {
+                val label = findNode(visibleOnly = false) { it.contentDescription?.toString() == settingsLabel }
+                val menuComposed = rule.onAllNodesWithTag("position").fetchSemanticsNodes().isNotEmpty()
+                val paragraphComposed = rule.onAllNodesWithText("Chapter 1, paragraph 1.", substring = true)
+                    .fetchSemanticsNodes().isNotEmpty()
+                throw AssertionError(
+                    "$phase: menuComposed=$menuComposed paragraphComposed=$paragraphComposed " +
+                        "menuButtonInAndroid=${settingsButton() != null} paragraphInAndroid=${paragraph() != null} " +
+                        "settingsLabelInAndroid=${label != null} labelVisible=${label?.isVisibleToUser} " +
+                        "labelClickable=${label?.isClickable} parentClickable=${label?.parent?.isClickable} " +
+                        "activityFocused=${rule.runOnUiThread { activity.hasWindowFocus() }}",
+                    failure,
+                )
+            }
+        }
         try {
             flags(previousFlags or AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS)
             rule.waitUntil(TIMEOUT) { pageNode() != null && paragraph() != null }
@@ -265,12 +283,12 @@ class ReaderScreenTest {
                 pageNode()?.actionList?.any { it.id == AccessibilityNodeInfo.ACTION_CLICK } == true,
             )
             assertTrue(pageNode()?.performAction(AccessibilityNodeInfo.ACTION_CLICK) == true)
-            rule.waitUntil(TIMEOUT) { settingsButton() != null && paragraph() == null }
+            waitForProjection("after the Android click") { settingsButton() != null && paragraph() == null }
 
             // Back is also the global action exposed by Android to accessibility services.
             rule.waitUntil(TIMEOUT) { rule.runOnUiThread { activity.hasWindowFocus() } }
             assertTrue(automation.performGlobalAction(GLOBAL_ACTION_BACK))
-            rule.waitUntil(TIMEOUT) { settingsButton() == null && paragraph() != null && pageNode() != null }
+            waitForProjection("after Android Back") { settingsButton() == null && paragraph() != null && pageNode() != null }
             assertEquals("returning from the controls keeps the reading location", page.xpointer, model().state.value.page?.xpointer)
         } finally {
             flags(previousFlags)
