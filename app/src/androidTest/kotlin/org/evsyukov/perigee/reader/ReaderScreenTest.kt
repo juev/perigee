@@ -11,6 +11,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.toPixelMap
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.ComposeTimeoutException
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
@@ -616,6 +618,25 @@ class ReaderScreenTest {
         repeat(2) { rule.onNodeWithTag("font-size-more").performClick() }
         rule.waitUntil(TIMEOUT) { model().state.value.page!!.pageCount > pagesBefore }
         rule.onNodeWithTag("settings").assertIsDisplayed()
+    }
+
+    @Test
+    fun fontSizeButtonsExposeWhichSettingTheyChange() {
+        show()
+        waitForBook()
+        openMenu()
+        rule.onNodeWithContentDescription(string(R.string.action_settings)).performClick()
+        waitForTag("settings")
+
+        val setting = string(R.string.setting_font_size)
+        val actions = listOf("font-size-less", "font-size-more").associateWith { tag ->
+            val button = rule.onNodeWithTag(tag).performScrollTo().assertIsDisplayed()
+            button.fetchSemanticsNode().config.getOrNull(SemanticsProperties.ContentDescription).orEmpty()
+        }
+        assertTrue(
+            "Both font-size buttons should name '$setting'; accessibility descriptions: $actions",
+            actions.values.all { descriptions -> descriptions.any { it.contains(setting, ignoreCase = true) } },
+        )
     }
 
     @Test
