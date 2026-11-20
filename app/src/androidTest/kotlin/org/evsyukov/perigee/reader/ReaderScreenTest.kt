@@ -346,6 +346,40 @@ class ReaderScreenTest {
     }
 
     @Test
+    fun spokenTextHighlightingIsAnIndependentOptInWhileReadingAloud() {
+        var request: SpeechRequest? = null
+        val playing = SpeechState(SpeechPhase.Playing)
+        val local = ReaderViewModel(activity.application, Library.get(activity),
+            startSpeechService = { _, run ->
+                request = run
+                run.state.value = playing
+            }, bookOpened = {})
+        try {
+            edgeToEdge()
+            rule.setContent { MaterialTheme { ReaderScreen(book, onClose = {}, viewModel = local) } }
+            rule.waitUntil(TIMEOUT) { local.state.value.page != null && !local.state.value.busy }
+            openMenu()
+            rule.onNodeWithTag("readAloud").performClick()
+            val run = rule.runOnIdle { checkNotNull(request) }
+            rule.waitUntil(TIMEOUT) { local.speech.value == playing }
+
+            val highlight = rule.onNodeWithTag("speech-highlight-switch")
+            highlight.assertIsDisplayed().assertIsOff()
+            highlight.performClick()
+            highlight.assertIsOn()
+            highlight.performClick()
+            highlight.assertIsOff()
+
+            rule.runOnIdle {
+                assertEquals(playing, local.speech.value)
+                assertTrue("Changing the highlight must not restart speech", request === run)
+            }
+        } finally {
+            rule.runOnIdle { local.close() }
+        }
+    }
+
+    @Test
     fun aManualPageTurnRetargetsThePlayingReadAloudSession() {
         val requests = mutableListOf<SpeechRequest>()
         val turns = mutableListOf<Deferred<String?>>()
