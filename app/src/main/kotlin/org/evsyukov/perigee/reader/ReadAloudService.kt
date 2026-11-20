@@ -1,5 +1,6 @@
 package org.evsyukov.perigee.reader
 
+import android.annotation.SuppressLint
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -181,7 +182,13 @@ class ReadAloudService : Service() {
             .setActions(PlaybackState.ACTION_PLAY or PlaybackState.ACTION_PAUSE or PlaybackState.ACTION_PLAY_PAUSE or
                 PlaybackState.ACTION_STOP or PlaybackState.ACTION_SKIP_TO_NEXT or PlaybackState.ACTION_SKIP_TO_PREVIOUS)
             .addCustomAction(stop).build())
-        notifications.notify(ID, notification())
+        updateMediaNotification()
+    }
+
+    // Android 13 exempts notifications attached to a media session from POST_NOTIFICATIONS.
+    @SuppressLint("NotificationPermission")
+    private fun updateMediaNotification() {
+        if (media != null) notifications.notify(ID, notification())
     }
 
     private fun command(command: SpeechCommand, rate: Float = 1f) {

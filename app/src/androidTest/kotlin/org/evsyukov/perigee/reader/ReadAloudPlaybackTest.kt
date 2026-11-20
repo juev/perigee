@@ -2,6 +2,8 @@ package org.evsyukov.perigee.reader
 
 import android.media.session.MediaController
 import android.media.session.MediaSessionManager
+import android.app.Notification
+import android.app.NotificationManager
 import android.os.Build
 import android.os.ParcelFileDescriptor
 import android.os.PowerManager
@@ -54,6 +56,8 @@ class ReadAloudPlaybackTest {
                 assumeTrue("no installed offline English voice in this emulator", request.state.value.phase != SpeechPhase.NoVoice)
                 assertEquals(SpeechPhase.Playing, request.state.value.phase)
                 val controls = findMediaControls()
+                val notifications = instrumentation.targetContext.getSystemService(NotificationManager::class.java)
+                await { notifications.activeNotifications.any { it.notification.extras.containsKey(Notification.EXTRA_MEDIA_SESSION) } }
                 controls.pause()
                 await { request.state.value.phase == SpeechPhase.Paused }
                 controls.play()
