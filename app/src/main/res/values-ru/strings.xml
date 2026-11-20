@@ -24,8 +24,8 @@
     <string name="action_note">Заметка</string>
     <string name="action_save">Сохранить</string>
     <string name="action_cancel">Отмена</string>
-    <string name="action_decrease">Меньше</string>
-    <string name="action_increase">Больше</string>
+    <string name="action_decrease_setting">%1$s: уменьшить</string>
+    <string name="action_increase_setting">%1$s: увеличить</string>
     <string name="quote_color">Цвет выделения %1$d</string>
     <string name="note_hint">Ваша заметка</string>
     <string name="progress_line">Позиция в книге</string>
