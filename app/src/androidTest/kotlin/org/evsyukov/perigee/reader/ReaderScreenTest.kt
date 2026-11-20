@@ -160,6 +160,14 @@ class ReaderScreenTest {
     }
 
     @Test
+    fun readingMenuOffersAnExplicitReadAloudAction() {
+        show()
+        waitForBook()
+        openMenu()
+        rule.onNodeWithTag("readAloud").assertIsDisplayed()
+    }
+
+    @Test
     fun touchingTheRightPartTurnsForwardAndTheLeftPartBack() {
         show()
         waitForBook()
