@@ -3,6 +3,7 @@ package org.evsyukov.perigee.reader
 import android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_BACK
 import android.accessibilityservice.AccessibilityServiceInfo
 import android.app.UiAutomation
+import android.graphics.Rect
 import android.view.accessibility.AccessibilityNodeInfo
 import androidx.activity.ComponentActivity
 import androidx.activity.enableEdgeToEdge
@@ -262,14 +263,25 @@ class ReaderScreenTest {
                 rule.waitUntil(TIMEOUT, condition)
             } catch (failure: ComposeTimeoutException) {
                 val label = findNode(visibleOnly = false) { it.contentDescription?.toString() == settingsLabel }
+                val labelBounds = label?.let { node -> Rect().also(node::getBoundsInScreen) }
+                val labelVisible = label?.isVisibleToUser
+                val labelClickable = label?.isClickable
+                val parentClickable = label?.parent?.isClickable
+                val projectionMatches = settingsButton() != null
+                val paragraphProjected = paragraph() != null
+                // refresh() asks the provider directly. It is a diagnostic, not a way to pass the wait.
+                val labelRefreshed = label?.refresh()
+                val refreshedBounds = label?.let { node -> Rect().also(node::getBoundsInScreen) }
                 val menuComposed = rule.onAllNodesWithTag("position").fetchSemanticsNodes().isNotEmpty()
                 val paragraphComposed = rule.onAllNodesWithText("Chapter 1, paragraph 1.", substring = true)
                     .fetchSemanticsNodes().isNotEmpty()
                 throw AssertionError(
                     "$phase: menuComposed=$menuComposed paragraphComposed=$paragraphComposed " +
-                        "menuButtonInAndroid=${settingsButton() != null} paragraphInAndroid=${paragraph() != null} " +
-                        "settingsLabelInAndroid=${label != null} labelVisible=${label?.isVisibleToUser} " +
-                        "labelClickable=${label?.isClickable} parentClickable=${label?.parent?.isClickable} " +
+                        "menuButtonInAndroid=$projectionMatches paragraphInAndroid=$paragraphProjected " +
+                        "settingsLabelInAndroid=${label != null} labelVisible=$labelVisible labelBounds=$labelBounds " +
+                        "labelClickable=$labelClickable parentClickable=$parentClickable " +
+                        "labelRefreshed=$labelRefreshed refreshedVisible=${label?.isVisibleToUser} " +
+                        "refreshedBounds=$refreshedBounds " +
                         "activityFocused=${rule.runOnUiThread { activity.hasWindowFocus() }}",
                     failure,
                 )
