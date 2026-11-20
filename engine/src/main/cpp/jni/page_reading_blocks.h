@@ -21,7 +21,8 @@ struct ReadingBlock {
 inline std::vector<ReadingBlock> pageReadingBlocks(LVDocView& view) {
     class Collector : public ldomNodeCallback {
     public:
-        Collector(LVDocView& view, std::vector<ReadingBlock>& out) : view(view), out(out) {}
+        Collector(LVDocView& view, std::vector<ReadingBlock>& out, int top, int bottom)
+                : view(view), out(out), leafTop(top), leafBottom(bottom) {}
 
         bool onElement(ldomXPointerEx* at) override {
             return at->getNode()->getRendMethod() != erm_invisible;
@@ -36,25 +37,34 @@ inline std::vector<ReadingBlock> pageReadingBlocks(LVDocView& view) {
                 if (node->getRendMethod() == erm_invisible ||
                         (!style.isNull() && style->visibility >= css_v_hidden)) return;
             }
+            LVArray<lvRect> segments;
+            range->getSegmentRects(segments);
+            lvRect fragmentBounds;
+            for (int i = 0; i < segments.length(); i++) {
+                const auto& rect = segments[i];
+                // Adjacent DOM page ranges can overlap. A rectangle on the other leaf of the
+                // same spread still maps to the bitmap, but does not belong to this traversal.
+                if (rect.isEmpty() || rect.top < leafTop || rect.top >= leafBottom) continue;
+                lvPoint top = rect.topLeft(), bottom = rect.bottomRight();
+                if (!view.docToWindowPoint(top) || !view.docToWindowPoint(bottom, true)) continue;
+                lvRect displayed(top.x, top.y, bottom.x, bottom.y);
+                fragmentBounds.extend(displayed);
+            }
+            const auto fragment = start.getNode()->getText().substr(start.getOffset(), length);
             auto* owner = start.getThisBlockNode();
+            if (fragmentBounds.isEmpty()) {
+                // Preserve a separator between visible inline runs when the separating text
+                // node has no geometry. Never attach undrawn non-whitespace to another run.
+                if (owner == block && !text.empty() && lString32(fragment).trim().empty()) text << fragment;
+                return;
+            }
             if (owner != block) {
                 flush();
                 block = owner;
             }
-            // Keep inline text together, including separating whitespace from
-            // its own text node. Only publish a block if it has drawn geometry.
             if (text.empty()) anchor = start.toString();
-            text << start.getNode()->getText().substr(start.getOffset(), length);
-            LVArray<lvRect> segments;
-            range->getSegmentRects(segments);
-            for (int i = 0; i < segments.length(); i++) {
-                const auto& rect = segments[i];
-                if (rect.isEmpty()) continue;
-                lvPoint top = rect.topLeft(), bottom = rect.bottomRight();
-                if (!view.docToWindowPoint(top) || !view.docToWindowPoint(bottom, true)) continue;
-                lvRect displayed(top.x, top.y, bottom.x, bottom.y);
-                if (!displayed.isEmpty()) bounds.extend(displayed);
-            }
+            text << fragment;
+            bounds.extend(fragmentBounds);
         }
 
         void flush() {
@@ -78,6 +88,8 @@ inline std::vector<ReadingBlock> pageReadingBlocks(LVDocView& view) {
     private:
         LVDocView& view;
         std::vector<ReadingBlock>& out;
+        const int leafTop;
+        const int leafBottom;
         ldomNode* block = nullptr;
         lString32 anchor;
         lString32 text;
@@ -90,7 +102,8 @@ inline std::vector<ReadingBlock> pageReadingBlocks(LVDocView& view) {
     for (int i = first; i >= 0 && i < end; i++) {
         auto range = view.getPageDocumentRange(i);
         if (range.isNull()) continue;
-        Collector collector(view, blocks);
+        const auto& leaf = *(*view.getPageList())[i];
+        Collector collector(view, blocks, leaf.start, leaf.start + leaf.height);
         range->forEach(&collector);
         collector.flush();
     }
