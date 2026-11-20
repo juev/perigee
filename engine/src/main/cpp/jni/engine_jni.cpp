@@ -28,6 +28,7 @@
 
 #include "face_size.h"
 #include "owner_css.h"
+#include "page_reading_blocks.h"
 
 namespace {
 
@@ -901,6 +902,19 @@ Java_org_evsyukov_perigee_engine_NativeEngine_linkAt(JNIEnv* env, jobject, jlong
         if (node) target = ldomXPointer(node, 0).toString();
     }
     return toJava(env, {href, anchor.isNull() ? lString32() : anchor.toString(), target});
+}
+
+JNIEXPORT jobjectArray JNICALL
+Java_org_evsyukov_perigee_engine_NativeEngine_pageReadingBlocks(JNIEnv* env, jobject, jlong handle) {
+    std::vector<lString32> out;
+    for (const auto& block : perigee::pageReadingBlocks(*viewOf(handle))) {
+        out.insert(out.end(), {
+            block.anchor, block.text, lString32::itoa(block.heading ? 1 : 0),
+            lString32::itoa(block.bounds.left), lString32::itoa(block.bounds.top),
+            lString32::itoa(block.bounds.right), lString32::itoa(block.bounds.bottom),
+        });
+    }
+    return toJava(env, out);
 }
 
 JNIEXPORT void JNICALL

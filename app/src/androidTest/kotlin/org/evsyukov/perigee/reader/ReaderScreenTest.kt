@@ -1,5 +1,8 @@
 package org.evsyukov.perigee.reader
 
+import android.accessibilityservice.AccessibilityServiceInfo
+import android.app.UiAutomation
+import android.view.accessibility.AccessibilityNodeInfo
 import androidx.activity.ComponentActivity
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.Box
@@ -43,6 +46,7 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModelProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.platform.app.InstrumentationRegistry
 import java.io.File
 import java.time.LocalTime
 import kotlinx.coroutines.flow.first
@@ -169,6 +173,32 @@ class ReaderScreenTest {
 
         // Ask for actual semantic text, not a content description or characters found in the bitmap.
         rule.onNodeWithText("Chapter 1, paragraph 1.", substring = true).assertIsDisplayed()
+    }
+
+    @Test
+    fun androidAccessibilityTreeExposesTheChapterHeadingAndParagraph() {
+        show()
+        waitForBook()
+        val automation = InstrumentationRegistry.getInstrumentation()
+            .getUiAutomation(UiAutomation.FLAG_DONT_SUPPRESS_ACCESSIBILITY_SERVICES)
+        val previousFlags = automation.serviceInfo.flags
+        fun flags(value: Int) {
+            automation.serviceInfo = automation.serviceInfo.apply { flags = value }
+        }
+        fun AccessibilityNodeInfo.hasVisibleText(match: (AccessibilityNodeInfo) -> Boolean): Boolean =
+            (isVisibleToUser && match(this)) || (0 until childCount).any { getChild(it)?.hasVisibleText(match) == true }
+        try {
+            flags(previousFlags or AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS)
+            rule.waitUntil(TIMEOUT) {
+                automation.windows.mapNotNull { it.root }.any { root ->
+                    root.packageName?.toString() == activity.packageName &&
+                        root.hasVisibleText { it.isHeading && it.text?.toString() == "Chapter 1" } &&
+                        root.hasVisibleText { it.text?.startsWith("Chapter 1, paragraph 1.") == true }
+                }
+            }
+        } finally {
+            flags(previousFlags)
+        }
     }
 
     @Test

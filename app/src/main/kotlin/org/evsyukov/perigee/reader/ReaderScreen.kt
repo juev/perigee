@@ -253,13 +253,14 @@ fun ReaderScreen(file: File, onClose: () -> Unit, viewModel: ReaderViewModel = v
                     var fromBottomEdge by remember { mutableStateOf(false) }
                     val menuOpen by rememberUpdatedState(panel == Panel.Menu)
                     val pageLabel = stringResource(R.string.page_description, shown.index + 1, shown.pageCount)
+                    val hidden = abs(shown.bitmap.height - area.height) > area.height / 10
                     PageView(
                         page = shown,
                         turned = state.turned,
                         pageTurn = prefs.pageTurn,
                         // A page laid out for the other orientation is not shown cut to this one while the
                         // book is laid out again: the screen stays the colour of the page until it is.
-                        hidden = abs(shown.bitmap.height - area.height) > area.height / 10,
+                        hidden = hidden,
                         modifier = Modifier
                             .fillMaxSize()
                             .testTag("page")
@@ -343,6 +344,11 @@ fun ReaderScreen(file: File, onClose: () -> Unit, viewModel: ReaderViewModel = v
                                 )
                             },
                     )
+                    if (!hidden && !state.busy && panel == Panel.None && state.fontTrial == null &&
+                        state.selection == null && state.quoteTouch == null && state.offer == null
+                    ) {
+                        ReadingSemantics(shown, area, offsetX, file.absolutePath)
+                    }
                     Marks(state, offsetX, ink)
                     state.selection?.let { SelectionHandles(it, offsetX, viewModel::stretch) }
                     ProgressLine(

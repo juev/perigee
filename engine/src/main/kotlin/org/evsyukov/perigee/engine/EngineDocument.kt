@@ -162,6 +162,11 @@ class EngineDocument private constructor(
         Link(href, source, target.ifEmpty { null })
     }
 
+    /** The main-flow text of the displayed leaf or spread, in document order. Call after drawing. */
+    internal fun readingBlocks(): List<ReadingBlock> = NativeEngine.pageReadingBlocks(checked()).asList().chunked(7) {
+        ReadingBlock(it[0], it[1], it[2] == "1", it[3].toInt(), it[4].toInt(), it[5].toInt(), it[6].toInt())
+    }
+
     /** Draws the current page with the highlights that fall on it; the bitmap size becomes the page size. */
     fun renderPage(bitmap: Bitmap, highlights: List<Highlight> = emptyList()) {
         EngineTrace.sink?.event("doc.render", "doc=$traceId bitmap=${EngineTrace.idOf(bitmap)} w=${bitmap.width} h=${bitmap.height}")

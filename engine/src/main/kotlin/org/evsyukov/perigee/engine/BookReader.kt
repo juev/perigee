@@ -22,6 +22,19 @@ class Page(
     val progress: Float,
     /** The colours the page is painted in: what is around it on the screen is painted to match. */
     val colors: PageColors,
+    /** Text fragments and bounds from the same layout as [bitmap]. */
+    val readingBlocks: List<ReadingBlock> = emptyList(),
+)
+
+/** A visible part of a text block; bounds are in physical bitmap pixels. */
+data class ReadingBlock(
+    val anchor: String,
+    val text: String,
+    val heading: Boolean,
+    val left: Int,
+    val top: Int,
+    val right: Int,
+    val bottom: Int,
 )
 
 /** How a book is laid out: the settings and the page size. */
@@ -274,7 +287,10 @@ class BookReader private constructor(
         val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
         EngineTrace.sink?.event("bitmap.alloc", "bitmap=${EngineTrace.idOf(bitmap)} w=$width h=$height")
         document.renderPage(bitmap, highlights)
-        return Page(bitmap, document.currentPage, document.pageCount, document.xpointer(), document.progress, settings.colors)
+        return Page(
+            bitmap, document.currentPage, document.pageCount, document.xpointer(), document.progress,
+            settings.colors, document.readingBlocks(),
+        )
             .also { EngineTrace.sink?.event("page.drawn", "bitmap=${EngineTrace.idOf(bitmap)} page=${it.index} layout=$layout") }
     }
 
