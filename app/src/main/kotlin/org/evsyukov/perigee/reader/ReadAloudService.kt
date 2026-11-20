@@ -273,7 +273,7 @@ class ReadAloudService : Service() {
                 cursor = span.range.start
                 current = span
                 publish(SpeechPhase.Playing)
-                if (!speak(engine, span.range.text)) return@launch finish(SpeechPhase.Failed)
+                if (!speak(run, engine, span)) return@launch finish(SpeechPhase.Failed)
                 val next = span.next ?: return@launch finish(SpeechPhase.Ended, span.range.end)
                 cursor = next
                 current = null
@@ -310,17 +310,27 @@ class ReadAloudService : Service() {
         handler.post { waiting?.takeIf { it.first == id }?.second?.complete(success) }
     }
 
-    private suspend fun speak(engine: TextToSpeech, text: String): Boolean {
-        if (text.isBlank()) return true
+    private suspend fun speak(run: SpeechRequest, engine: TextToSpeech, span: ReadAloudSpan): Boolean {
+        val range = span.range
+        if (range.text.isBlank()) return true
         val id = UUID.randomUUID().toString()
         val reply = CompletableDeferred<Boolean>()
         waiting = id to reply
         return try {
-            engine.speak(text, TextToSpeech.QUEUE_FLUSH, null, id) == TextToSpeech.SUCCESS &&
-                withTimeoutOrNull(UTTERANCE_TIMEOUT) { reply.await() } == true
+            if (engine.speak(range.text, TextToSpeech.QUEUE_FLUSH, null, id) != TextToSpeech.SUCCESS) return false
+            run.state.value = run.state.value.copy(chunk = SpeechChunk(range.start, range.end))
+            withTimeoutOrNull(UTTERANCE_TIMEOUT) { reply.await() } == true
         } finally {
-            if (waiting?.first == id) waiting = null
+            if (waiting?.first == id) {
+                waiting = null
+                clearChunk(run)
+            }
         }
+    }
+
+    private fun clearChunk(run: SpeechRequest) {
+        val state = run.state.value
+        if (state.chunk != null) run.state.value = state.copy(chunk = null)
     }
 
     private fun takeFocus(): Boolean {
@@ -341,6 +351,7 @@ class ReadAloudService : Service() {
         job?.cancel()
         job = null
         waiting = null
+        request?.let(::clearChunk)
         tts?.stop()
         if (!keepFocus) {
             focusOwner = null

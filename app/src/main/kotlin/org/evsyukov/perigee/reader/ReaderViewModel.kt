@@ -724,6 +724,20 @@ class ReaderViewModel internal constructor(
         else speechRequest?.dispatch?.invoke(command, rate)
     }
 
+    /** Reads geometry from the published page without moving the cursor or repainting the book. */
+    internal suspend fun speechRects(page: Page, chunk: SpeechChunk): List<Rect> = layout.withLock {
+        val open = reader ?: return@withLock emptyList()
+        val run = speechRequest ?: return@withLock emptyList()
+        fun current() = state.value.page === page && !state.value.busy && speechRequest === run &&
+            run.state.value.let { it.phase == SpeechPhase.Playing && it.chunk == chunk } &&
+            _prefs.value.highlightSpokenText
+        if (!current()) return@withLock emptyList()
+        val rects = open.read { doc ->
+            if (doc.currentPage == page.index) doc.rects(chunk.start, chunk.end) else emptyList()
+        }
+        if (current()) rects else emptyList()
+    }
+
     private fun stopSpeech() {
         val run = speechRequest
         speechRequest = null

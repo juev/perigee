@@ -65,7 +65,11 @@ class ReadAloudPlaybackTest {
                     playingTurn.complete("second")
                 }
                 // "hold" can only be requested after TTS completes the utterance on "second".
-                await { "hold" in positions && request.state.value == SpeechState(SpeechPhase.Playing, 1.25f) }
+                await {
+                    "hold" in positions && request.state.value == SpeechState(
+                        SpeechPhase.Playing, 1.25f, SpeechChunk(hold.range.start, hold.range.end),
+                    )
+                }
                 assertEquals(listOf("first", "second", "hold"), positions.toList())
 
                 val superseded = CompletableDeferred<String?>()

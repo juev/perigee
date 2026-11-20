@@ -3,6 +3,7 @@ package org.evsyukov.perigee.reader
 import android.app.Activity
 import android.content.Intent
 import android.graphics.Point
+import android.graphics.Rect
 import android.view.WindowManager
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.LocalActivity
@@ -64,6 +65,7 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.input.pointer.PointerEventPass
@@ -264,6 +266,13 @@ fun ReaderScreen(file: File, onClose: () -> Unit, viewModel: ReaderViewModel = v
                     val nextPage = stringResource(R.string.accessibility_next_page)
                     val previousPage = stringResource(R.string.accessibility_previous_page)
                     val openControls = stringResource(R.string.accessibility_open_reader_controls)
+                    val chunk = speech?.takeIf {
+                        prefs.highlightSpokenText && it.phase == SpeechPhase.Playing && !hidden && !state.busy
+                    }?.chunk
+                    var spokenRects by remember(viewModel, shown, chunk) { mutableStateOf(emptyList<Rect>()) }
+                    LaunchedEffect(viewModel, shown, chunk) {
+                        if (chunk != null) spokenRects = viewModel.speechRects(shown, chunk)
+                    }
                     PageView(
                         page = shown,
                         turned = state.turned,
@@ -271,6 +280,8 @@ fun ReaderScreen(file: File, onClose: () -> Unit, viewModel: ReaderViewModel = v
                         // A page laid out for the other orientation is not shown cut to this one while the
                         // book is laid out again: the screen stays the colour of the page until it is.
                         hidden = hidden,
+                        spokenRects = spokenRects,
+                        speechTint = ink.copy(alpha = 0.18f),
                         modifier = Modifier
                             .fillMaxSize()
                             .testTag("page")
@@ -500,7 +511,15 @@ private fun Offer(offer: RemotePosition, onGo: () -> Unit, onStay: () -> Unit, m
 
 /** The page bitmap; a turn slides the new page in from the side it comes from. */
 @Composable
-private fun PageView(page: Page, turned: Int, pageTurn: PageTurn, hidden: Boolean, modifier: Modifier) {
+private fun PageView(
+    page: Page,
+    turned: Int,
+    pageTurn: PageTurn,
+    hidden: Boolean,
+    spokenRects: List<Rect>,
+    speechTint: Color,
+    modifier: Modifier,
+) {
     if (hidden) {
         Box(modifier)
         return
@@ -538,7 +557,20 @@ private fun PageView(page: Page, turned: Int, pageTurn: PageTurn, hidden: Boolea
             modifier = Modifier
                 .fillMaxHeight()
                 .wrapContentWidth(unbounded = true)
-                .requiredWidth(with(density) { shown.bitmap.width.toDp() }),
+                .requiredWidth(with(density) { shown.bitmap.width.toDp() })
+                .drawWithContent {
+                    drawContent()
+                    // Use the bitmap's own coordinates and animation. Never tint the outgoing image.
+                    if (shown === page && spokenRects.isNotEmpty()) clipRect {
+                        spokenRects.forEach { rect ->
+                            drawRect(
+                                speechTint,
+                                Offset(rect.left.toFloat(), rect.top.toFloat()),
+                                Size(rect.width().toFloat(), rect.height().toFloat()),
+                            )
+                        }
+                    }
+                },
         )
     }
 }
