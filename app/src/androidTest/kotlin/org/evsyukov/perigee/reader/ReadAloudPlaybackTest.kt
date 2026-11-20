@@ -11,7 +11,9 @@ import androidx.activity.ComponentActivity
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.atomic.AtomicBoolean
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
@@ -29,6 +31,66 @@ import org.junit.runner.RunWith
 class ReadAloudPlaybackTest {
     private val instrumentation = InstrumentationRegistry.getInstrumentation()
     private val power = instrumentation.targetContext.getSystemService(PowerManager::class.java)
+
+    @Test
+    fun pageTurnsRedirectTheSamePlaybackSessionAndKeepItPausedUntilPlay() {
+        val loads = CopyOnWriteArrayList<String>()
+        val positions = CopyOnWriteArrayList<String>()
+        val longText = "This passage gives the reader time to turn a page. ".repeat(32)
+        val first = ReadAloudSpan(TextRange("first", "old-end", longText), null)
+        val second = ReadAloudSpan(TextRange("second", "second-end", "Reading from the next page."), "hold")
+        val hold = ReadAloudSpan(TextRange("hold", "hold-end", longText), null)
+        val latest = ReadAloudSpan(TextRange("latest", "end", "This is the new page."), null)
+        val request = SpeechRequest(
+            language = "en-US",
+            start = "first",
+            load = { at, _ ->
+                loads += at
+                when (at) { "first" -> first; "second" -> second; "hold" -> hold; "latest" -> latest; else -> null }
+            },
+            previous = { null },
+            moveTo = { positions += it; true },
+        )
+        ActivityScenario.launch(ComponentActivity::class.java).use { scenario ->
+            try {
+                scenario.onActivity { ReadAloudService.start(it, request) }
+                await { request.state.value.phase != SpeechPhase.Starting }
+                assumeTrue("no installed offline English voice in this emulator", request.state.value.phase != SpeechPhase.NoVoice)
+                assertEquals(SpeechPhase.Playing, request.state.value.phase)
+                val controls = findMediaControls()
+                val playingTurn = CompletableDeferred<String?>()
+                scenario.onActivity {
+                    request.seekAfterPageTurn(playingTurn)
+                    checkNotNull(request.dispatch).invoke(SpeechCommand.Rate, 1.25f)
+                    playingTurn.complete("second")
+                }
+                // "hold" can only be requested after TTS completes the utterance on "second".
+                await { "hold" in positions && request.state.value == SpeechState(SpeechPhase.Playing, 1.25f) }
+                assertEquals(listOf("first", "second", "hold"), positions.toList())
+
+                val superseded = CompletableDeferred<String?>()
+                scenario.onActivity { request.seekAfterPageTurn(superseded) }
+                controls.pause()
+                await { request.state.value.phase == SpeechPhase.Paused }
+                val destination = CompletableDeferred<String?>()
+                scenario.onActivity {
+                    request.seekAfterPageTurn(destination)
+                    superseded.complete("stale")
+                    destination.complete("latest")
+                }
+                await { "latest" in positions }
+                assertEquals(SpeechState(SpeechPhase.Paused, 1.25f), request.state.value)
+                assertEquals(listOf("first", "second", "hold", "latest"), loads.toList())
+
+                controls.play()
+                await { request.state.value.phase in setOf(SpeechPhase.Ended, SpeechPhase.Failed, SpeechPhase.NoVoice) }
+                assertEquals(SpeechPhase.Ended, request.state.value.phase)
+                assertEquals(listOf("first", "second", "hold", "latest", "latest", "end"), positions.toList())
+            } finally {
+                instrumentation.runOnMainSync { ReadAloudService.stop(request) }
+            }
+        }
+    }
 
     @Test
     fun completedUtterancesAdvanceAndStopWithTheEmulatorScreenOff() {
