@@ -79,6 +79,7 @@ internal fun ReaderMenu(
     onGoBack: () -> Unit,
     onSeek: (Float) -> Unit,
     onTts: () -> Unit = {},
+    ttsAvailable: Boolean = true,
 ) {
     Box(Modifier.fillMaxSize()) {
         Surface(Modifier.align(Alignment.TopCenter).fillMaxWidth().swallowTouches().testTag("top-bar"), tonalElevation = 3.dp, shadowElevation = 4.dp) {
@@ -103,7 +104,9 @@ internal fun ReaderMenu(
                     IconButton(onClick = onContents) {
                         Icon(Icons.AutoMirrored.Filled.List, stringResource(R.string.action_contents))
                     }
-                    IconButton(onClick = onTts) { Icon(Icons.Filled.PlayArrow, stringResource(R.string.action_tts)) }
+                    if (ttsAvailable) {
+                        IconButton(onClick = onTts) { Icon(Icons.Filled.PlayArrow, stringResource(R.string.action_tts)) }
+                    }
                     IconButton(onClick = onSettings) { Icon(Icons.Filled.Settings, stringResource(R.string.action_settings)) }
                 }
                 state.chapter?.let {

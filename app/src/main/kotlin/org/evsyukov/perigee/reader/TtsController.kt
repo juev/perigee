@@ -1,7 +1,11 @@
 package org.evsyukov.perigee.reader
 
+import android.content.Context
 import android.graphics.Rect
 import android.media.MediaPlayer
+import android.speech.tts.TextToSpeech
+import android.speech.tts.UtteranceProgressListener
+import android.util.Log
 import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
@@ -28,7 +32,69 @@ data class Sentence(
     val endOffset: Int,
 )
 
+/** Android built-in TextToSpeech API. Used when no server URL is configured. */
+private class AndroidTtsEngine(
+    context: Context,
+    private val onComplete: (String) -> Unit,
+) {
+    private var tts: TextToSpeech? = null
+    private var isInit = false
+    private var pendingText: String? = null
+    private val TAG = "AndroidTts"
+
+    init {
+        tts = try {
+            TextToSpeech(context) { status ->
+                if (status == TextToSpeech.SUCCESS) {
+                    isInit = true
+                    Log.i(TAG, "init OK")
+                    pendingText?.let { speakInternal(it) }
+                    pendingText = null
+                } else {
+                    Log.w(TAG, "init failed status=$status")
+                }
+            }
+        } catch (e: Exception) { Log.w(TAG, "init exc: ${e.message}"); null }
+    }
+
+    fun speak(text: String) {
+        if (!isInit) {
+            pendingText = text
+            Log.i(TAG, "queued: ${text.take(40)}")
+            return
+        }
+        speakInternal(text)
+    }
+
+    fun stop() {
+        pendingText = null
+        runCatching { tts?.stop() }
+    }
+
+    fun release() {
+        runCatching { tts?.stop() }
+        runCatching { tts?.shutdown() }
+        tts = null
+    }
+
+    private fun speakInternal(text: String) {
+        tts?.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
+            override fun onDone(utteranceId: String) {
+                Log.i(TAG, "#$utteranceId done")
+                onComplete(utteranceId)
+            }
+            override fun onError(utteranceId: String?) {
+                Log.w(TAG, "#$utteranceId err")
+                onComplete(utteranceId ?: "")
+            }
+            override fun onStart(utteranceId: String?) {}
+        })
+        tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "0")
+    }
+}
+
 class TtsController(
+    context: Context,
     private val getReader: () -> BookReader?,
     private val getPrefs: () -> ReaderPrefs,
     private val turnPage: suspend () -> Unit,
@@ -46,18 +112,42 @@ class TtsController(
     private var prefetchIndex = -1
     private var prefetchJob: Job? = null
     private var generation = 0
+    private val TAG = "TtsCtl"
+    private var androidTts: AndroidTtsEngine? = null
+    private val appContext: Context = context.applicationContext
+
+    // Engine priority: external server (if on and URL set) → Android TTS (if on) → none.
+    private fun wantServer(): Boolean {
+        val prefs = getPrefs()
+        return prefs.ttsUseServer && prefs.ttsSynthUrl.isNotBlank()
+    }
+
+    private fun log(msg: String) { Log.i(TAG, msg) }
+
+    private fun logw(msg: String) { Log.w(TAG, msg) }
 
     fun play() {
+        log("play idx=$currentIndex s=${sentences.size}")
         val reader = getReader() ?: return
         if (sentences.isNotEmpty() && currentIndex < sentences.size) { speakSentence(currentIndex); return }
         loadPage(reader)
     }
 
-    fun pause() { runCatching { mediaPlayer?.pause() } }
-    fun resume() { runCatching { if (mediaPlayer?.isPlaying == false) mediaPlayer?.start() } }
+    fun pause() {
+        runCatching { mediaPlayer?.pause() }
+        // Android TTS has no pause: stop now, re-read the sentence on resume.
+        androidTts?.stop()
+    }
+
+    fun resume() {
+        if (androidTts != null && mediaPlayer == null) { speakSentence(currentIndex); return }
+        runCatching { if (mediaPlayer?.isPlaying == false) mediaPlayer?.start() }
+    }
 
     fun stop() {
         generation = generationCounter.incrementAndGet()
+        log("stop gen=$generation")
+        androidTts?.stop()
         prefetchJob?.cancel(); prefetchJob = null; prefetchedAudio = null
         runCatching { mediaPlayer?.stop() }; runCatching { mediaPlayer?.release() }
         mediaPlayer = null; mediaFile?.delete(); mediaFile = null
@@ -99,10 +189,13 @@ class TtsController(
             (0 until arr.length()).map { i ->
                 val id = arr.optString(i, ""); if (id.isNotBlank()) TtsVoice(id, id) else null
             }.filterNotNull()
-        } catch (_: Exception) { emptyList() }
+        } catch (e: Exception) { logw("fetchVoices: ${e.message}"); emptyList() }
     }
 
-    fun release() { stop() }
+    fun release() {
+        androidTts?.release(); androidTts = null
+        stop()
+    }
 
     // ─── private ──────────────────────────────────
 
@@ -117,6 +210,7 @@ class TtsController(
             if (pageText.isBlank()) return@launch
             currentPageXPointer = reader.read { doc -> doc.xpointer() }
             sentences = splitSentences(pageText, localeOf(bookLang))
+            log("loadPage: ${pageText.length}c ${sentences.size}s")
             currentIndex = 0
             if (sentences.isNotEmpty()) speakSentence(0)
         }
@@ -126,6 +220,7 @@ class TtsController(
         if (index !in sentences.indices) return
         val sentence = sentences[index]; currentIndex = index
         val gen = generation
+        log("spk #$index: ${sentence.text.take(40)}")
 
         onState(TtsState(playing=true, sentenceText=sentence.text, sentenceIndex=index,
             sentenceCount=sentences.size, highlightRects=emptyList(),
@@ -141,19 +236,41 @@ class TtsController(
                 speed=speed, selectedVoice=selectedVoice, generation=gen))
         }
 
-        val cached = prefetchedAudio; prefetchedAudio = null
-        scope.launch {
-            if (generation != gen) return@launch
-            val audio = cached ?: synthesize(sentence.text) ?: run {
+        // Pick the engine by the CURRENT prefs: server on + URL → HTTP, else Android TTS, else none.
+        if (wantServer()) {
+            // HTTP: stop the native engine if it was speaking.
+            androidTts?.stop()
+            val cached = prefetchedAudio; prefetchedAudio = null
+            scope.launch {
                 if (generation != gen) return@launch
-                delay(5000); if (generation != gen) return@launch
-                onSentenceEnd(gen); return@launch
+                val audio = cached ?: synthesize(sentence.text) ?: run {
+                    if (generation != gen) return@launch
+                    // Show why nothing plays, then wait and move on.
+                    onState(TtsState(playing=false, sentenceText=sentence.text, sentenceIndex=index,
+                        sentenceCount=sentences.size, speed=speed, selectedVoice=selectedVoice,
+                        generation=gen, error=lastError ?: "TTS: synthesis failed"))
+                    delay(5000); if (generation != gen) return@launch
+                    onSentenceEnd(gen); return@launch
+                }
+                if (generation != gen) return@launch
+                onState(TtsState(playing=true, sentenceText=sentence.text, sentenceIndex=index,
+                    sentenceCount=sentences.size, speed=speed, selectedVoice=selectedVoice,
+                    generation=gen, error=null))
+                playAudio(audio) { onSentenceEnd(gen) }
             }
-            if (generation != gen) return@launch
-            playAudio(audio) { onSentenceEnd(gen) }
-        }
 
-        prefetchNext(index + 1)
+            prefetchNext(index + 1)
+        } else if (getPrefs().ttsUseAndroid) {
+            // Android TTS speaks directly (no HTTP, no MediaPlayer).
+            val nativeTts = androidTts ?: AndroidTtsEngine(appContext) { onSentenceEnd(generation) }
+                .also { androidTts = it; log("engine=AndroidTtsEngine") }
+            nativeTts.speak(sentence.text)
+        } else {
+            logw("no TTS engine: both toggles off")
+            onState(TtsState(playing=false, sentenceText=sentence.text, sentenceIndex=index,
+                sentenceCount=sentences.size, speed=speed, selectedVoice=selectedVoice,
+                generation=gen, unavailable=true))
+        }
     }
 
     private fun prefetchNext(index: Int) {
@@ -168,6 +285,7 @@ class TtsController(
     private fun onSentenceEnd(gen: Int) {
         if (generation != gen) return
         val next = currentIndex + 1
+        log("onEnd n=$next s=${sentences.size}")
         if (next < sentences.size) { speakSentence(next); return }
         currentIndex = 0; sentences = emptyList()
         scope.launch {
@@ -221,9 +339,24 @@ class TtsController(
                 put("response_format", "mp3"); put("speed", speed.toDouble())
             }.toString()
             conn.outputStream.use { it.write(body.toByteArray()) }
+            val code = conn.responseCode
+            if (code !in 200..299) {
+                val detail = runCatching { conn.errorStream?.use { it.reader().readText() }?.take(200) }.getOrNull()
+                logw("synthesize: HTTP $code $detail")
+                lastError = "HTTP $code" + (detail?.takeIf { it.isNotBlank() }?.let { ": $it" } ?: "")
+                return@withContext null
+            }
+            lastError = null
             conn.inputStream.use { it.readBytes() }
-        } catch (_: Exception) { null }
+        } catch (e: Exception) {
+            logw("synthesize: ${e.message}")
+            lastError = e.message ?: "network error"
+            null
+        }
     }
+
+    /** The last synthesis error, or null. Read right after synthesize returns null. */
+    private var lastError: String? = null
 
     private suspend fun playAudio(mp3: ByteArray, onDone: () -> Unit) {
         runCatching { mediaPlayer?.stop() }; runCatching { mediaPlayer?.release() }

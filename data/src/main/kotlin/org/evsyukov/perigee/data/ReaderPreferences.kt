@@ -110,6 +110,10 @@ data class ReaderPrefs(
     val warmStrength: Int = 3,
     /** CSS the owner wrote, applied after everything the app sets; empty means the shipped look. */
     val userCss: String = "",
+    /** TTS: use an external server for speech synthesis; off = native Android TTS (RHVoice and the like). */
+    val ttsUseServer: Boolean = false,
+    /** TTS: use the device's native Android TTS engine (RHVoice and the like). On by default. */
+    val ttsUseAndroid: Boolean = true,
     /** TTS: URL for speech synthesis (POST text → MP3). Empty = native Android TTS. */
     val ttsSynthUrl: String = "",
     /** TTS: URL for voice list (GET voices). Empty = native Android TTS. */
@@ -215,6 +219,8 @@ class ReaderPreferences private constructor(private val store: DataStore<Prefere
             warmStrength = p[WARM_STRENGTH] ?: d.warmStrength,
             userCss = p[USER_CSS] ?: d.userCss,
             ttsSynthUrl = p[TTS_SYNTH_URL] ?: d.ttsSynthUrl,
+            ttsUseServer = p[TTS_USE_SERVER] ?: d.ttsUseServer,
+            ttsUseAndroid = p[TTS_USE_ANDROID] ?: d.ttsUseAndroid,
             ttsVoicesUrl = p[TTS_VOICES_URL] ?: d.ttsVoicesUrl,
             ttsCustomHeader = p[TTS_CUSTOM_HEADER] ?: d.ttsCustomHeader,
         )
@@ -259,6 +265,8 @@ class ReaderPreferences private constructor(private val store: DataStore<Prefere
         p[WARM_STRENGTH] = v.warmStrength
         p[USER_CSS] = v.userCss
         p[TTS_SYNTH_URL] = v.ttsSynthUrl
+        p[TTS_USE_SERVER] = v.ttsUseServer
+        p[TTS_USE_ANDROID] = v.ttsUseAndroid
         p[TTS_VOICES_URL] = v.ttsVoicesUrl
         p[TTS_CUSTOM_HEADER] = v.ttsCustomHeader
     }
@@ -309,6 +317,8 @@ class ReaderPreferences private constructor(private val store: DataStore<Prefere
         private val WARM_STRENGTH = intPreferencesKey("warm_strength")
         private val USER_CSS = stringPreferencesKey("user_css")
         private val TTS_SYNTH_URL = stringPreferencesKey("tts_synth_url")
+        private val TTS_USE_SERVER = booleanPreferencesKey("tts_use_server")
+        private val TTS_USE_ANDROID = booleanPreferencesKey("tts_use_android")
         private val TTS_VOICES_URL = stringPreferencesKey("tts_voices_url")
         private val TTS_CUSTOM_HEADER = stringPreferencesKey("tts_custom_header")
 

@@ -281,27 +281,35 @@ internal fun SettingsSheet(
                     Modifier.padding(top = 16.dp).testTag("tts-section"),
                     style = MaterialTheme.typography.titleSmall,
                 )
-                TtsUrlField(
-                    label = R.string.setting_tts_synth,
-                    value = prefs.ttsSynthUrl,
-                    placeholder = stringResource(R.string.tts_url_placeholder),
-                    hint = stringResource(R.string.tts_synth_hint),
-                    tag = "tts-synth",
-                ) { url -> onChange { it.copy(ttsSynthUrl = url) } }
-                TtsUrlField(
-                    label = R.string.setting_tts_voices,
-                    value = prefs.ttsVoicesUrl,
-                    placeholder = stringResource(R.string.tts_url_placeholder),
-                    hint = stringResource(R.string.tts_voices_hint),
-                    tag = "tts-voices",
-                ) { url -> onChange { it.copy(ttsVoicesUrl = url) } }
-                TtsUrlField(
-                    label = R.string.setting_tts_header,
-                    value = prefs.ttsCustomHeader,
-                    placeholder = stringResource(R.string.tts_header_placeholder),
-                    hint = stringResource(R.string.tts_header_hint),
-                    tag = "tts-header",
-                ) { header -> onChange { it.copy(ttsCustomHeader = header) } }
+                Toggle(R.string.setting_tts_use_android, prefs.ttsUseAndroid, "tts-use-android") { on ->
+                    onChange { it.copy(ttsUseAndroid = on) }
+                }
+                Toggle(R.string.setting_tts_use_server, prefs.ttsUseServer, "tts-use-server") { on ->
+                    onChange { it.copy(ttsUseServer = on) }
+                }
+                if (prefs.ttsUseServer) {
+                    TtsUrlField(
+                        label = R.string.setting_tts_synth,
+                        value = prefs.ttsSynthUrl,
+                        placeholder = stringResource(R.string.tts_url_placeholder),
+                        hint = stringResource(R.string.tts_synth_hint),
+                        tag = "tts-synth",
+                    ) { url -> onChange { it.copy(ttsSynthUrl = url) } }
+                    TtsUrlField(
+                        label = R.string.setting_tts_voices,
+                        value = prefs.ttsVoicesUrl,
+                        placeholder = stringResource(R.string.tts_url_placeholder),
+                        hint = stringResource(R.string.tts_voices_hint),
+                        tag = "tts-voices",
+                    ) { url -> onChange { it.copy(ttsVoicesUrl = url) } }
+                    TtsUrlField(
+                        label = R.string.setting_tts_header,
+                        value = prefs.ttsCustomHeader,
+                        placeholder = stringResource(R.string.tts_header_placeholder),
+                        hint = stringResource(R.string.tts_header_hint),
+                        tag = "tts-header",
+                    ) { header -> onChange { it.copy(ttsCustomHeader = header) } }
+                }
 
                 Choice(
                     R.string.setting_tap_scheme, prefs.tapScheme, TapScheme.entries,

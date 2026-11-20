@@ -648,7 +648,9 @@ class ReaderViewModel internal constructor(
         ensureTtsController()
         val prefs = _prefs.value
         val currentTts = _state.value.tts
-        if (prefs.ttsVoicesUrl.isNotBlank() && currentTts.voices.isEmpty()) {
+        // Load voices only when the external server will be used.
+        val serverMode = prefs.ttsUseServer && prefs.ttsSynthUrl.isNotBlank()
+        if (serverMode && prefs.ttsVoicesUrl.isNotBlank() && currentTts.voices.isEmpty()) {
             _state.update { it.copy(tts = it.tts.copy(loading = true)) }
             viewModelScope.launch {
                 val voices = ttsController?.fetchVoices().orEmpty()
@@ -707,6 +709,7 @@ class ReaderViewModel internal constructor(
     private fun ensureTtsController() {
         if (ttsController != null) return
         ttsController = TtsController(
+            getApplication(),
             getReader = { reader },
             getPrefs = { _prefs.value },
             turnPage = { turn(1) },
@@ -717,6 +720,8 @@ class ReaderViewModel internal constructor(
                 sentenceCount = tts.sentenceCount,
                 highlightRects = tts.highlightRects,
                 speed = tts.speed,
+                error = tts.error,
+                unavailable = tts.unavailable,
             )) } },
             scope = viewModelScope,
         )

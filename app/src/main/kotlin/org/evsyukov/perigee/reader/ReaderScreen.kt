@@ -377,16 +377,25 @@ fun ReaderScreen(file: File, onClose: () -> Unit, viewModel: ReaderViewModel = v
                 onToggleBookmark = viewModel::toggleBookmark,
                 onGoBack = viewModel::goBack,
                 onSeek = viewModel::goToProgress,
+                ttsAvailable = prefs.ttsUseAndroid || (prefs.ttsUseServer && prefs.ttsSynthUrl.isNotBlank()),
                 onTts = {
-                    if (state.tts.playing || state.tts.sentenceIndex > 0) {
-                        viewModel.startOrToggleTts()
-                        panel = Panel.None
-                    } else if (prefs.ttsVoicesUrl.isBlank()) {
-                        viewModel.startOrToggleTts()
-                        panel = Panel.None
-                    } else {
-                        ttsVoiceDialogStartsTts = true
-                        ttsVoiceDialog = true
+                    // Voice dialog only when the EXTERNAL server will be used;
+                    // Android TTS starts right away, no voices to pick.
+                    val serverMode = prefs.ttsUseServer && prefs.ttsSynthUrl.isNotBlank()
+                    when {
+                        state.tts.playing || state.tts.sentenceIndex > 0 -> {
+                            viewModel.startOrToggleTts()
+                            panel = Panel.None
+                        }
+                        !serverMode -> {
+                            viewModel.startOrToggleTts()
+                            panel = Panel.None
+                        }
+                        prefs.ttsVoicesUrl.isBlank() -> {
+                            viewModel.startOrToggleTts()
+                            panel = Panel.None
+                        }
+                        else -> ttsVoiceDialog = true
                     }
                 },
             )

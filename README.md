@@ -155,6 +155,8 @@ When the TTS button is pressed in the reader menu, a dialog lists the available 
 
 The server responds with audio bytes (`audio/mpeg` or any format MediaPlayer supports). Each sentence is sent as a separate request. The next sentence is pre-fetched while the current one plays, so there is no gap between sentences beyond the server's latency.
 
+A custom HTTP header (e.g. `Authorization: Bearer xxx`) can be set in the reading settings (gear → TTS → Custom Header) in `Header: Value` format.
+
 **Voices** — `GET /v1/audio/voices` or `GET /v1/models`
 
 Three response formats are accepted:
@@ -164,6 +166,14 @@ Three response formats are accepted:
 { "data": [{ "id": "voice-id-1" }] }
 ["voice-id-1", "voice-id-2"]
 ```
+
+### Known limitations
+
+- **TTS bar is not collapsible.** The full bar (play/pause/stop/progress/speed/voice) stays visible while TTS is active and covers the bottom section of the page. A collapsible mini-player would be a welcome improvement.
+- **No two-page landscape support in sentence extraction.** In landscape with two pages side by side, only the left page is read aloud. The engine step should be 2 indices instead of 1 when two pages are shown.
+- **No audio focus.** TTS does not request audio focus, so playback can be interrupted by other apps without notice.
+- **Speed changes apply to the next sentence.** The current sentence is already synthesised with the old speed setting.
+- **Sentence highlighting is best-effort.** Highlight rects are found by searching the sentence text on the page. Long sentences with repeated phrases may highlight a wrong occurrence.
 
 ### Piper TTS wrapper
 

@@ -2,6 +2,7 @@ package org.evsyukov.perigee.reader
 
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBarsPadding
@@ -19,6 +20,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 
@@ -45,8 +48,19 @@ internal fun TtsBar(
         tonalElevation = 6.dp,
         shadowElevation = 6.dp,
     ) {
+        Column(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp)) {
+            // The last error, when the server or the engine failed.
+            if (tts.error != null) {
+                Text(
+                    tts.error,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
         Row(
-            Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
+            Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(4.dp),
         ) {
@@ -77,13 +91,14 @@ internal fun TtsBar(
             )
 
             // Voice button (opens dialog to change voice)
-            TextButton(onClick = onChangeVoice, modifier = Modifier.width(56.dp)) {
+            IconButton(onClick = onChangeVoice, modifier = Modifier.size(36.dp)) {
                 Text(
-                    if (tts.selectedVoice.isNotBlank()) tts.selectedVoice.substringAfterLast("-").take(6) else "🎙",
-                    style = MaterialTheme.typography.labelSmall,
-                    maxLines = 1,
+                    "🎙",
+                    modifier = Modifier.semantics { contentDescription = "Voice" },
+                    style = MaterialTheme.typography.titleSmall,
                 )
             }
+        }
         }
     }
 }
