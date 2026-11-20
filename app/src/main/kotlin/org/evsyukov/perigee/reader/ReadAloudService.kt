@@ -12,6 +12,7 @@ import android.content.IntentFilter
 import android.media.AudioAttributes
 import android.media.AudioFocusRequest
 import android.media.AudioManager
+import android.media.MediaMetadata
 import android.media.session.MediaSession
 import android.media.session.PlaybackState
 import android.os.Bundle
@@ -122,13 +123,14 @@ class ReadAloudService : Service() {
         notifications.createNotificationChannel(NotificationChannel(CHANNEL, getString(R.string.read_aloud), NotificationManager.IMPORTANCE_LOW))
         media = MediaSession(this, CHANNEL).apply {
             setSessionActivity(openApp())
+            setMetadata(MediaMetadata.Builder().putString(MediaMetadata.METADATA_KEY_TITLE, getString(R.string.read_aloud)).build())
             setCallback(object : MediaSession.Callback() {
                 override fun onPlay() = command(SpeechCommand.Play)
                 override fun onPause() = command(SpeechCommand.Pause)
                 override fun onSkipToPrevious() = command(SpeechCommand.Previous)
                 override fun onSkipToNext() = command(SpeechCommand.Next)
                 override fun onStop() = command(SpeechCommand.Stop)
-                override fun onCustomAction(action: String?, extras: Bundle?) {
+                override fun onCustomAction(action: String, extras: Bundle?) {
                     if (action == SpeechCommand.Stop.name) command(SpeechCommand.Stop)
                 }
             }, handler)
@@ -141,7 +143,8 @@ class ReadAloudService : Service() {
         PendingIntent.FLAG_IMMUTABLE)
 
     private fun notification(): Notification {
-        val style = Notification.MediaStyle().setMediaSession(media?.sessionToken).setShowActionsInCompactView(0, 1, 2)
+        val style = Notification.MediaStyle().setShowActionsInCompactView(0, 1, 2)
+        media?.let { style.setMediaSession(it.sessionToken) }
         val playing = request?.state?.value?.phase != SpeechPhase.Paused
         val builder = Notification.Builder(this, CHANNEL)
             .setSmallIcon(android.R.drawable.ic_lock_silent_mode_off)

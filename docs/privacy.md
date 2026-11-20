@@ -36,6 +36,8 @@ If the address of a catalogue or of the server starts with `http://`, everything
 
 When you share a piece of text, look it up in a dictionary or search the web for it, the text is handed to the app you pick. That app's policy applies from there.
 
+When you start **Read aloud**, Perigee hands short pieces of the book to the Android text-to-speech engine installed on your device. It selects a voice the engine reports as available offline and does not send the text to a speech server. The speech engine is a separate app and its own policy applies.
+
 ## Changes and contact
 
 Changes to this page are in the history of the repository: https://github.com/juev/perigee. Questions go to its issues: https://github.com/juev/perigee/issues.
