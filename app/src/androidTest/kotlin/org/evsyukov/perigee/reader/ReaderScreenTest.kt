@@ -160,6 +160,18 @@ class ReaderScreenTest {
     }
 
     @Test
+    fun theRenderedPageExposesBookTextWithoutImageRecognition() {
+        show()
+        waitForBook()
+        assertEquals(0, shownPage())
+        val pages = model().state.value.page!!.pageCount
+        rule.onNodeWithContentDescription(string(R.string.page_description, 1, pages)).assertIsDisplayed()
+
+        // Ask for actual semantic text, not a content description or characters found in the bitmap.
+        rule.onNodeWithText("Chapter 1, paragraph 1.", substring = true).assertIsDisplayed()
+    }
+
+    @Test
     fun touchingTheRightPartTurnsForwardAndTheLeftPartBack() {
         show()
         waitForBook()
