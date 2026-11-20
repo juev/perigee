@@ -63,6 +63,7 @@ import org.evsyukov.perigee.data.PageTurn
 import org.evsyukov.perigee.data.ReaderPreferences
 import org.evsyukov.perigee.data.ReaderPrefs
 import org.evsyukov.perigee.data.TapScheme
+import org.evsyukov.perigee.library.ImmersiveNoticeSeen
 import org.evsyukov.perigee.server.Server
 import org.evsyukov.perigee.sync.BookOrbit
 import org.evsyukov.perigee.sync.FakeOrbit
@@ -81,7 +82,11 @@ import org.junit.runner.RunWith
 /** The reading screen as the reader uses it: requirements R1 and R3. */
 @RunWith(AndroidJUnit4::class)
 class ReaderScreenTest {
-    @get:Rule
+    // Keep the first-run system overlay out of the test, and restore it after closing the Activity.
+    @get:Rule(order = 0)
+    val noticeSeen = ImmersiveNoticeSeen(UiAutomation.FLAG_DONT_SUPPRESS_ACCESSIBILITY_SERVICES)
+
+    @get:Rule(order = 1)
     val rule = createAndroidComposeRule<ComponentActivity>()
 
     @get:Rule
