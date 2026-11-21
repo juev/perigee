@@ -22,6 +22,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -707,6 +708,12 @@ class ReaderViewModel internal constructor(
                     true
                 }
             },
+            mapTiming = { span, start, end ->
+                if (speechRequest !== run) null else open.read { doc ->
+                    doc.speechRange(span, start, end)?.let { SpeechChunk(it.start, it.end) }
+                }
+            },
+            timingEnabled = _prefs.map { it.highlightSpokenText },
         )
         speechRequest = run
         _speech.value = run.state.value

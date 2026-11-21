@@ -444,6 +444,60 @@ class ReaderScreenTest {
     }
 
     @Test
+    fun mappedSpeechOnEachLeafUsesTheDisplayedLayoutAndDiscardsTheOldViewport() {
+        runBlocking { preferences.update { it.copy(twoPagesInLandscape = true, highlightSpokenText = true) } }
+        var request: SpeechRequest? = null
+        val local = ReaderViewModel(activity.application, Library.get(activity),
+            startSpeechService = { _, run -> request = run }, bookOpened = {})
+        val wide = Viewport(960, 540, 1f, 160)
+        try {
+            rule.runOnUiThread {
+                local.setViewport(wide)
+                local.open(book)
+            }
+            rule.waitUntil(TIMEOUT) { local.state.value.page?.turnStep == 2 && !local.state.value.busy }
+            val shown = checkNotNull(local.state.value.page)
+            val middle = shown.bitmap.width / 2
+            val sentence = "The quick brown fox jumps over the lazy dog while the engine lays out this line."
+            val paragraphs = shown.readingBlocks.filter { it.text.startsWith("Chapter 1, paragraph ") && sentence in it.text }
+            val left = paragraphs.first { it.right <= middle }
+            val right = paragraphs.first { it.left >= middle }
+            rule.runOnUiThread { local.startSpeech() }
+            val run = rule.runOnUiThread { checkNotNull(request) }
+            val map = checkNotNull(run.mapTiming)
+            val samples = ArrayList<Long>()
+            for ((block, isLeft) in listOf(left to true, right to false)) {
+                val span = runBlocking { checkNotNull(run.load(block.anchor, 2_000)) }
+                val from = span.range.text.indexOf(sentence)
+                assertTrue("the submitted paragraph includes the visible sentence", from > 0)
+                repeat(6) { attempt ->
+                    val startNs = System.nanoTime()
+                    val chunk = runBlocking { checkNotNull(map(span, from, from + sentence.length)) }
+                    rule.runOnUiThread { run.state.value = SpeechState(SpeechPhase.Playing, chunk = chunk) }
+                    val rects = runBlocking { local.speechRects(shown, chunk) }
+                    if (attempt > 0) samples += System.nanoTime() - startNs
+                    assertTrue("sentence on ${if (isLeft) "left" else "right"} leaf has visible rectangles", rects.isNotEmpty())
+                    assertTrue("all rectangles stay on the sentence's leaf", rects.all { rect ->
+                        rect.left >= 0 && rect.right <= shown.bitmap.width && rect.top >= 0 && rect.bottom <= shown.bitmap.height &&
+                            (if (isLeft) rect.right <= middle else rect.left >= middle)
+                    })
+                    assertTrue("timing did not replace the displayed bitmap or change pages", shown === local.state.value.page)
+                }
+            }
+            val sorted = samples.sorted()
+            println("Speech mapping and geometry (includes dispatch, excludes synthesis and Compose): n=${sorted.size}, " +
+                "median_us=${sorted[sorted.size / 2] / 1_000}, max_us=${sorted.last() / 1_000}")
+            val current = checkNotNull(run.state.value.chunk)
+            rule.runOnUiThread { local.setViewport(wide.copy(width = wide.height, height = wide.width)) }
+            rule.waitUntil(TIMEOUT) { local.state.value.page?.turnStep == 1 && !local.state.value.busy }
+            assertTrue("outgoing spread can no longer return overlay geometry", runBlocking { local.speechRects(shown, current) }.isEmpty())
+            assertEquals("viewport changes do not restart speech", run, rule.runOnUiThread { request })
+        } finally {
+            rule.runOnUiThread { local.close() }
+        }
+    }
+
+    @Test
     fun aManualPageTurnRetargetsThePlayingReadAloudSession() {
         val requests = mutableListOf<SpeechRequest>()
         val turns = mutableListOf<Deferred<String?>>()
