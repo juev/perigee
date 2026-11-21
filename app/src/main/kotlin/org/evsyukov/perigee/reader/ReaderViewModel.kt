@@ -151,6 +151,15 @@ class ReaderViewModel internal constructor(
     constructor(application: Application) : this(application, Library.get(application), bookOpened = { Server.bookOpened(application, it) })
 
     private val preferences = ReaderPreferences.get(application)
+    internal val appearancePreferences get() = preferences
+
+    internal suspend fun restoreAppearance(name: String?): String? {
+        val faces = state.value.fontFaces.toSet()
+        check(faces.isNotEmpty())
+        lightSwitch.pause()
+        return if (name == null) preferences.undoAppearanceProfile(faces)
+        else preferences.applyAppearanceProfile(name, faces)
+    }
 
     private val _state = MutableStateFlow(ReaderState())
     val state: StateFlow<ReaderState> = _state.asStateFlow()

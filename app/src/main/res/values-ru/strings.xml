@@ -45,6 +45,19 @@
     <string name="progress_line">Позиция в книге</string>
 
     <string name="settings_title">Настройки чтения</string>
+    <string name="appearance_profiles">Профили оформления</string>
+    <string name="appearance_profiles_hint">Сохраняйте и восстанавливайте оформление страницы. Ваш CSS и остальные настройки чтения не меняются.</string>
+    <string name="appearance_profiles_unreadable">Эта версия не может прочитать сохранённые профили. Они не изменены.</string>
+    <string name="appearance_profile_save">Сохранить текущее оформление</string>
+    <string name="appearance_profile_name">Название профиля</string>
+    <string name="appearance_profile_apply">Применить «%1$s»</string>
+    <string name="appearance_profile_update">Записать текущее оформление в «%1$s»</string>
+    <string name="appearance_profile_rename">Переименовать «%1$s»</string>
+    <string name="appearance_profile_delete">Удалить «%1$s»</string>
+    <string name="appearance_profile_undo">Отменить последнее применение профиля</string>
+    <string name="appearance_profile_limit">Можно сохранить до %1$d профилей.</string>
+    <string name="appearance_profile_failed">Не удалось выполнить действие с профилем.</string>
+    <string name="appearance_profile_font_missing">Шрифт «%1$s» недоступен. Текущий шрифт не изменён.</string>
     <string name="setting_page_turn">Листать страницы</string>
     <string name="page_turn_horizontal">Горизонтально</string>
     <string name="page_turn_vertical">Вертикально</string>

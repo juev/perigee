@@ -97,6 +97,7 @@ internal fun SettingsSheet(
     lightSensor: Boolean,
     onFontTrial: () -> Unit,
     onStyles: () -> Unit,
+    onAppearanceProfiles: () -> Unit,
     onChange: ((ReaderPrefs) -> ReaderPrefs) -> Unit,
     onDismiss: () -> Unit,
 ) {
@@ -129,6 +130,9 @@ internal fun SettingsSheet(
                 verticalArrangement = Arrangement.spacedBy(6.dp),
             ) {
                 Text(stringResource(R.string.settings_title), style = MaterialTheme.typography.titleMedium)
+                TextButton(onClick = onAppearanceProfiles, modifier = Modifier.testTag("appearance-profiles-open")) {
+                    Text(stringResource(R.string.appearance_profiles))
+                }
                 Choice(
                     R.string.setting_page_turn, prefs.pageTurn, PageTurn.entries,
                     label = { stringResource(if (it == PageTurn.Horizontal) R.string.page_turn_horizontal else R.string.page_turn_vertical) },

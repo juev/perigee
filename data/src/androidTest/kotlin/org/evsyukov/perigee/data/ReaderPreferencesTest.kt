@@ -20,6 +20,8 @@ import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 
@@ -49,6 +51,43 @@ class ReaderPreferencesTest {
         ReaderPreferences::class.java.getDeclaredConstructor(DataStore::class.java)
             .apply { isAccessible = true }
             .newInstance(store)
+
+    @Test
+    fun appearanceProfilesAndUndoSurviveStoreRecreation() = runBlocking<Unit> {
+        val first = preferences(store(file))
+        first.update { ReaderPrefs(fontSize = 32, fullSizeFootnotes = true, userCss = "p { color: red; }") }
+        first.saveAppearanceProfile("Крупный текст")
+        first.update { ReaderPrefs(fontSize = 21, userCss = "p { color: blue; }") }
+        jobs.removeAt(jobs.lastIndex).cancelAndJoin()
+        val second = preferences(store(file))
+        assertEquals(listOf("Крупный текст"), second.appearanceProfiles.first())
+        assertEquals(21, second.prefs.first().fontSize)
+        second.applyAppearanceProfile("Крупный текст", setOf(ReaderPrefs().fontFace))
+        assertEquals(ReaderPrefs(fontSize = 32, fullSizeFootnotes = true, userCss = "p { color: blue; }"), second.prefs.first())
+        jobs.removeAt(jobs.lastIndex).cancelAndJoin()
+        val third = preferences(store(file))
+        assertTrue(third.canUndoAppearanceProfile.first())
+        third.undoAppearanceProfile(setOf(ReaderPrefs().fontFace))
+        assertEquals(ReaderPrefs(fontSize = 21, userCss = "p { color: blue; }"), third.prefs.first())
+        assertFalse(third.canUndoAppearanceProfile.first())
+    }
+
+    @Test
+    fun unknownProfileVersionCannotOverwriteTheCatalogOrActivePreferences() = runBlocking<Unit> {
+        val stored = store(file)
+        val key = stringPreferencesKey("appearance_profiles")
+        val future = """{"version":2,"profiles":{"future":{}}}"""
+        stored.edit {
+            it[key] = future
+            it[intPreferencesKey("font_size")] = 27
+        }
+        val reader = preferences(stored)
+        assertNull(reader.appearanceProfiles.first())
+        val result = runCatching { reader.saveAppearanceProfile("New") }
+        assertTrue(result.isFailure)
+        assertEquals(future, stored.data.first()[key])
+        assertEquals(27, reader.prefs.first().fontSize)
+    }
 
     @Test
     fun theBooksOwnFontsSwitchedOffByAnOlderVersionAreBackAndTheOtherSettingsKept() = runBlocking<Unit> {

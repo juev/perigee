@@ -46,6 +46,19 @@
     <string name="progress_line">Position in the book</string>
 
     <string name="settings_title">Reading settings</string>
+    <string name="appearance_profiles">Appearance profiles</string>
+    <string name="appearance_profiles_hint">Save and restore the look of the page. Your CSS and other reading controls stay as they are.</string>
+    <string name="appearance_profiles_unreadable">Saved profiles cannot be read by this version. They have not been changed.</string>
+    <string name="appearance_profile_save">Save current appearance</string>
+    <string name="appearance_profile_name">Profile name</string>
+    <string name="appearance_profile_apply">Apply “%1$s”</string>
+    <string name="appearance_profile_update">Update “%1$s” with current appearance</string>
+    <string name="appearance_profile_rename">Rename “%1$s”</string>
+    <string name="appearance_profile_delete">Delete “%1$s”</string>
+    <string name="appearance_profile_undo">Undo last profile application</string>
+    <string name="appearance_profile_limit">You can save up to %1$d profiles.</string>
+    <string name="appearance_profile_failed">Could not complete the profile change.</string>
+    <string name="appearance_profile_font_missing">“%1$s” is unavailable. The current font was kept.</string>
     <string name="setting_page_turn">Turn pages</string>
     <string name="page_turn_horizontal">Horizontally</string>
     <string name="page_turn_vertical">Vertically</string>
