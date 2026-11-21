@@ -362,7 +362,7 @@ internal fun SettingsSheet(
 internal const val SETTINGS_SHARE = 0.5f
 
 /** The next or previous value of a stepped range, staying inside it. */
-private fun stepped(value: Int, direction: Int, range: IntProgression): Int =
+internal fun stepped(value: Int, direction: Int, range: IntProgression): Int =
     (value + direction * range.step).coerceIn(range.first, range.last)
 
 /** Justified lines with no word broken at their end stretch the gaps between words. */
@@ -474,7 +474,7 @@ private fun WeightSlider(weight: Int, onChoose: (Int) -> Unit) {
 }
 
 @Composable
-private fun Toggle(label: Int, checked: Boolean, tag: String? = null, nameSwitch: Boolean = false, onChange: (Boolean) -> Unit) {
+internal fun Toggle(label: Int, checked: Boolean, tag: String? = null, nameSwitch: Boolean = false, onChange: (Boolean) -> Unit) {
     val title = stringResource(label)
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
         Text(title, Modifier.weight(1f).padding(end = 12.dp))

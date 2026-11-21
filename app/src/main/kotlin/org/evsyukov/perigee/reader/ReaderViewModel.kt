@@ -8,6 +8,7 @@ import android.graphics.Rect
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import java.io.File
+import java.io.IOException
 import kotlin.math.roundToInt
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
@@ -25,6 +26,7 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -57,6 +59,7 @@ import org.evsyukov.perigee.engine.TextRange
 import org.evsyukov.perigee.engine.TocEntry
 import org.evsyukov.perigee.server.Server
 import org.evsyukov.perigee.server.SyncWork
+import org.json.JSONException
 
 /** The size of the area the page is shown in, in pixels, and the screen density. */
 data class Viewport(
@@ -168,27 +171,58 @@ class ReaderViewModel internal constructor(
 
     private val _prefs = MutableStateFlow(ReaderPrefs())
     val prefs: StateFlow<ReaderPrefs> = _prefs.asStateFlow()
+    private var storedPrefs = ReaderPrefs()
 
     private val _readingSetup = MutableStateFlow<ReadingSetupDraft?>(null)
     internal val readingSetup = _readingSetup.asStateFlow()
 
     internal fun startReadingSetup() {
         if (_state.value.page == null || _readingSetup.value != null) return
-        _readingSetup.value = ReadingSetupDraft(fontSize = _prefs.value.fontSize)
+        _readingSetup.value = ReadingSetupDraft(before = storedPrefs)
     }
 
-    internal fun changeReadingSetupSize(delta: Int) {
-        _readingSetup.update { draft ->
-            draft?.copy(fontSize = (draft.fontSize + delta).coerceIn(ReaderPrefs.FONT_SIZES), changedSize = true)
-        }
+    internal fun changeReadingSetup(change: (ReaderPrefs) -> ReaderPrefs) = editReadingSetup { draft ->
+        draft.edit(storedPrefs, change)
+    }
+
+    internal fun moveReadingSetup(delta: Int) = editReadingSetup { draft ->
+        draft.copy(step = ReadingSetupStep.entries[(draft.step.ordinal + delta).coerceIn(ReadingSetupStep.entries.indices)])
+    }
+
+    internal fun nameReadingSetup(name: String) = editReadingSetup { it.copy(name = name.take(ReaderPreferences.PROFILE_NAME_LIMIT)) }
+
+    private fun editReadingSetup(change: (ReadingSetupDraft) -> ReadingSetupDraft) {
+        _readingSetup.update { draft -> draft?.let { if (it.saving) it else change(it).copy(error = null) } }
     }
 
     internal fun cancelReadingSetup() {
-        _readingSetup.value = null
+        _readingSetup.update { it?.takeIf { draft -> draft.saving } }
     }
 
-    private fun previewPrefs(stored: ReaderPrefs, draft: ReadingSetupDraft?): ReaderPrefs =
-        if (draft?.changedSize == true) stored.copy(fontSize = draft.fontSize) else stored
+    internal fun finishReadingSetup() {
+        val draft = _readingSetup.value ?: return
+        if (draft.saving || draft.step != ReadingSetupStep.Review || draft.name.isBlank()) return
+        val saving = draft.copy(saving = true, error = null)
+        _readingSetup.value = saving
+        viewModelScope.launch {
+            val error = try {
+                if (!preferences.saveReadingSetup(draft.name, draft.before, draft.chosen)) ReadingSetupError.Conflict
+                else {
+                    if (draft.chosen.colorScheme != draft.before.colorScheme) lightSwitch.pause()
+                    null
+                }
+            } catch (_: IOException) {
+                ReadingSetupError.Save
+            } catch (_: JSONException) {
+                ReadingSetupError.Save
+            } catch (_: IllegalArgumentException) {
+                ReadingSetupError.NameOrLimit
+            }
+            _readingSetup.compareAndSet(saving, error?.let { saving.copy(saving = false, error = it) })
+        }
+    }
+
+    private fun previewPrefs(stored: ReaderPrefs, draft: ReadingSetupDraft?): ReaderPrefs = draft?.preview(stored) ?: stored
 
     /** The owner's CSS as it was before the last changes, the latest first: a bad edit can be taken back. */
     val previousUserCss: StateFlow<List<String>> =
@@ -229,7 +263,8 @@ class ReaderViewModel internal constructor(
         viewModelScope.launch {
             // Not collectLatest: a book being opened must not be dropped halfway
             // because another preference arrived.
-            combine(preferences.prefs, _readingSetup, ::previewPrefs).distinctUntilChanged().collect { visible ->
+            val saved = preferences.prefs.onEach { storedPrefs = it }
+            combine(saved, _readingSetup, ::previewPrefs).distinctUntilChanged().collect { visible ->
                 // A copy about to be laid out with the settings before must not hold up the new layout.
                 if (visible != _prefs.value) spareJob?.cancel()
                 _prefs.value = visible
@@ -247,7 +282,7 @@ class ReaderViewModel internal constructor(
     /** Shows [file]; the same file again changes nothing. */
     fun open(file: File) {
         if (this.file == file) return
-        cancelReadingSetup()
+        _readingSetup.value = null
         stopSpeech()
         this.file = file
         viewModelScope.launch {
@@ -258,7 +293,7 @@ class ReaderViewModel internal constructor(
 
     /** Puts the book away; the screen is free to show another. */
     fun close() {
-        cancelReadingSetup()
+        _readingSetup.value = null
         stopSpeech()
         file = null
         viewModelScope.launch {
@@ -830,7 +865,8 @@ class ReaderViewModel internal constructor(
         _state.update { it.copy(busy = true) }
         lightSwitch.resume()
         try {
-            val prefs = previewPrefs(preferences.prefs.first(), _readingSetup.value).also { _prefs.value = it }
+            val saved = preferences.prefs.first().also { storedPrefs = it }
+            val prefs = previewPrefs(saved, _readingSetup.value).also { _prefs.value = it }
             val target = laidOut(prefs, viewport)
             val (width, height, settings) = target
             val open = BookReader.open(

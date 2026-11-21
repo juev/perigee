@@ -1072,6 +1072,39 @@ class ReaderScreenTest {
     }
 
     @Test
+    fun aFreshReaderDoesNotResumeAnInterruptedSetup() {
+        val initial = ReaderPrefs(fontSize = 21)
+        runBlocking { preferences.update { initial } }
+        val names = runBlocking { preferences.appearanceProfiles.first() }
+        val first = ReaderViewModel(activity.application, Library.get(activity), bookOpened = {})
+        val replacement = ReaderViewModel(activity.application, Library.get(activity), bookOpened = {})
+        var active by mutableStateOf(first)
+        made = first
+        try {
+            edgeToEdge()
+            rule.setContent { MaterialTheme { ReaderScreen(book, onClose = {}, viewModel = active) } }
+            waitForBook()
+            turnForward(1)
+            val position = checkNotNull(first.state.value.page).xpointer
+            openMenu()
+            rule.onNodeWithContentDescription(string(R.string.action_settings)).performClick()
+            rule.onNodeWithTag("reading-setup-open").performScrollTo().performClick()
+            rule.onNodeWithTag("reading-setup-font-size-more").performScrollTo().performClick()
+            waitFor("a draft was active before replacement") { first.prefs.value.fontSize == 22 && first.readingSetup.value != null }
+            // Replace the reader model without invoking the guide's Cancel or Finish.
+            rule.runOnUiThread { made = replacement; active = replacement }
+            waitForBook()
+            assertEquals(initial, replacement.prefs.value)
+            assertEquals(initial, runBlocking { preferences.prefs.first() })
+            assertEquals(names, runBlocking { preferences.appearanceProfiles.first() })
+            assertTrue(rule.onAllNodesWithTag("reading-setup-sheet").fetchSemanticsNodes().isEmpty())
+            assertEquals(position, replacement.state.value.page?.xpointer)
+        } finally {
+            rule.runOnIdle { first.close(); replacement.close() }
+        }
+    }
+
+    @Test
     fun readingSettingsOfferNamedAppearanceProfiles() {
         show()
         waitForBook()

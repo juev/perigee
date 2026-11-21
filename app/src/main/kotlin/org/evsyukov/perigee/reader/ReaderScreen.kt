@@ -159,7 +159,7 @@ fun ReaderScreen(file: File, onClose: () -> Unit, viewModel: ReaderViewModel = v
     var panel by rememberSaveable { mutableStateOf(Panel.None) }
     val speech by viewModel.speech.collectAsStateWithLifecycle()
     LaunchedEffect(speech?.phase) {
-        if (speech?.phase == SpeechPhase.Failed || speech?.phase == SpeechPhase.NoVoice) panel = Panel.Menu
+        if (readingSetup == null && (speech?.phase == SpeechPhase.Failed || speech?.phase == SpeechPhase.NoVoice)) panel = Panel.Menu
     }
 
     LaunchedEffect(viewModel, file) { viewModel.open(file) }
@@ -507,8 +507,9 @@ fun ReaderScreen(file: File, onClose: () -> Unit, viewModel: ReaderViewModel = v
         )
         Panel.None, Panel.Menu, Panel.Styles -> Unit
     }
-    readingSetup?.let {
-        ReadingSetupSheet(prefs.fontSize, viewModel::changeReadingSetupSize, viewModel::cancelReadingSetup)
+    readingSetup?.let { draft ->
+        ReadingSetupSheet(draft, prefs, viewModel::changeReadingSetup, viewModel::moveReadingSetup,
+            viewModel::nameReadingSetup, viewModel::finishReadingSetup, viewModel::cancelReadingSetup)
     }
 }
 

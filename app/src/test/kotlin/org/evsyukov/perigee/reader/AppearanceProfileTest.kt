@@ -16,6 +16,17 @@ import org.robolectric.RobolectricTestRunner
 @RunWith(RobolectricTestRunner::class)
 class AppearanceProfileTest {
     @Test
+    fun previewLayersOnlyTheReadersEditsOverNewerSavedValues() {
+        val initial = ReaderPrefs(fontSize = 22)
+        val updated = initial.copy(lineSpacingPercent = 150, highlightSpokenText = true)
+        val draft = ReadingSetupDraft(initial).edit(updated) { it.copy(fontSize = 26) }
+        assertEquals(initial.copy(fontSize = 26), draft.chosen)
+        assertEquals(updated.copy(fontSize = 26), draft.preview(updated))
+        val reverted = draft.edit(updated) { it.copy(fontSize = initial.fontSize) }
+        assertEquals(updated, reverted.preview(updated))
+    }
+
+    @Test
     fun setupAppliesAndSavesOnlyChosenFieldsOverTheLatestSettings() = runBlocking {
         val preferences = ReaderPreferences.get(ApplicationProvider.getApplicationContext())
         val initial = ReaderPrefs(fontSize = 22)
