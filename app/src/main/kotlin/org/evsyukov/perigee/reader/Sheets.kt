@@ -130,9 +130,6 @@ internal fun SettingsSheet(
                 verticalArrangement = Arrangement.spacedBy(6.dp),
             ) {
                 Text(stringResource(R.string.settings_title), style = MaterialTheme.typography.titleMedium)
-                TextButton(onClick = onAppearanceProfiles, modifier = Modifier.testTag("appearance-profiles-open")) {
-                    Text(stringResource(R.string.appearance_profiles))
-                }
                 Choice(
                     R.string.setting_page_turn, prefs.pageTurn, PageTurn.entries,
                     label = { stringResource(if (it == PageTurn.Horizontal) R.string.page_turn_horizontal else R.string.page_turn_vertical) },
@@ -322,6 +319,10 @@ internal fun SettingsSheet(
                         }
                     },
                 ) { chosen -> onChange { it.copy(screenOnMinutes = chosen) } }
+                // Keep the frequently used typography controls at their existing scroll positions.
+                TextButton(onClick = onAppearanceProfiles, modifier = Modifier.testTag("appearance-profiles-open")) {
+                    Text(stringResource(R.string.appearance_profiles))
+                }
                 // The owner's CSS opens on a screen of its own: a sheet is no place to write in.
                 Column(Modifier.fillMaxWidth().clickable(onClick = onStyles).padding(vertical = 6.dp).testTag("styles-open")) {
                     Text(stringResource(R.string.setting_styles), style = MaterialTheme.typography.bodyLarge)
