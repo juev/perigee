@@ -903,14 +903,20 @@ class ReaderScreenTest {
             model().state.value.let { it.selection == null && it.quotes.singleOrNull()?.text == quote }
         }
 
+        // Check the system edge before any real brightness drag can queue preference writes.
+        assertNull("the fixture starts at system brightness", model().prefs.value.brightness)
+        page.performTouchInput { swipe(Offset(width * 0.05f, bottom), Offset(width * 0.05f, height * 0.5f), 250) }
+        rule.waitForIdle()
+        // Serialize behind any preferences edits the gesture dispatched before reading the store.
+        val storedAfterEdge = runBlocking {
+            preferences.update { it }
+            preferences.prefs.first()
+        }
+        assertNull("a bottom-edge swipe does not adjust brightness", storedAfterEdge.brightness)
         page.performTouchInput {
             swipe(Offset(width * 0.05f, height * 0.5f), Offset(width * 0.05f, height * 0.25f), 300)
         }
         waitFor("swiping up the brightness edge still works") { (model().prefs.value.brightness ?: 0f) > 0.5f }
-        val brightness = model().prefs.value.brightness
-        page.performTouchInput { swipe(Offset(width * 0.05f, bottom), Offset(width * 0.05f, height * 0.5f), 250) }
-        rule.waitForIdle()
-        assertEquals("a bottom-edge swipe does not adjust brightness", brightness, model().prefs.value.brightness)
         openMenu()
         rule.onNodeWithContentDescription(string(R.string.action_settings)).assertIsDisplayed()
         assertEquals(start.xpointer, model().state.value.page?.xpointer)
