@@ -805,6 +805,16 @@ class ReaderScreenTest {
     }
 
     @Test
+    fun readingSettingsOfferNamedAppearanceProfiles() {
+        show()
+        waitForBook()
+        openMenu()
+        rule.onNodeWithContentDescription(string(R.string.action_settings)).performClick()
+        rule.onNodeWithTag("font-size").performScrollTo().assertIsDisplayed()
+        rule.onNodeWithTag("appearance-profiles-open").performScrollTo().assertIsDisplayed()
+    }
+
+    @Test
     fun largerFontFromSettingsReflowsTheBook() {
         show()
         waitForBook()
