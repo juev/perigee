@@ -21,6 +21,8 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
@@ -167,6 +169,27 @@ class ReaderViewModel internal constructor(
     private val _prefs = MutableStateFlow(ReaderPrefs())
     val prefs: StateFlow<ReaderPrefs> = _prefs.asStateFlow()
 
+    private val _readingSetup = MutableStateFlow<ReadingSetupDraft?>(null)
+    internal val readingSetup = _readingSetup.asStateFlow()
+
+    internal fun startReadingSetup() {
+        if (_state.value.page == null || _readingSetup.value != null) return
+        _readingSetup.value = ReadingSetupDraft(fontSize = _prefs.value.fontSize)
+    }
+
+    internal fun changeReadingSetupSize(delta: Int) {
+        _readingSetup.update { draft ->
+            draft?.copy(fontSize = (draft.fontSize + delta).coerceIn(ReaderPrefs.FONT_SIZES), changedSize = true)
+        }
+    }
+
+    internal fun cancelReadingSetup() {
+        _readingSetup.value = null
+    }
+
+    private fun previewPrefs(stored: ReaderPrefs, draft: ReadingSetupDraft?): ReaderPrefs =
+        if (draft?.changedSize == true) stored.copy(fontSize = draft.fontSize) else stored
+
     /** The owner's CSS as it was before the last changes, the latest first: a bad edit can be taken back. */
     val previousUserCss: StateFlow<List<String>> =
         preferences.previousUserCss.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
@@ -206,10 +229,10 @@ class ReaderViewModel internal constructor(
         viewModelScope.launch {
             // Not collectLatest: a book being opened must not be dropped halfway
             // because another preference arrived.
-            preferences.prefs.collect { stored ->
+            combine(preferences.prefs, _readingSetup, ::previewPrefs).distinctUntilChanged().collect { visible ->
                 // A copy about to be laid out with the settings before must not hold up the new layout.
-                if (stored != _prefs.value) spareJob?.cancel()
-                _prefs.value = stored
+                if (visible != _prefs.value) spareJob?.cancel()
+                _prefs.value = visible
                 sync()
             }
         }
@@ -224,6 +247,7 @@ class ReaderViewModel internal constructor(
     /** Shows [file]; the same file again changes nothing. */
     fun open(file: File) {
         if (this.file == file) return
+        cancelReadingSetup()
         stopSpeech()
         this.file = file
         viewModelScope.launch {
@@ -234,6 +258,7 @@ class ReaderViewModel internal constructor(
 
     /** Puts the book away; the screen is free to show another. */
     fun close() {
+        cancelReadingSetup()
         stopSpeech()
         file = null
         viewModelScope.launch {
@@ -805,7 +830,7 @@ class ReaderViewModel internal constructor(
         _state.update { it.copy(busy = true) }
         lightSwitch.resume()
         try {
-            val prefs = preferences.prefs.first().also { _prefs.value = it }
+            val prefs = previewPrefs(preferences.prefs.first(), _readingSetup.value).also { _prefs.value = it }
             val target = laidOut(prefs, viewport)
             val (width, height, settings) = target
             val open = BookReader.open(

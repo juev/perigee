@@ -45,6 +45,8 @@
     <string name="progress_line">Позиция в книге</string>
 
     <string name="settings_title">Настройки чтения</string>
+    <string name="reading_setup_title">Мастер настройки чтения</string>
+    <string name="reading_setup_size_hint">Попробуйте подобрать удобный размер текста на этой странице.</string>
     <string name="reading_ruler">Линейка чтения</string>
     <string name="reading_ruler_hint">Экспериментальная функция. Перемещайте полосу и меняйте её высоту кнопками ниже. Жесты на странице работают как обычно.</string>
     <string name="reading_ruler_position">Положение линейки</string>

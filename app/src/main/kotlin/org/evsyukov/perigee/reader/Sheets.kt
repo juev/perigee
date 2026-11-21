@@ -98,6 +98,7 @@ internal fun SettingsSheet(
     onFontTrial: () -> Unit,
     onStyles: () -> Unit,
     onAppearanceProfiles: () -> Unit,
+    onReadingSetup: () -> Unit,
     onChange: ((ReaderPrefs) -> ReaderPrefs) -> Unit,
     onDismiss: () -> Unit,
 ) {
@@ -323,6 +324,9 @@ internal fun SettingsSheet(
                 TextButton(onClick = onAppearanceProfiles, modifier = Modifier.testTag("appearance-profiles-open")) {
                     Text(stringResource(R.string.appearance_profiles))
                 }
+                TextButton(onClick = onReadingSetup, modifier = Modifier.testTag("reading-setup-open")) {
+                    Text(stringResource(R.string.reading_setup_title))
+                }
                 // The owner's CSS opens on a screen of its own: a sheet is no place to write in.
                 Column(Modifier.fillMaxWidth().clickable(onClick = onStyles).padding(vertical = 6.dp).testTag("styles-open")) {
                     Text(stringResource(R.string.setting_styles), style = MaterialTheme.typography.bodyLarge)
@@ -411,7 +415,7 @@ private fun <T> Choice(
 
 /** A value with a button on each side to make it smaller or larger. */
 @Composable
-private fun Stepper(label: Int, value: String, tag: String, onLess: () -> Unit, onMore: () -> Unit) {
+internal fun Stepper(label: Int, value: String, tag: String, onLess: () -> Unit, onMore: () -> Unit) {
     Column(Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
         SettingLabel(label)
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {

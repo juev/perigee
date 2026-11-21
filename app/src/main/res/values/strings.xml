@@ -46,6 +46,8 @@
     <string name="progress_line">Position in the book</string>
 
     <string name="settings_title">Reading settings</string>
+    <string name="reading_setup_title">Reading setup</string>
+    <string name="reading_setup_size_hint">Try a text size that feels comfortable on this page.</string>
     <string name="reading_ruler">Reading ruler</string>
     <string name="reading_ruler_hint">Experimental. Move or resize the band with these controls. Reading gestures still work on the page.</string>
     <string name="reading_ruler_position">Ruler position</string>

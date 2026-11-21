@@ -151,6 +151,7 @@ internal fun startsOnBottomEdge(y: Float, height: Int, edge: Float): Boolean = y
 fun ReaderScreen(file: File, onClose: () -> Unit, viewModel: ReaderViewModel = viewModel()) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val prefs by viewModel.prefs.collectAsStateWithLifecycle()
+    val readingSetup by viewModel.readingSetup.collectAsStateWithLifecycle()
     val previousUserCss by viewModel.previousUserCss.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val density = LocalDensity.current
@@ -168,6 +169,7 @@ fun ReaderScreen(file: File, onClose: () -> Unit, viewModel: ReaderViewModel = v
     }
     BackHandler {
         when {
+            readingSetup != null -> viewModel.cancelReadingSetup()
             state.selection != null || state.quoteTouch != null -> viewModel.clearSelection()
             panel != Panel.None -> panel = Panel.None
             state.canGoBack -> viewModel.goBack()
@@ -261,7 +263,7 @@ fun ReaderScreen(file: File, onClose: () -> Unit, viewModel: ReaderViewModel = v
                     val pageLabel = stringResource(R.string.page_description, shown.index + 1, shown.pageCount)
                     val hidden = abs(shown.bitmap.height - area.height) > area.height / 10
                     val reading = !hidden && !state.busy && panel == Panel.None && state.fontTrial == null &&
-                        state.selection == null && state.quoteTouch == null && state.offer == null
+                        readingSetup == null && state.selection == null && state.quoteTouch == null && state.offer == null
                     val stillReading by rememberUpdatedState(reading)
                     val nextPage = stringResource(R.string.accessibility_next_page)
                     val previousPage = stringResource(R.string.accessibility_previous_page)
@@ -440,7 +442,7 @@ fun ReaderScreen(file: File, onClose: () -> Unit, viewModel: ReaderViewModel = v
         }
         SelectionBars(state, viewModel, Modifier.align(Alignment.BottomCenter))
         val offer = state.offer
-        if (offer != null && panel == Panel.None && state.selection == null && state.page != null) {
+        if (offer != null && panel == Panel.None && readingSetup == null && state.selection == null && state.page != null) {
             Offer(offer, viewModel::acceptOffer, viewModel::declineOffer, Modifier.align(Alignment.BottomCenter))
         }
         RotationOnRequest(Modifier.align(Alignment.BottomEnd).navigationBarsPadding().padding(24.dp))
@@ -475,6 +477,10 @@ fun ReaderScreen(file: File, onClose: () -> Unit, viewModel: ReaderViewModel = v
             },
             onStyles = { panel = Panel.Styles },
             onAppearanceProfiles = { panel = Panel.AppearanceProfiles },
+            onReadingSetup = {
+                viewModel.startReadingSetup()
+                panel = Panel.None
+            },
             onChange = viewModel::updatePrefs,
         ) { panel = Panel.None }
         Panel.AppearanceProfiles -> AppearanceProfilesSheet(
@@ -500,6 +506,9 @@ fun ReaderScreen(file: File, onClose: () -> Unit, viewModel: ReaderViewModel = v
             onDismiss = { panel = Panel.None },
         )
         Panel.None, Panel.Menu, Panel.Styles -> Unit
+    }
+    readingSetup?.let {
+        ReadingSetupSheet(prefs.fontSize, viewModel::changeReadingSetupSize, viewModel::cancelReadingSetup)
     }
 }
 

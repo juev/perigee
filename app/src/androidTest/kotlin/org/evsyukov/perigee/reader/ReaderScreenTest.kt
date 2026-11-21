@@ -997,6 +997,39 @@ class ReaderScreenTest {
     }
 
     @Test
+    fun readingSetupPreviewsTextSizeAndCancelRestoresTheBookWithoutAWrite() {
+        show()
+        waitForBook()
+        turnForward(2)
+        val before = checkNotNull(model().state.value.page)
+        val initial = runBlocking { preferences.prefs.first() }
+        openMenu()
+        rule.onNodeWithContentDescription(string(R.string.action_settings)).performClick()
+        rule.onNodeWithTag("reading-setup-open").performScrollTo().performClick()
+        rule.onNodeWithTag("reading-setup-font-size-more").performScrollTo().performClick()
+        waitFor("the book shows a larger preview") {
+            model().prefs.value.fontSize == initial.fontSize + 1 && model().state.value.let {
+                !it.busy && (it.page?.pageCount ?: 0) > before.pageCount
+            }
+        }
+        assertEquals("preview does not write settings", initial, runBlocking { preferences.prefs.first() })
+        runBlocking { preferences.update { it.copy(highlightSpokenText = true, lineSpacingPercent = 140) } }
+        waitFor("the preview includes newer unrelated settings") {
+            model().prefs.value.let { it.highlightSpokenText && it.lineSpacingPercent == 140 && it.fontSize == initial.fontSize + 1 }
+        }
+        rule.onNodeWithTag("reading-setup-cancel").performScrollTo().performClick()
+        waitFor("cancel restores size without discarding newer choices") {
+            model().prefs.value == initial.copy(highlightSpokenText = true, lineSpacingPercent = 140)
+        }
+        assertEquals(model().prefs.value, runBlocking { preferences.prefs.first() })
+        assertTrue(rule.onAllNodesWithTag("reading-setup-sheet").fetchSemanticsNodes().isEmpty())
+        runBlocking { preferences.update { it.copy(lineSpacingPercent = initial.lineSpacingPercent) } }
+        waitFor("the book returns to the same original layout and place") {
+            model().state.value.let { !it.busy && it.page?.pageCount == before.pageCount && it.page.xpointer == before.xpointer }
+        }
+    }
+
+    @Test
     fun readingSettingsOfferNamedAppearanceProfiles() {
         show()
         waitForBook()
