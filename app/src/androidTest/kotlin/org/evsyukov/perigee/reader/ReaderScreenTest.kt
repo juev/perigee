@@ -805,6 +805,16 @@ class ReaderScreenTest {
     }
 
     @Test
+    fun readingSettingsOfferTheManualRulerOffByDefault() {
+        show()
+        waitForBook()
+        openMenu()
+        rule.onNodeWithContentDescription(string(R.string.action_settings)).performClick()
+        rule.onNodeWithTag("appearance-profiles-open").performScrollTo().assertIsDisplayed()
+        rule.onNodeWithTag("reading-ruler-switch").performScrollTo().assertIsDisplayed().assertIsOff()
+    }
+
+    @Test
     fun readingSettingsOfferNamedAppearanceProfiles() {
         show()
         waitForBook()
