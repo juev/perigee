@@ -8,7 +8,10 @@ import android.view.accessibility.AccessibilityNodeInfo
 import androidx.activity.ComponentActivity
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -877,6 +880,101 @@ class ReaderScreenTest {
         assertEquals(55, stored.rulerPosition)
         assertEquals(15, stored.rulerHeight)
         assertTrue(stored.rulerDimOutside)
+    }
+
+    @Test
+    fun theRulerLeavesPageGesturesAndQuotesAvailable() {
+        runBlocking { preferences.update { it.copy(readingRuler = true, rulerHeight = 30, brightnessGesture = true) } }
+        show()
+        waitForBook()
+        val page = rule.onNodeWithTag("page")
+        val start = checkNotNull(model().state.value.page)
+        turnForward(1)
+        tapPage(0.1f, 0.5f)
+        waitForPage(start.index)
+        assertEquals(start.xpointer, model().state.value.page?.xpointer)
+
+        page.performTouchInput { longClick(Offset(width * 0.5f, height * 0.4f)) }
+        waitFor("long press inside the band selects a word") { model().state.value.selection != null }
+        val quote = checkNotNull(model().state.value.selection).range.text
+        waitForTag("selection-bar")
+        rule.onNodeWithContentDescription(string(R.string.quote_color, 2)).performClick()
+        waitFor("the word is saved as a quote") {
+            model().state.value.let { it.selection == null && it.quotes.singleOrNull()?.text == quote }
+        }
+
+        page.performTouchInput {
+            swipe(Offset(width * 0.05f, height * 0.5f), Offset(width * 0.05f, height * 0.25f), 300)
+        }
+        waitFor("swiping up the brightness edge still works") { (model().prefs.value.brightness ?: 0f) > 0.5f }
+        val brightness = model().prefs.value.brightness
+        page.performTouchInput { swipe(Offset(width * 0.05f, bottom), Offset(width * 0.05f, height * 0.5f), 250) }
+        rule.waitForIdle()
+        assertEquals("a bottom-edge swipe does not adjust brightness", brightness, model().prefs.value.brightness)
+        openMenu()
+        rule.onNodeWithContentDescription(string(R.string.action_settings)).assertIsDisplayed()
+        assertEquals(start.xpointer, model().state.value.page?.xpointer)
+    }
+
+    @Test
+    fun theRulerFitsBothLeavesAfterAVerifiedViewportChange() {
+        runBlocking { preferences.update { it.copy(rulerPosition = 70, rulerHeight = 20, twoPagesInLandscape = true) } }
+        var wide by mutableStateOf(false)
+        edgeToEdge()
+        rule.setContent {
+            MaterialTheme {
+                BoxWithConstraints {
+                    Box(if (wide) Modifier.height(maxWidth * 0.6f) else Modifier.width(minOf(maxWidth, maxHeight * 0.75f))) {
+                        ReaderScreen(book, onClose = {})
+                    }
+                }
+            }
+        }
+        waitForBook()
+        val page = rule.onNodeWithTag("page")
+        val start = checkNotNull(model().state.value.page)
+        assertEquals("initial viewport has one leaf", 1, start.turnStep)
+        fun checkBand() {
+            val shown = checkNotNull(model().state.value.page)
+            val plain = page.captureToImage().toPixelMap()
+            model().updatePrefs { it.copy(readingRuler = true) }
+            waitFor("ruler enabled on the current viewport") { model().prefs.value.readingRuler }
+            val band = page.captureToImage().toPixelMap()
+            assertEquals(plain.height, band.height)
+            for (x in listOf(band.width / 100, band.width - 1 - band.width / 100)) {
+                val inside = band.height * 63 / 100
+                val outside = band.height * 45 / 100
+                assertTrue("band covers the expected row at x=$x", plain[x, inside] != band[x, inside])
+                assertEquals("the middle of the page stays clear", plain[x, outside], band[x, outside])
+            }
+            assertTrue(shown === model().state.value.page)
+        }
+        checkBand()
+
+        wide = true
+        waitFor("the new viewport displays a spread") {
+            model().state.value.let { !it.busy && it.page?.turnStep == 2 && it.page !== start }
+        }
+        assertEquals(0, shownPage())
+        rule.onNodeWithText("Chapter 1, paragraph 1.", substring = true).assertIsDisplayed()
+        val spread = checkNotNull(model().state.value.page)
+        val carriedBand = page.captureToImage().toPixelMap()
+        model().updatePrefs { it.copy(readingRuler = false) }
+        waitFor("the ruler is off on the spread") { !model().prefs.value.readingRuler }
+        checkBand()
+        val spreadBand = page.captureToImage().toPixelMap()
+        for (x in listOf(spreadBand.width / 100, spreadBand.width - 1 - spreadBand.width / 100)) {
+            val row = spreadBand.height * 63 / 100
+            assertEquals("placement carries across the viewport change", spreadBand[x, row], carriedBand[x, row])
+        }
+        assertTrue(spread === model().state.value.page)
+
+        wide = false
+        waitFor("the original viewport is restored") {
+            model().state.value.let { !it.busy && it.page?.turnStep == 1 && it.page.xpointer == start.xpointer }
+        }
+        assertEquals(70, model().prefs.value.rulerPosition)
+        assertEquals(20, model().prefs.value.rulerHeight)
     }
 
     @Test
