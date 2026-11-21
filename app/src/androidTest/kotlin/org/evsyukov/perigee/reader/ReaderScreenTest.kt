@@ -984,6 +984,127 @@ class ReaderScreenTest {
     }
 
     @Test
+    fun readingSettingsOpenTheOptionalReadingSetupOnTheCurrentBook() {
+        show()
+        waitForBook()
+        val position = checkNotNull(model().state.value.page).xpointer
+        openMenu()
+        rule.onNodeWithContentDescription(string(R.string.action_settings)).performClick()
+        rule.onNodeWithTag("appearance-profiles-open").performScrollTo().assertIsDisplayed()
+        rule.onNodeWithTag("reading-setup-open").performScrollTo().assertIsDisplayed().performClick()
+        rule.onNodeWithTag("reading-setup-sheet").assertIsDisplayed()
+        assertEquals(position, model().state.value.page?.xpointer)
+    }
+
+    @Test
+    fun readingSetupPreviewsTextSizeAndCancelRestoresTheBookWithoutAWrite() {
+        show()
+        waitForBook()
+        turnForward(2)
+        val before = checkNotNull(model().state.value.page)
+        val initial = runBlocking { preferences.prefs.first() }
+        openMenu()
+        rule.onNodeWithContentDescription(string(R.string.action_settings)).performClick()
+        rule.onNodeWithTag("reading-setup-open").performScrollTo().performClick()
+        rule.onNodeWithTag("reading-setup-font-size-more").performScrollTo().performClick()
+        waitFor("the book shows a larger preview") {
+            model().prefs.value.fontSize == initial.fontSize + 1 && model().state.value.let {
+                !it.busy && (it.page?.pageCount ?: 0) > before.pageCount
+            }
+        }
+        assertEquals("preview does not write settings", initial, runBlocking { preferences.prefs.first() })
+        runBlocking { preferences.update { it.copy(highlightSpokenText = true, lineSpacingPercent = 140) } }
+        waitFor("the preview includes newer unrelated settings") {
+            model().prefs.value.let { it.highlightSpokenText && it.lineSpacingPercent == 140 && it.fontSize == initial.fontSize + 1 }
+        }
+        rule.onNodeWithTag("reading-setup-cancel").performScrollTo().performClick()
+        waitFor("cancel restores size without discarding newer choices") {
+            model().prefs.value == initial.copy(highlightSpokenText = true, lineSpacingPercent = 140)
+        }
+        assertEquals(model().prefs.value, runBlocking { preferences.prefs.first() })
+        assertTrue(rule.onAllNodesWithTag("reading-setup-sheet").fetchSemanticsNodes().isEmpty())
+        runBlocking { preferences.update { it.copy(lineSpacingPercent = initial.lineSpacingPercent) } }
+        waitFor("the book returns to the same original layout and place") {
+            model().state.value.let { !it.busy && it.page?.pageCount == before.pageCount && it.page.xpointer == before.xpointer }
+        }
+    }
+
+    @Test
+    fun readingSetupRevisitsStepsAndFinishesAsAnOrdinaryAppearanceProfile() {
+        val name = "Setup ${System.nanoTime()}"
+        val initial = ReaderPrefs(readingRuler = true, highlightSpokenText = true)
+        runBlocking { preferences.update { initial } }
+        try {
+            show()
+            waitForBook()
+            openMenu()
+            rule.onNodeWithContentDescription(string(R.string.action_settings)).performClick()
+            rule.onNodeWithTag("reading-setup-open").performScrollTo().performClick()
+            fun press(tag: String) = rule.onNodeWithTag("reading-setup-$tag").performScrollTo().performClick()
+            press("font-size-more")
+            waitFor("the first step changes the preview") { model().prefs.value.fontSize == initial.fontSize + 1 }
+            rule.onNodeWithTag("reading-setup-font-size").performScrollTo().assertTextEquals((initial.fontSize + 1).toString())
+            press("next")
+            press("margins")
+            press("landscape")
+            press("next")
+            press("skip")
+            press("back")
+            rule.onNodeWithTag("reading-setup-line-spacing").performScrollTo().assertTextEquals(string(R.string.percent, initial.lineSpacingPercent))
+            press("line-spacing-more")
+            press("next")
+            press("theme-night")
+            press("next")
+
+            val chosen = initial.copy(fontSize = initial.fontSize + 1, pageMargins = true, twoPagesInLandscape = false,
+                lineSpacingPercent = initial.lineSpacingPercent + 10).withScheme(ColorScheme.Night)
+            waitFor("the open book previews all chosen settings") { model().prefs.value == chosen }
+            assertEquals(initial, runBlocking { preferences.prefs.first() })
+            rule.onNodeWithTag("reading-setup-name").performScrollTo().performTextInput(name)
+            press("finish")
+            waitFor("finish dismisses the guide") { rule.onAllNodesWithTag("reading-setup-sheet").fetchSemanticsNodes().isEmpty() }
+            assertEquals(chosen, runBlocking { preferences.prefs.first() })
+            assertTrue(name in runBlocking { preferences.appearanceProfiles.first().orEmpty() })
+            assertEquals(0, shownPage())
+        } finally {
+            runBlocking { if (name in preferences.appearanceProfiles.first().orEmpty()) preferences.deleteAppearanceProfile(name) }
+        }
+    }
+
+    @Test
+    fun aFreshReaderDoesNotResumeAnInterruptedSetup() {
+        val initial = ReaderPrefs(fontSize = 21)
+        runBlocking { preferences.update { initial } }
+        val names = runBlocking { preferences.appearanceProfiles.first() }
+        val first = ReaderViewModel(activity.application, Library.get(activity), bookOpened = {})
+        val replacement = ReaderViewModel(activity.application, Library.get(activity), bookOpened = {})
+        var active by mutableStateOf(first)
+        made = first
+        try {
+            edgeToEdge()
+            rule.setContent { MaterialTheme { ReaderScreen(book, onClose = {}, viewModel = active) } }
+            waitForBook()
+            turnForward(1)
+            val position = checkNotNull(first.state.value.page).xpointer
+            openMenu()
+            rule.onNodeWithContentDescription(string(R.string.action_settings)).performClick()
+            rule.onNodeWithTag("reading-setup-open").performScrollTo().performClick()
+            rule.onNodeWithTag("reading-setup-font-size-more").performScrollTo().performClick()
+            waitFor("a draft was active before replacement") { first.prefs.value.fontSize == 22 && first.readingSetup.value != null }
+            // Replace the reader model without invoking the guide's Cancel or Finish.
+            rule.runOnUiThread { made = replacement; active = replacement }
+            waitForBook()
+            assertEquals(initial, replacement.prefs.value)
+            assertEquals(initial, runBlocking { preferences.prefs.first() })
+            assertEquals(names, runBlocking { preferences.appearanceProfiles.first() })
+            assertTrue(rule.onAllNodesWithTag("reading-setup-sheet").fetchSemanticsNodes().isEmpty())
+            assertEquals(position, replacement.state.value.page?.xpointer)
+        } finally {
+            rule.runOnIdle { first.close(); replacement.close() }
+        }
+    }
+
+    @Test
     fun readingSettingsOfferNamedAppearanceProfiles() {
         show()
         waitForBook()
