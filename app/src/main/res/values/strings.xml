@@ -46,6 +46,11 @@
     <string name="progress_line">Position in the book</string>
 
     <string name="settings_title">Reading settings</string>
+    <string name="reading_ruler">Reading ruler</string>
+    <string name="reading_ruler_hint">Experimental. Move or resize the band with these controls. Reading gestures still work on the page.</string>
+    <string name="reading_ruler_position">Ruler position</string>
+    <string name="reading_ruler_height">Ruler height</string>
+    <string name="reading_ruler_dim">Dim outside the reading ruler</string>
     <string name="appearance_profiles">Appearance profiles</string>
     <string name="appearance_profiles_hint">Save and restore the look of the page. Your CSS and other reading controls stay as they are.</string>
     <string name="appearance_profiles_unreadable">Saved profiles cannot be read by this version. They have not been changed.</string>

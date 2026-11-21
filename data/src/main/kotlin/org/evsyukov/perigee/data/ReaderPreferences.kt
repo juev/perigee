@@ -97,6 +97,12 @@ data class ReaderPrefs(
     val twoPagesInLandscape: Boolean = true,
     val volumeKeysTurnPages: Boolean = true,
     val highlightSpokenText: Boolean = false,
+    val readingRuler: Boolean = false,
+    /** Percent of available vertical travel (0 = top, 100 = bottom). */
+    val rulerPosition: Int = 50,
+    /** Percent of the visible page height. */
+    val rulerHeight: Int = 10,
+    val rulerDimOutside: Boolean = false,
     val brightnessGesture: Boolean = false,
     /** Screen brightness 0..1 set by the gesture; null follows the system. */
     val brightness: Float? = null,
@@ -133,6 +139,9 @@ data class ReaderPrefs(
         val PARAGRAPH_SPACINGS = 0..100 step 10
         val FRACTIONAL_STEPS = 0..3
         val MONOSPACE_SIZES = 60..140 step 10
+        val RULER_POSITIONS = 0..100
+        val RULER_HEIGHTS = 5..30
+        const val RULER_STEP = 5
 
         /** The screen goes off when the system says. */
         const val SCREEN_ON_SYSTEM = 0
@@ -352,6 +361,10 @@ class ReaderPreferences private constructor(private val store: DataStore<Prefere
             twoPagesInLandscape = p[TWO_PAGES] ?: d.twoPagesInLandscape,
             volumeKeysTurnPages = p[VOLUME_KEYS] ?: d.volumeKeysTurnPages,
             highlightSpokenText = p[HIGHLIGHT_SPOKEN_TEXT] ?: d.highlightSpokenText,
+            readingRuler = p[READING_RULER] ?: d.readingRuler,
+            rulerPosition = (p[RULER_POSITION] ?: d.rulerPosition).coerceIn(ReaderPrefs.RULER_POSITIONS),
+            rulerHeight = (p[RULER_HEIGHT] ?: d.rulerHeight).coerceIn(ReaderPrefs.RULER_HEIGHTS),
+            rulerDimOutside = p[RULER_DIM_OUTSIDE] ?: d.rulerDimOutside,
             brightnessGesture = p[BRIGHTNESS_GESTURE] ?: d.brightnessGesture,
             dimBelowFlicker = p[DIM_BELOW_FLICKER] ?: d.dimBelowFlicker,
             brightness = p[BRIGHTNESS],
@@ -394,6 +407,10 @@ class ReaderPreferences private constructor(private val store: DataStore<Prefere
         p[TWO_PAGES] = v.twoPagesInLandscape
         p[VOLUME_KEYS] = v.volumeKeysTurnPages
         p[HIGHLIGHT_SPOKEN_TEXT] = v.highlightSpokenText
+        p[READING_RULER] = v.readingRuler
+        p[RULER_POSITION] = v.rulerPosition.coerceIn(ReaderPrefs.RULER_POSITIONS)
+        p[RULER_HEIGHT] = v.rulerHeight.coerceIn(ReaderPrefs.RULER_HEIGHTS)
+        p[RULER_DIM_OUTSIDE] = v.rulerDimOutside
         p[BRIGHTNESS_GESTURE] = v.brightnessGesture
         p[DIM_BELOW_FLICKER] = v.dimBelowFlicker
         if (v.brightness == null) p.remove(BRIGHTNESS) else p[BRIGHTNESS] = v.brightness
@@ -442,6 +459,10 @@ class ReaderPreferences private constructor(private val store: DataStore<Prefere
         private val TWO_PAGES = booleanPreferencesKey("two_pages")
         private val VOLUME_KEYS = booleanPreferencesKey("volume_keys")
         private val HIGHLIGHT_SPOKEN_TEXT = booleanPreferencesKey("highlight_spoken_text")
+        private val READING_RULER = booleanPreferencesKey("reading_ruler")
+        private val RULER_POSITION = intPreferencesKey("ruler_position")
+        private val RULER_HEIGHT = intPreferencesKey("ruler_height")
+        private val RULER_DIM_OUTSIDE = booleanPreferencesKey("ruler_dim_outside")
         private val BRIGHTNESS_GESTURE = booleanPreferencesKey("brightness_gesture")
         private val DIM_BELOW_FLICKER = booleanPreferencesKey("dim_below_flicker")
         private val BRIGHTNESS = floatPreferencesKey("brightness")

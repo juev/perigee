@@ -45,6 +45,11 @@
     <string name="progress_line">Позиция в книге</string>
 
     <string name="settings_title">Настройки чтения</string>
+    <string name="reading_ruler">Линейка чтения</string>
+    <string name="reading_ruler_hint">Экспериментальная функция. Перемещайте полосу и меняйте её высоту кнопками ниже. Жесты на странице работают как обычно.</string>
+    <string name="reading_ruler_position">Положение линейки</string>
+    <string name="reading_ruler_height">Высота линейки</string>
+    <string name="reading_ruler_dim">Затемнять за пределами линейки</string>
     <string name="appearance_profiles">Профили оформления</string>
     <string name="appearance_profiles_hint">Сохраняйте и восстанавливайте оформление страницы. Ваш CSS и остальные настройки чтения не меняются.</string>
     <string name="appearance_profiles_unreadable">Эта версия не может прочитать сохранённые профили. Они не изменены.</string>
