@@ -805,6 +805,64 @@ class ReaderScreenTest {
     }
 
     @Test
+    fun readingSettingsOfferNamedAppearanceProfiles() {
+        show()
+        waitForBook()
+        openMenu()
+        rule.onNodeWithContentDescription(string(R.string.action_settings)).performClick()
+        rule.onNodeWithTag("font-size").performScrollTo().assertIsDisplayed()
+        rule.onNodeWithTag("appearance-profiles-open").performScrollTo().assertIsDisplayed()
+    }
+
+    @Test
+    fun applyingAndUndoingAnAppearanceProfileReflowsTheOpenBook() {
+        val name = "Large text ${System.nanoTime()}"
+        val css = "p { color: inherit; }"
+        runBlocking { preferences.update { it.copy(fontSize = 36) } }
+        try {
+            show()
+            waitForBook()
+            waitFor("fonts are ready") { model().state.value.fontFaces.isNotEmpty() }
+            val large = checkNotNull(model().state.value.page)
+            turnForward(2)
+            openMenu()
+            rule.onNodeWithContentDescription(string(R.string.action_settings)).performClick()
+            rule.onNodeWithTag("appearance-profiles-open").performScrollTo().performClick()
+            waitForTag("appearance-profiles-sheet")
+            rule.onNodeWithTag("appearance-profile-save").performScrollTo().performClick()
+            rule.onNodeWithTag("appearance-profile-name").performTextInput(name)
+            rule.onNodeWithTag("appearance-profile-confirm").performClick()
+            waitForTag("appearance-profile-apply")
+            runBlocking { preferences.update { it.copy(fontSize = 18, userCss = css, highlightSpokenText = true) } }
+            waitFor("the open book has the smaller appearance") {
+                model().prefs.value.fontSize == 18 && model().state.value.let {
+                    !it.busy && (it.page?.pageCount ?: Int.MAX_VALUE) < large.pageCount
+                }
+            }
+            val before = checkNotNull(model().state.value.page)
+            rule.onNodeWithTag("appearance-profile-apply").performScrollTo().performClick()
+            waitFor("the profile has reflowed the book") {
+                model().prefs.value.fontSize == 36 && model().state.value.let {
+                    !it.busy && (it.page?.pageCount ?: 0) > before.pageCount
+                }
+            }
+            val stored = runBlocking { preferences.prefs.first() }
+            assertEquals(css, stored.userCss)
+            assertTrue(stored.highlightSpokenText)
+            rule.onNodeWithTag("appearance-profile-undo").performScrollTo().performClick()
+            waitFor("undo returns to the original layout and position") {
+                model().prefs.value.fontSize == 18 && model().state.value.let {
+                    !it.busy && it.page?.pageCount == before.pageCount && it.page.xpointer == before.xpointer
+                }
+            }
+        } finally {
+            runBlocking {
+                if (name in preferences.appearanceProfiles.first().orEmpty()) preferences.deleteAppearanceProfile(name)
+            }
+        }
+    }
+
+    @Test
     fun largerFontFromSettingsReflowsTheBook() {
         show()
         waitForBook()

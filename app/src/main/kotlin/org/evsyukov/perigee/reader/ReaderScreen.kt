@@ -113,7 +113,7 @@ import org.evsyukov.perigee.engine.EngineTrace
 import org.evsyukov.perigee.engine.Page
 
 /** What the reader opened on top of the page. */
-private enum class Panel { None, Menu, Settings, Contents, Search, Styles }
+private enum class Panel { None, Menu, Settings, Contents, Search, Styles, AppearanceProfiles }
 
 /** What a finger moving over the page turned out to be doing. */
 private enum class Drag { Undecided, Brightness, Done }
@@ -460,8 +460,12 @@ fun ReaderScreen(file: File, onClose: () -> Unit, viewModel: ReaderViewModel = v
                 viewModel.startFontTrial()
             },
             onStyles = { panel = Panel.Styles },
+            onAppearanceProfiles = { panel = Panel.AppearanceProfiles },
             onChange = viewModel::updatePrefs,
         ) { panel = Panel.None }
+        Panel.AppearanceProfiles -> AppearanceProfilesSheet(
+            viewModel.appearancePreferences, state.fontFaces.isNotEmpty(), viewModel::restoreAppearance,
+        ) { panel = Panel.Settings }
         Panel.Contents -> ContentsSheet(
             state = state,
             onGoTo = { xpointer ->

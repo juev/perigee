@@ -97,6 +97,7 @@ internal fun SettingsSheet(
     lightSensor: Boolean,
     onFontTrial: () -> Unit,
     onStyles: () -> Unit,
+    onAppearanceProfiles: () -> Unit,
     onChange: ((ReaderPrefs) -> ReaderPrefs) -> Unit,
     onDismiss: () -> Unit,
 ) {
@@ -318,6 +319,10 @@ internal fun SettingsSheet(
                         }
                     },
                 ) { chosen -> onChange { it.copy(screenOnMinutes = chosen) } }
+                // Keep the frequently used typography controls at their existing scroll positions.
+                TextButton(onClick = onAppearanceProfiles, modifier = Modifier.testTag("appearance-profiles-open")) {
+                    Text(stringResource(R.string.appearance_profiles))
+                }
                 // The owner's CSS opens on a screen of its own: a sheet is no place to write in.
                 Column(Modifier.fillMaxWidth().clickable(onClick = onStyles).padding(vertical = 6.dp).testTag("styles-open")) {
                     Text(stringResource(R.string.setting_styles), style = MaterialTheme.typography.bodyLarge)

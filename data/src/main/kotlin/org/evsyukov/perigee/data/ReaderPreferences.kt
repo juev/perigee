@@ -8,10 +8,13 @@ import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.floatPreferencesKey
 import androidx.datastore.preferences.core.intPreferencesKey
+import androidx.datastore.preferences.core.mutablePreferencesOf
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
+import org.json.JSONException
+import org.json.JSONObject
 
 enum class PageTurn { Horizontal, Vertical }
 
@@ -148,6 +151,156 @@ private val Context.readerStore: DataStore<Preferences> by preferencesDataStore(
 
 class ReaderPreferences private constructor(private val store: DataStore<Preferences>) {
     val prefs: Flow<ReaderPrefs> = store.data.map(::read)
+
+    /** Null means the stored catalog cannot be read by this version. */
+    val appearanceProfiles: Flow<List<String>?> = store.data.map { p ->
+        try { readProfiles(p).keys().asSequence().sorted().toList() }
+        catch (_: JSONException) { null }
+    }
+
+    val canUndoAppearanceProfile: Flow<Boolean> = store.data.map { it[APPEARANCE_UNDO] != null }
+
+    suspend fun renameAppearanceProfile(name: String, replacement: String) {
+        val title = profileName(replacement)
+        store.edit { stored ->
+            val profiles = readProfiles(stored)
+            val snapshot = profiles.getJSONObject(name)
+            if (title != name) {
+                require(!profiles.has(title))
+                profiles.remove(name)
+                writeProfiles(stored, profiles.put(title, snapshot))
+            }
+        }
+    }
+
+    suspend fun updateAppearanceProfile(name: String) {
+        store.edit { stored ->
+            val profiles = readProfiles(stored)
+            require(profiles.has(name))
+            writeProfiles(stored, profiles.put(name, captureAppearance(stored)))
+        }
+    }
+
+    suspend fun deleteAppearanceProfile(name: String) {
+        store.edit { stored ->
+            val profiles = readProfiles(stored)
+            require(profiles.has(name))
+            profiles.remove(name)
+            writeProfiles(stored, profiles)
+        }
+    }
+
+    suspend fun undoAppearanceProfile(availableFaces: Set<String>): String? {
+        var missingFace: String? = null
+        store.edit { stored ->
+            val raw = requireNotNull(stored[APPEARANCE_UNDO])
+            if (raw.length > PROFILE_STORAGE_LIMIT) throw JSONException("Appearance snapshot too large")
+            val envelope = JSONObject(raw)
+            if (envelope.get("version") != PROFILE_VERSION) throw JSONException("Unsupported appearance snapshot")
+            val snapshot = envelope.getJSONObject("snapshot")
+            validateAppearance(snapshot)
+            missingFace = restoreAppearance(stored, snapshot, availableFaces)
+            stored.remove(APPEARANCE_UNDO)
+        }
+        return missingFace
+    }
+
+    suspend fun saveAppearanceProfile(name: String) {
+        val title = profileName(name)
+        store.edit { stored ->
+            val profiles = readProfiles(stored)
+            require(!profiles.has(title) && profiles.length() < PROFILE_LIMIT)
+            writeProfiles(stored, profiles.put(title, captureAppearance(stored)))
+        }
+    }
+
+    /** Returns the requested family when it was unavailable and the current face was kept. */
+    suspend fun applyAppearanceProfile(name: String, availableFaces: Set<String>): String? {
+        var missingFace: String? = null
+        store.edit { stored ->
+            val profile = readProfiles(stored).getJSONObject(name)
+            val before = captureAppearance(stored)
+            validateAppearance(before)
+            stored[APPEARANCE_UNDO] = JSONObject().put("version", PROFILE_VERSION).put("snapshot", before).toString()
+            missingFace = restoreAppearance(stored, profile, availableFaces)
+        }
+        return missingFace
+    }
+
+    private fun profileName(name: String) = name.trim().also {
+        require(it.isNotEmpty() && it.length <= PROFILE_NAME_LIMIT && it.none { c -> c.isISOControl() })
+    }
+
+    private fun captureAppearance(stored: Preferences): JSONObject {
+        val active = mutablePreferencesOf().also { write(it, read(stored)) }.asMap()
+        return JSONObject().apply {
+            for (key in APPEARANCE_KEYS) put(key.name, checkNotNull(active[key]))
+        }
+    }
+
+    private fun restoreAppearance(stored: MutablePreferences, profile: JSONObject, availableFaces: Set<String>): String? {
+        var missingFace: String? = null
+        for (key in APPEARANCE_KEYS) {
+            when (val value = profile.get(key.name)) {
+                is String -> if (key != FONT_FACE || value in availableFaces) {
+                    stored[stringPreferencesKey(key.name)] = value
+                } else missingFace = value
+                is Int -> stored[intPreferencesKey(key.name)] = value
+                is Boolean -> stored[booleanPreferencesKey(key.name)] = value
+            }
+        }
+        return missingFace
+    }
+
+    private fun readProfiles(stored: Preferences): JSONObject {
+        val raw = stored[APPEARANCE_PROFILES] ?: return JSONObject()
+        if (raw.length > PROFILE_STORAGE_LIMIT) throw JSONException("Profile catalog too large")
+        val envelope = JSONObject(raw)
+        if (envelope.get("version") != PROFILE_VERSION) throw JSONException("Unsupported profile catalog")
+        val profiles = envelope.getJSONObject("profiles")
+        if (profiles.length() > PROFILE_LIMIT) throw JSONException("Too many profiles")
+        for (name in profiles.keys()) {
+            if (name.isBlank() || name.length > PROFILE_NAME_LIMIT || name.any { it.isISOControl() }) {
+                throw JSONException("Invalid profile name")
+            }
+            validateAppearance(profiles.getJSONObject(name))
+        }
+        return profiles
+    }
+
+    private fun validateAppearance(profile: JSONObject) {
+        val defaults = mutablePreferencesOf().also { write(it, ReaderPrefs()) }.asMap()
+        for (key in APPEARANCE_KEYS) {
+            val value = profile.get(key.name)
+            if (defaults[key]?.javaClass != value.javaClass || !validAppearanceValue(key, value)) {
+                throw JSONException("Invalid appearance field")
+            }
+        }
+    }
+
+    private fun validAppearanceValue(key: Preferences.Key<*>, value: Any): Boolean = when (key) {
+        FONT_FACE -> (value as String).let { it.isNotBlank() && it.length <= 160 && it.none { c -> c.isISOControl() } }
+        COLOR_SCHEME -> ColorScheme.entries.any { it.name == value }
+        DAY_SCHEME -> ColorScheme.entries.any { !it.dark && it.name == value }
+        NIGHT_SCHEME -> ColorScheme.entries.any { it.dark && it.name == value }
+        ALIGNMENT -> Alignment.entries.any { it.name == value }
+        HINTING -> Hinting.entries.any { it.name == value }
+        FONT_SIZE -> value as Int in ReaderPrefs.FONT_SIZES
+        FONT_WEIGHT -> value as Int in 100..950
+        CONTRAST -> value as Int in 0..4
+        FRACTIONAL_POSITIONING -> value as Int in ReaderPrefs.FRACTIONAL_STEPS
+        MONOSPACE_SIZE -> value as Int in ReaderPrefs.MONOSPACE_SIZES
+        LINE_SPACING -> value as Int in ReaderPrefs.LINE_SPACINGS
+        PARAGRAPH_SPACING -> value as Int in ReaderPrefs.PARAGRAPH_SPACINGS
+        else -> true
+    }
+
+    private fun writeProfiles(stored: MutablePreferences, profiles: JSONObject) {
+        val raw = JSONObject().put("version", PROFILE_VERSION).put("profiles", profiles).toString()
+        require(raw.length <= PROFILE_STORAGE_LIMIT)
+        stored[APPEARANCE_PROFILES] = raw
+        readProfiles(stored) // Validate the complete replacement inside the transaction.
+    }
 
     /** The owner's CSS as it was before its last [USER_CSS_KEPT] changes, the latest first: a bad edit can be taken back. */
     val previousUserCss: Flow<List<String>> = store.data.map { p -> PREVIOUS_USER_CSS.mapNotNull { p[it] } }
@@ -300,6 +453,19 @@ class ReaderPreferences private constructor(private val store: DataStore<Prefere
         private val WARM_TO = intPreferencesKey("warm_to_minute")
         private val WARM_STRENGTH = intPreferencesKey("warm_strength")
         private val USER_CSS = stringPreferencesKey("user_css")
+
+        const val PROFILE_LIMIT = 20
+        const val PROFILE_NAME_LIMIT = 60
+        private const val PROFILE_VERSION = 1
+        private const val PROFILE_STORAGE_LIMIT = 32_768
+        private val APPEARANCE_PROFILES = stringPreferencesKey("appearance_profiles")
+        private val APPEARANCE_UNDO = stringPreferencesKey("appearance_profile_undo")
+        private val APPEARANCE_KEYS = listOf(
+            COLOR_SCHEME, DAY_SCHEME, NIGHT_SCHEME, FONT_FACE, OVERRIDE_BOOK_FONT, FONT_SIZE, FONT_WEIGHT,
+            CONTRAST, BOLD_WORD_STARTS, ANTIALIASING, HINTING, LIGATURES, FRACTIONAL_POSITIONING, MONOSPACE_SIZE,
+            FULL_SIZE_FOOTNOTES, LINE_SPACING, ALIGNMENT, HYPHENATION, PARAGRAPH_SPACING, PARAGRAPH_INDENT,
+            PAGE_MARGINS, TWO_PAGES,
+        )
 
         /** How many versions of the owner's CSS before the current one are kept. */
         const val USER_CSS_KEPT = 3
