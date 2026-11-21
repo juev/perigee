@@ -1030,6 +1030,48 @@ class ReaderScreenTest {
     }
 
     @Test
+    fun readingSetupRevisitsStepsAndFinishesAsAnOrdinaryAppearanceProfile() {
+        val name = "Setup ${System.nanoTime()}"
+        val initial = ReaderPrefs(readingRuler = true, highlightSpokenText = true)
+        runBlocking { preferences.update { initial } }
+        try {
+            show()
+            waitForBook()
+            openMenu()
+            rule.onNodeWithContentDescription(string(R.string.action_settings)).performClick()
+            rule.onNodeWithTag("reading-setup-open").performScrollTo().performClick()
+            fun press(tag: String) = rule.onNodeWithTag("reading-setup-$tag").performScrollTo().performClick()
+            press("font-size-more")
+            waitFor("the first step changes the preview") { model().prefs.value.fontSize == initial.fontSize + 1 }
+            rule.onNodeWithTag("reading-setup-font-size").performScrollTo().assertTextEquals((initial.fontSize + 1).toString())
+            press("next")
+            press("margins")
+            press("landscape")
+            press("next")
+            press("skip")
+            press("back")
+            rule.onNodeWithTag("reading-setup-line-spacing").performScrollTo().assertTextEquals(string(R.string.percent, initial.lineSpacingPercent))
+            press("line-spacing-more")
+            press("next")
+            press("theme-night")
+            press("next")
+
+            val chosen = initial.copy(fontSize = initial.fontSize + 1, pageMargins = true, twoPagesInLandscape = false,
+                lineSpacingPercent = initial.lineSpacingPercent + 10).withScheme(ColorScheme.Night)
+            waitFor("the open book previews all chosen settings") { model().prefs.value == chosen }
+            assertEquals(initial, runBlocking { preferences.prefs.first() })
+            rule.onNodeWithTag("reading-setup-name").performScrollTo().performTextInput(name)
+            press("finish")
+            waitFor("finish dismisses the guide") { rule.onAllNodesWithTag("reading-setup-sheet").fetchSemanticsNodes().isEmpty() }
+            assertEquals(chosen, runBlocking { preferences.prefs.first() })
+            assertTrue(name in runBlocking { preferences.appearanceProfiles.first().orEmpty() })
+            assertEquals(0, shownPage())
+        } finally {
+            runBlocking { if (name in preferences.appearanceProfiles.first().orEmpty()) preferences.deleteAppearanceProfile(name) }
+        }
+    }
+
+    @Test
     fun readingSettingsOfferNamedAppearanceProfiles() {
         show()
         waitForBook()
