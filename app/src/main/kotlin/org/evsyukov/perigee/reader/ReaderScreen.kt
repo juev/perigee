@@ -285,6 +285,20 @@ fun ReaderScreen(file: File, onClose: () -> Unit, viewModel: ReaderViewModel = v
                         modifier = Modifier
                             .fillMaxSize()
                             .testTag("page")
+                            .drawWithContent {
+                                drawContent()
+                                if (!hidden && prefs.readingRuler && state.fontTrial == null) {
+                                    val height = size.height * (prefs.rulerHeight / 100f)
+                                    val top = (size.height - height) * (prefs.rulerPosition / 100f)
+                                    if (prefs.rulerDimOutside) {
+                                        val shade = Color.Black.copy(alpha = 0.20f)
+                                        drawRect(shade, size = Size(size.width, top))
+                                        val bottom = top + height
+                                        drawRect(shade, Offset(0f, bottom), Size(size.width, (size.height - bottom).coerceAtLeast(0f)))
+                                    }
+                                    drawRect(ink.copy(alpha = 0.14f), Offset(0f, top), Size(size.width, height))
+                                }
+                            }
                             .semantics {
                                 contentDescription = pageLabel
                                 if (reading) {

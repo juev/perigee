@@ -332,6 +332,23 @@ internal fun SettingsSheet(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
+                Toggle(R.string.reading_ruler, prefs.readingRuler, "reading-ruler-switch", nameSwitch = true) { on ->
+                    onChange { it.copy(readingRuler = on) }
+                }
+                if (prefs.readingRuler) {
+                    Text(stringResource(R.string.reading_ruler_hint), style = MaterialTheme.typography.bodySmall)
+                    Stepper(R.string.reading_ruler_position, stringResource(R.string.percent, prefs.rulerPosition), "reading-ruler-position",
+                        onLess = { onChange { it.copy(rulerPosition = (it.rulerPosition - ReaderPrefs.RULER_STEP).coerceIn(ReaderPrefs.RULER_POSITIONS)) } },
+                        onMore = { onChange { it.copy(rulerPosition = (it.rulerPosition + ReaderPrefs.RULER_STEP).coerceIn(ReaderPrefs.RULER_POSITIONS)) } },
+                    )
+                    Stepper(R.string.reading_ruler_height, stringResource(R.string.percent, prefs.rulerHeight), "reading-ruler-height",
+                        onLess = { onChange { it.copy(rulerHeight = (it.rulerHeight - ReaderPrefs.RULER_STEP).coerceIn(ReaderPrefs.RULER_HEIGHTS)) } },
+                        onMore = { onChange { it.copy(rulerHeight = (it.rulerHeight + ReaderPrefs.RULER_STEP).coerceIn(ReaderPrefs.RULER_HEIGHTS)) } },
+                    )
+                    Toggle(R.string.reading_ruler_dim, prefs.rulerDimOutside, "reading-ruler-dim", nameSwitch = true) { on ->
+                        onChange { it.copy(rulerDimOutside = on) }
+                    }
+                }
             }
         }
     }
@@ -453,10 +470,13 @@ private fun WeightSlider(weight: Int, onChoose: (Int) -> Unit) {
 }
 
 @Composable
-private fun Toggle(label: Int, checked: Boolean, tag: String? = null, onChange: (Boolean) -> Unit) {
+private fun Toggle(label: Int, checked: Boolean, tag: String? = null, nameSwitch: Boolean = false, onChange: (Boolean) -> Unit) {
+    val title = stringResource(label)
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-        Text(stringResource(label), Modifier.weight(1f).padding(end = 12.dp))
-        Switch(checked = checked, onCheckedChange = onChange, modifier = Modifier.tagged(tag))
+        Text(title, Modifier.weight(1f).padding(end = 12.dp))
+        Switch(checked = checked, onCheckedChange = onChange, modifier = Modifier.tagged(tag).then(
+            if (nameSwitch) Modifier.semantics { contentDescription = title } else Modifier,
+        ))
     }
 }
 

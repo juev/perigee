@@ -815,6 +815,71 @@ class ReaderScreenTest {
     }
 
     @Test
+    fun theManualRulerMovesAndResizesWithoutReplacingThePage() {
+        show()
+        waitForBook()
+        val shown = checkNotNull(model().state.value.page)
+        fun pixels() = rule.onNodeWithTag("page").captureToImage().toPixelMap()
+        fun PixelMap.sample(percent: Int) = this[width / 100, height * percent / 100].toArgb()
+        fun settings() {
+            openMenu()
+            rule.onNodeWithContentDescription(string(R.string.action_settings)).performClick()
+        }
+        fun closeSettings() {
+            rule.runOnUiThread { activity.onBackPressedDispatcher.onBackPressed() }
+            waitFor("settings have closed") { rule.onAllNodesWithTag("settings-sheet").fetchSemanticsNodes().isEmpty() }
+        }
+        val plain = pixels()
+        settings()
+        val ruler = rule.onNodeWithTag("reading-ruler-switch")
+        ruler.performScrollTo().assertIsOff().performClick()
+        waitFor("ruler is on") { model().prefs.value.readingRuler }
+        closeSettings()
+        val centered = pixels()
+        assertTrue("the band must paint at the center", centered.sample(47) != plain.sample(47))
+        assertEquals("the context remains unchanged by default", plain.sample(20), centered.sample(20))
+
+        settings()
+        rule.onNodeWithTag("reading-ruler-position-more").performScrollTo().performClick()
+        waitFor("ruler moved down") { model().prefs.value.rulerPosition == 55 }
+        closeSettings()
+        val moved = pixels()
+        assertEquals("the old upper edge is cleared", plain.sample(47), moved.sample(47))
+        assertTrue("the band reaches its new position", moved.sample(57) != plain.sample(57))
+
+        settings()
+        rule.onNodeWithTag("reading-ruler-height-more").performScrollTo().performClick()
+        waitFor("ruler grew taller") { model().prefs.value.rulerHeight == 15 }
+        closeSettings()
+        val wider = pixels()
+        assertTrue("the wider band reaches farther down", wider.sample(61) != moved.sample(61))
+        assertEquals("resizing does not dim the context", plain.sample(20), wider.sample(20))
+
+        settings()
+        rule.onNodeWithTag("reading-ruler-dim").performScrollTo().assertIsOff().performClick()
+        waitFor("outside dimming is on") { model().prefs.value.rulerDimOutside }
+        closeSettings()
+        val dimmed = pixels()
+        assertTrue("explicit dimming shades the context", dimmed.sample(20) != wider.sample(20))
+        assertEquals("dimming does not change the band", wider.sample(61), dimmed.sample(61))
+        assertTrue("ruler controls reuse the same laid-out page", shown === model().state.value.page)
+
+        settings()
+        ruler.performScrollTo().assertIsOn().performClick()
+        waitFor("ruler is off") { !model().prefs.value.readingRuler }
+        closeSettings()
+        val restored = pixels()
+        for (row in listOf(20, 47, 57, 61, 80)) assertEquals(plain.sample(row), restored.sample(row))
+        assertEquals(shown.xpointer, model().state.value.page?.xpointer)
+        assertTrue(shown === model().state.value.page)
+        val stored = runBlocking { preferences.prefs.first() }
+        assertFalse(stored.readingRuler)
+        assertEquals(55, stored.rulerPosition)
+        assertEquals(15, stored.rulerHeight)
+        assertTrue(stored.rulerDimOutside)
+    }
+
+    @Test
     fun readingSettingsOfferNamedAppearanceProfiles() {
         show()
         waitForBook()
