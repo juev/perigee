@@ -11,6 +11,13 @@ struct ReadAloudSpan {
     ldomXPointer next;   // Start of the next span; null at end of the main text.
 };
 
+struct SpeechSlice {
+    int startUtf16;
+    int endUtf16;
+    ldomXPointer start;
+    ldomXPointer end;
+};
+
 namespace speech {
 inline bool hasToken(const lString32& value, const lChar32* token) {
     const auto separator = [](lChar32 ch) { return ch == ' ' || ch == '\t' || ch == '\n' || ch == '\r'; };
@@ -68,7 +75,7 @@ inline ldomXPointer position(ldomXPointerEx& at) {
 
 // Return at most one visible text block, or the remainder of a split block. No
 // dependence on page boundaries, spread width or the engine's displayed page.
-inline ReadAloudSpan readAloudSpan(const ldomXPointer& from, int maxUtf16) {
+inline ReadAloudSpan readAloudSpan(const ldomXPointer& from, int maxUtf16, SpeechSlice* slice = nullptr) {
     ReadAloudSpan span;
     if (from.isNull() || maxUtf16 < 2) return span;
     ldomXPointerEx at(from);
@@ -83,6 +90,13 @@ inline ReadAloudSpan readAloudSpan(const ldomXPointer& from, int maxUtf16) {
                 const lChar32 codePoint = text[i];
                 const int width = codePoint > 0xffff ? 2 : 1;
                 if (width > remaining) break;
+                if (slice) {
+                    const int offset = maxUtf16 - remaining;
+                    // A start belongs to the following character and an exclusive end to
+                    // the preceding one, even when both share an inline boundary.
+                    if (slice->startUtf16 == offset) slice->start = ldomXPointer(at.getNode(), i);
+                    if (slice->endUtf16 == offset + width) slice->end = ldomXPointer(at.getNode(), i + 1);
+                }
                 span.text << codePoint;
                 remaining -= width;
             }

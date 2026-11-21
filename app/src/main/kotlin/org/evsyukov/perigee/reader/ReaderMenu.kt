@@ -42,6 +42,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -58,6 +59,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
@@ -79,6 +81,8 @@ internal fun ReaderMenu(
     onGoBack: () -> Unit,
     onSeek: (Float) -> Unit,
     speech: SpeechState?,
+    highlightSpokenText: Boolean,
+    onHighlightSpokenText: (Boolean) -> Unit,
     onStartSpeech: () -> Unit,
     onSpeech: (SpeechCommand, Float) -> Unit,
 ) {
@@ -120,7 +124,7 @@ internal fun ReaderMenu(
                         overflow = TextOverflow.Ellipsis,
                     )
                 }
-                SpeechControls(speech, onStartSpeech, onSpeech)
+                SpeechControls(speech, highlightSpokenText, onHighlightSpokenText, onStartSpeech, onSpeech)
             }
         }
 
@@ -182,7 +186,13 @@ private fun menuButtonLabel(@StringRes label: Int): Modifier {
 private fun Modifier.swallowTouches(): Modifier = pointerInput(Unit) { detectTapGestures { } }
 
 @Composable
-private fun SpeechControls(speech: SpeechState?, onStart: () -> Unit, onCommand: (SpeechCommand, Float) -> Unit) {
+private fun SpeechControls(
+    speech: SpeechState?,
+    highlightSpokenText: Boolean,
+    onHighlightSpokenText: (Boolean) -> Unit,
+    onStart: () -> Unit,
+    onCommand: (SpeechCommand, Float) -> Unit,
+) {
     val phase = speech?.phase
     if (phase == null || phase == SpeechPhase.Ended || phase == SpeechPhase.NoVoice || phase == SpeechPhase.Failed) {
         val error = when (phase) {
@@ -208,6 +218,19 @@ private fun SpeechControls(speech: SpeechState?, onStart: () -> Unit, onCommand:
         TextButton(onClick = { onCommand(SpeechCommand.Rate, if (rate >= 2f) 0.5f else rate + 0.25f) }) {
             Text(stringResource(R.string.speech_rate, rate.toString()))
         }
+    }
+    val highlightLabel = stringResource(R.string.speech_highlight)
+    Row(
+        Modifier.fillMaxWidth().padding(horizontal = 12.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(highlightLabel, Modifier.weight(1f).clearAndSetSemantics {})
+        Switch(
+            checked = highlightSpokenText,
+            onCheckedChange = onHighlightSpokenText,
+            modifier = Modifier.testTag("speech-highlight-switch").semantics { contentDescription = highlightLabel },
+        )
     }
 }
 

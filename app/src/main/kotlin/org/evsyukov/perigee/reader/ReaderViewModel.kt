@@ -22,6 +22,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -707,6 +708,12 @@ class ReaderViewModel internal constructor(
                     true
                 }
             },
+            mapTiming = { span, start, end ->
+                if (speechRequest !== run) null else open.read { doc ->
+                    doc.speechRange(span, start, end)?.let { SpeechChunk(it.start, it.end) }
+                }
+            },
+            timingEnabled = _prefs.map { it.highlightSpokenText },
         )
         speechRequest = run
         _speech.value = run.state.value
@@ -722,6 +729,20 @@ class ReaderViewModel internal constructor(
     internal fun speechCommand(command: SpeechCommand, rate: Float = 1f) {
         if (command == SpeechCommand.Stop) stopSpeech()
         else speechRequest?.dispatch?.invoke(command, rate)
+    }
+
+    /** Reads geometry from the published page without moving the cursor or repainting the book. */
+    internal suspend fun speechRects(page: Page, chunk: SpeechChunk): List<Rect> = layout.withLock {
+        val open = reader ?: return@withLock emptyList()
+        val run = speechRequest ?: return@withLock emptyList()
+        fun current() = state.value.page === page && !state.value.busy && speechRequest === run &&
+            run.state.value.let { it.phase == SpeechPhase.Playing && it.chunk == chunk } &&
+            _prefs.value.highlightSpokenText
+        if (!current()) return@withLock emptyList()
+        val rects = open.read { doc ->
+            if (doc.currentPage == page.index) doc.rects(chunk.start, chunk.end) else emptyList()
+        }
+        if (current()) rects else emptyList()
     }
 
     private fun stopSpeech() {

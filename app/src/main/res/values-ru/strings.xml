@@ -19,6 +19,7 @@
     <string name="speech_resume">Продолжить</string>
     <string name="speech_stop">Остановить</string>
     <string name="speech_rate">Скорость: %1$s×</string>
+    <string name="speech_highlight">Подсвечивать произносимый текст</string>
     <string name="speech_no_voice">Для этой книги нет установленного офлайн-голоса. Установите голос в настройках синтеза речи Android и повторите попытку.</string>
     <string name="speech_failed">Не удалось продолжить чтение вслух. Проверьте настройки синтеза речи Android и повторите попытку.</string>
     <string name="action_contents">Оглавление</string>

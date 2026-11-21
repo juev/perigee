@@ -20,6 +20,7 @@
     <string name="speech_resume">Resume</string>
     <string name="speech_stop">Stop</string>
     <string name="speech_rate">Speed: %1$s×</string>
+    <string name="speech_highlight">Highlight spoken text</string>
     <string name="speech_no_voice">No installed offline voice for this book. Install a voice in Android text-to-speech settings and try again.</string>
     <string name="speech_failed">Could not continue reading aloud. Check Android text-to-speech settings and try again.</string>
     <string name="action_contents">Contents</string>

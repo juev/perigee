@@ -93,6 +93,7 @@ data class ReaderPrefs(
     val pageMargins: Boolean = false,
     val twoPagesInLandscape: Boolean = true,
     val volumeKeysTurnPages: Boolean = true,
+    val highlightSpokenText: Boolean = false,
     val brightnessGesture: Boolean = false,
     /** Screen brightness 0..1 set by the gesture; null follows the system. */
     val brightness: Float? = null,
@@ -197,6 +198,7 @@ class ReaderPreferences private constructor(private val store: DataStore<Prefere
             pageMargins = p[PAGE_MARGINS] ?: d.pageMargins,
             twoPagesInLandscape = p[TWO_PAGES] ?: d.twoPagesInLandscape,
             volumeKeysTurnPages = p[VOLUME_KEYS] ?: d.volumeKeysTurnPages,
+            highlightSpokenText = p[HIGHLIGHT_SPOKEN_TEXT] ?: d.highlightSpokenText,
             brightnessGesture = p[BRIGHTNESS_GESTURE] ?: d.brightnessGesture,
             dimBelowFlicker = p[DIM_BELOW_FLICKER] ?: d.dimBelowFlicker,
             brightness = p[BRIGHTNESS],
@@ -238,6 +240,7 @@ class ReaderPreferences private constructor(private val store: DataStore<Prefere
         p[PAGE_MARGINS] = v.pageMargins
         p[TWO_PAGES] = v.twoPagesInLandscape
         p[VOLUME_KEYS] = v.volumeKeysTurnPages
+        p[HIGHLIGHT_SPOKEN_TEXT] = v.highlightSpokenText
         p[BRIGHTNESS_GESTURE] = v.brightnessGesture
         p[DIM_BELOW_FLICKER] = v.dimBelowFlicker
         if (v.brightness == null) p.remove(BRIGHTNESS) else p[BRIGHTNESS] = v.brightness
@@ -285,6 +288,7 @@ class ReaderPreferences private constructor(private val store: DataStore<Prefere
         private val PAGE_MARGINS = booleanPreferencesKey("page_margins")
         private val TWO_PAGES = booleanPreferencesKey("two_pages")
         private val VOLUME_KEYS = booleanPreferencesKey("volume_keys")
+        private val HIGHLIGHT_SPOKEN_TEXT = booleanPreferencesKey("highlight_spoken_text")
         private val BRIGHTNESS_GESTURE = booleanPreferencesKey("brightness_gesture")
         private val DIM_BELOW_FLICKER = booleanPreferencesKey("dim_below_flicker")
         private val BRIGHTNESS = floatPreferencesKey("brightness")

@@ -137,6 +137,15 @@ class EngineDocument private constructor(
             ReadAloudSpan(TextRange(from, to, text), next.ifEmpty { null })
         }
 
+    /** Maps a UTF-16 slice of the exact submitted span back to book positions. */
+    fun speechRange(span: ReadAloudSpan, startUtf16: Int, endUtf16: Int): TextRange? {
+        val text = span.range.text
+        val (from, to, replayed) = NativeEngine.speechRange(checked(), span.range.start, text.length, startUtf16, endUtf16)
+            ?: return null
+        if (text != replayed) return null
+        return TextRange(from, to, text.substring(startUtf16, endUtf16))
+    }
+
     /** Start of this block if inside one, or of the block before it. Null at the beginning. */
     fun previousReadAloudStart(start: String): String? = NativeEngine.previousReadAloudStart(checked(), start)
 

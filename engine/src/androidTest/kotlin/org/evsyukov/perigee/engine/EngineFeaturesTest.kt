@@ -116,6 +116,34 @@ class EngineFeaturesTest {
         }
     }
 
+    @Test
+    fun speechRangeMapsUtf16AcrossInlineTextWithoutShiftingTheSentence() {
+        val first = "Первая 🐈 фраза. "
+        val second = "Второе предложение!"
+        val file = File(dir, "timed-speech.fb2").apply {
+            writeText("""<?xml version="1.0" encoding="UTF-8"?>
+                <FictionBook xmlns="http://www.gribuser.ru/xml/fictionbook/2.0">
+                <description><title-info><book-title>Speech range</book-title><lang>ru</lang></title-info></description>
+                <body><section><p>${first}Вто<emphasis>рое</emphasis> предложение! Третья фраза.</p></section></body>
+                </FictionBook>
+            """.trimIndent())
+        }
+        open(file).use { doc ->
+            val start = doc.search("Первая").single().range.start
+            val span = checkNotNull(doc.readAloudSpan(start, 4000))
+            assertEquals(first + second + " Третья фраза.", span.range.text)
+            val sentence = doc.speechRange(span, first.length, first.length + second.length)
+            assertNotNull("the UTF-16 sentence must resolve to real DOM positions", sentence)
+            val mapped = checkNotNull(sentence)
+            assertEquals(second, mapped.text)
+            assertEquals(second, doc.textBetween(mapped.start, mapped.end))
+            assertTrue("the mapped sentence is visible", doc.rects(mapped.start, mapped.end).isNotEmpty())
+            val emoji = first.indexOf("🐈")
+            assertNull("a UTF-16 endpoint cannot split a surrogate pair", doc.speechRange(span, emoji + 1, emoji + 2))
+            assertNull("bounds outside the submitted utterance are not guessed", doc.speechRange(span, 0, span.range.text.length + 1))
+        }
+    }
+
     // --- search
 
     @Test

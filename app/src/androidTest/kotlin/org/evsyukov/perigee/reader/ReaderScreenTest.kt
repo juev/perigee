@@ -16,6 +16,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.toPixelMap
+import androidx.compose.ui.graphics.PixelMap
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
@@ -65,6 +67,7 @@ import org.evsyukov.perigee.data.PageTurn
 import org.evsyukov.perigee.data.ReaderPreferences
 import org.evsyukov.perigee.data.ReaderPrefs
 import org.evsyukov.perigee.data.TapScheme
+import org.evsyukov.perigee.engine.ReadingBlock
 import org.evsyukov.perigee.library.ImmersiveNoticeSeen
 import org.evsyukov.perigee.server.Server
 import org.evsyukov.perigee.sync.BookOrbit
@@ -342,6 +345,155 @@ class ReaderScreenTest {
             assertFalse("old speech cannot move the reader after Stop", runBlocking { run.moveTo(first.range.start) })
         } finally {
             rule.runOnIdle { local.close() }
+        }
+    }
+
+    @Test
+    fun spokenTextHighlightingIsAnIndependentOptInWhileReadingAloud() {
+        var request: SpeechRequest? = null
+        val playing = SpeechState(SpeechPhase.Playing)
+        val local = ReaderViewModel(activity.application, Library.get(activity),
+            startSpeechService = { _, run ->
+                request = run
+                run.state.value = playing
+            }, bookOpened = {})
+        try {
+            edgeToEdge()
+            rule.setContent { MaterialTheme { ReaderScreen(book, onClose = {}, viewModel = local) } }
+            rule.waitUntil(TIMEOUT) { local.state.value.page != null && !local.state.value.busy }
+            openMenu()
+            rule.onNodeWithTag("readAloud").performClick()
+            val run = rule.runOnIdle { checkNotNull(request) }
+            rule.waitUntil(TIMEOUT) { local.speech.value == playing }
+
+            val highlight = rule.onNodeWithTag("speech-highlight-switch")
+            highlight.assertIsDisplayed().assertIsOff()
+            highlight.performClick()
+            highlight.assertIsOn()
+            highlight.performClick()
+            highlight.assertIsOff()
+
+            rule.runOnIdle {
+                assertEquals(playing, local.speech.value)
+                assertTrue("Changing the highlight must not restart speech", request === run)
+            }
+        } finally {
+            rule.runOnIdle { local.close() }
+        }
+    }
+
+    @Test
+    fun theCurrentSpeechChunkIsPaintedOverItsOwnTextOnly() {
+        var request: SpeechRequest? = null
+        val local = ReaderViewModel(activity.application, Library.get(activity),
+            startSpeechService = { _, run -> request = run }, bookOpened = {})
+        try {
+            edgeToEdge()
+            rule.setContent { MaterialTheme { ReaderScreen(book, onClose = {}, viewModel = local) } }
+            rule.waitUntil(TIMEOUT) { local.state.value.page != null && !local.state.value.busy }
+            openMenu()
+            rule.onNodeWithTag("readAloud").performClick()
+            val run = rule.runOnIdle { checkNotNull(request) }
+            val page = checkNotNull(local.state.value.page)
+            val heading = page.readingBlocks.single { it.heading && it.text == "Chapter 1" }
+            val paragraph = page.readingBlocks.first { it.text.startsWith("Chapter 1, paragraph 1.") }
+            val span = runBlocking { checkNotNull(run.load(heading.anchor, 80)) }
+            assertEquals("the audio source must return just the visible heading", heading.text, span.range.text.trim())
+            assertTrue(runBlocking { run.moveTo(span.range.start) })
+            val playing = SpeechState(SpeechPhase.Playing, chunk = SpeechChunk(span.range.start, span.range.end))
+            rule.runOnIdle { run.state.value = playing }
+            rule.waitUntil(TIMEOUT) { local.speech.value == playing }
+            rule.runOnUiThread { activity.onBackPressedDispatcher.onBackPressed() }
+            rule.waitUntil(TIMEOUT) { rule.onAllNodesWithTag("position").fetchSemanticsNodes().isEmpty() }
+
+            fun pixels() = rule.onNodeWithTag("page").captureToImage().toPixelMap()
+            val off = pixels()
+            val shown = checkNotNull(local.state.value.page)
+            assertEquals(page.index, shown.index)
+            val crop = (shown.bitmap.width - off.width) / 2
+            fun changes(after: PixelMap, block: ReadingBlock): Int {
+                assertEquals(off.width, after.width)
+                assertEquals(off.height, after.height)
+                val left = (block.left - crop).coerceAtLeast(0)
+                val right = (block.right - crop).coerceAtMost(off.width)
+                val top = block.top.coerceAtLeast(0)
+                val bottom = block.bottom.coerceAtMost(off.height)
+                assertTrue("fixture text must be inside the captured page", left < right && top < bottom)
+                return (top until bottom).sumOf { y ->
+                    (left until right).count { x -> off[x, y].toArgb() != after[x, y].toArgb() }
+                }
+            }
+
+            local.updatePrefs { it.copy(highlightSpokenText = true) }
+            rule.waitUntil(TIMEOUT) { local.prefs.value.highlightSpokenText }
+            var painted = off
+            try {
+                rule.waitUntil(5_000) {
+                    painted = pixels()
+                    changes(painted, heading) > 0
+                }
+            } catch (e: ComposeTimeoutException) {
+                throw AssertionError("the active speech chunk must change pixels over the spoken heading", e)
+            }
+            assertEquals("the unspoken paragraph is not tinted", 0, changes(painted, paragraph))
+            assertTrue("the displayed page is not rebuilt to tint the spoken chunk", shown === local.state.value.page)
+            assertEquals(playing, local.speech.value)
+        } finally {
+            rule.runOnIdle { local.close() }
+        }
+    }
+
+    @Test
+    fun mappedSpeechOnEachLeafUsesTheDisplayedLayoutAndDiscardsTheOldViewport() {
+        runBlocking { preferences.update { it.copy(twoPagesInLandscape = true, highlightSpokenText = true) } }
+        var request: SpeechRequest? = null
+        val local = ReaderViewModel(activity.application, Library.get(activity),
+            startSpeechService = { _, run -> request = run }, bookOpened = {})
+        val wide = Viewport(960, 540, 1f, 160)
+        try {
+            rule.runOnUiThread {
+                local.setViewport(wide)
+                local.open(book)
+            }
+            rule.waitUntil(TIMEOUT) { local.state.value.page?.turnStep == 2 && !local.state.value.busy }
+            val shown = checkNotNull(local.state.value.page)
+            val middle = shown.bitmap.width / 2
+            val sentence = "The quick brown fox jumps over the lazy dog while the engine lays out this line."
+            val paragraphs = shown.readingBlocks.filter { it.text.startsWith("Chapter 1, paragraph ") && sentence in it.text }
+            val left = paragraphs.first { it.right <= middle }
+            val right = paragraphs.first { it.left >= middle }
+            rule.runOnUiThread { local.startSpeech() }
+            val run = rule.runOnUiThread { checkNotNull(request) }
+            val map = checkNotNull(run.mapTiming)
+            val samples = ArrayList<Long>()
+            for ((block, isLeft) in listOf(left to true, right to false)) {
+                val span = runBlocking { checkNotNull(run.load(block.anchor, 2_000)) }
+                val from = span.range.text.indexOf(sentence)
+                assertTrue("the submitted paragraph includes the visible sentence", from > 0)
+                repeat(6) { attempt ->
+                    val startNs = System.nanoTime()
+                    val chunk = runBlocking { checkNotNull(map(span, from, from + sentence.length)) }
+                    rule.runOnUiThread { run.state.value = SpeechState(SpeechPhase.Playing, chunk = chunk) }
+                    val rects = runBlocking { local.speechRects(shown, chunk) }
+                    if (attempt > 0) samples += System.nanoTime() - startNs
+                    assertTrue("sentence on ${if (isLeft) "left" else "right"} leaf has visible rectangles", rects.isNotEmpty())
+                    assertTrue("all rectangles stay on the sentence's leaf", rects.all { rect ->
+                        rect.left >= 0 && rect.right <= shown.bitmap.width && rect.top >= 0 && rect.bottom <= shown.bitmap.height &&
+                            (if (isLeft) rect.right <= middle else rect.left >= middle)
+                    })
+                    assertTrue("timing did not replace the displayed bitmap or change pages", shown === local.state.value.page)
+                }
+            }
+            val sorted = samples.sorted()
+            println("Speech mapping and geometry (includes dispatch, excludes synthesis and Compose): n=${sorted.size}, " +
+                "median_us=${sorted[sorted.size / 2] / 1_000}, max_us=${sorted.last() / 1_000}")
+            val current = checkNotNull(run.state.value.chunk)
+            rule.runOnUiThread { local.setViewport(wide.copy(width = wide.height, height = wide.width)) }
+            rule.waitUntil(TIMEOUT) { local.state.value.page?.turnStep == 1 && !local.state.value.busy }
+            assertTrue("outgoing spread can no longer return overlay geometry", runBlocking { local.speechRects(shown, current) }.isEmpty())
+            assertEquals("viewport changes do not restart speech", run, rule.runOnUiThread { request })
+        } finally {
+            rule.runOnUiThread { local.close() }
         }
     }
 
