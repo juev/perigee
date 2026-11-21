@@ -223,6 +223,42 @@ class ReaderPreferences private constructor(private val store: DataStore<Prefere
         }
     }
 
+    /** Applies the edited guide fields and captures a named profile in the same transaction. */
+    suspend fun saveReadingSetup(name: String, before: ReaderPrefs, chosen: ReaderPrefs): Boolean {
+        val title = profileName(name)
+        var saved = false
+        store.edit { stored ->
+            val profiles = readProfiles(stored)
+            require(!profiles.has(title) && profiles.length() < PROFILE_LIMIT)
+            val current = read(stored)
+            var conflict = false
+            fun <T> field(original: T, selected: T, latest: T): T {
+                if (selected == original) return latest
+                if (latest != original && latest != selected) conflict = true
+                return selected
+            }
+            val updated = current.copy(
+                fontSize = field(before.fontSize, chosen.fontSize, current.fontSize),
+                pageMargins = field(before.pageMargins, chosen.pageMargins, current.pageMargins),
+                twoPagesInLandscape = field(before.twoPagesInLandscape, chosen.twoPagesInLandscape, current.twoPagesInLandscape),
+                lineSpacingPercent = field(before.lineSpacingPercent, chosen.lineSpacingPercent, current.lineSpacingPercent),
+                colorScheme = field(before.colorScheme, chosen.colorScheme, current.colorScheme),
+                dayScheme = field(before.dayScheme, chosen.dayScheme, current.dayScheme),
+                nightScheme = field(before.nightScheme, chosen.nightScheme, current.nightScheme),
+            )
+            if (!conflict) {
+                // Validation failure aborts the DataStore transaction, including the active settings.
+                val previous = captureAppearance(stored)
+                validateAppearance(previous)
+                write(stored, updated)
+                writeProfiles(stored, profiles.put(title, captureAppearance(stored)))
+                stored[APPEARANCE_UNDO] = JSONObject().put("version", PROFILE_VERSION).put("snapshot", previous).toString()
+                saved = true
+            }
+        }
+        return saved
+    }
+
     /** Returns the requested family when it was unavailable and the current face was kept. */
     suspend fun applyAppearanceProfile(name: String, availableFaces: Set<String>): String? {
         var missingFace: String? = null

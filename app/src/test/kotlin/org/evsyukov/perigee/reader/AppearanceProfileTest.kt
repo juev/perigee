@@ -7,12 +7,73 @@ import org.evsyukov.perigee.data.ColorScheme
 import org.evsyukov.perigee.data.ReaderPreferences
 import org.evsyukov.perigee.data.ReaderPrefs
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 
 @RunWith(RobolectricTestRunner::class)
 class AppearanceProfileTest {
+    @Test
+    fun setupAppliesAndSavesOnlyChosenFieldsOverTheLatestSettings() = runBlocking {
+        val preferences = ReaderPreferences.get(ApplicationProvider.getApplicationContext())
+        val initial = ReaderPrefs(fontSize = 22)
+        val current = initial.copy(fontWeight = 650, brightness = 0.4f, readingRuler = true, userCss = "p { color: inherit; }")
+        val chosen = initial.copy(fontSize = 30, pageMargins = true, twoPagesInLandscape = false, lineSpacingPercent = 150)
+            .withScheme(ColorScheme.Oled)
+        preferences.update { current }
+        val names = checkNotNull(preferences.appearanceProfiles.first())
+        val name = "Guided ${System.nanoTime()}"
+        try {
+            assertEquals(current, preferences.prefs.first())
+            assertTrue("finish applies and saves the guide", preferences.saveReadingSetup(name, initial, chosen))
+            val expected = chosen.copy(fontWeight = current.fontWeight, brightness = current.brightness,
+                readingRuler = current.readingRuler, userCss = current.userCss)
+            assertEquals(expected, preferences.prefs.first())
+            assertEquals((names + name).sorted(), preferences.appearanceProfiles.first())
+            preferences.update { current }
+            preferences.applyAppearanceProfile(name, setOf("Roboto"))
+            assertEquals("the ordinary profile contains the committed appearance", expected, preferences.prefs.first())
+        } finally {
+            if (name in preferences.appearanceProfiles.first().orEmpty()) preferences.deleteAppearanceProfile(name)
+        }
+    }
+
+    @Test
+    fun setupRejectsAnEditToTheSameFieldWithoutSavingOrApplyingAnything() = runBlocking {
+        val preferences = ReaderPreferences.get(ApplicationProvider.getApplicationContext())
+        val initial = ReaderPrefs(fontSize = 22)
+        val chosen = initial.copy(fontSize = 30, pageMargins = true)
+        val newer = initial.copy(fontSize = 26, userCss = "p { color: inherit; }")
+        preferences.update { newer }
+        val names = checkNotNull(preferences.appearanceProfiles.first())
+        val name = "Conflict ${System.nanoTime()}"
+        assertFalse(preferences.saveReadingSetup(name, initial, chosen))
+        assertEquals(newer, preferences.prefs.first())
+        assertEquals(names, preferences.appearanceProfiles.first())
+    }
+
+    @Test
+    fun setupCannotApplyIfAnExistingProfileHasTheSameName() = runBlocking {
+        val preferences = ReaderPreferences.get(ApplicationProvider.getApplicationContext())
+        val initial = ReaderPrefs(fontSize = 22)
+        val name = "Duplicate ${System.nanoTime()}"
+        preferences.update { initial }
+        preferences.saveAppearanceProfile(name)
+        try {
+            val chosen = initial.copy(fontSize = 31)
+            val failure = runCatching { preferences.saveReadingSetup(" $name ", initial, chosen) }.exceptionOrNull()
+            assertTrue("a duplicate name must reject finish", failure is IllegalArgumentException)
+            assertEquals(initial, preferences.prefs.first())
+            preferences.update { chosen }
+            preferences.applyAppearanceProfile(name, setOf("Roboto"))
+            assertEquals(initial, preferences.prefs.first())
+        } finally {
+            preferences.deleteAppearanceProfile(name)
+        }
+    }
+
     @Test
     fun profileEditsChangeOnlyTheNamedSnapshot() = runBlocking {
         val preferences = ReaderPreferences.get(ApplicationProvider.getApplicationContext())
