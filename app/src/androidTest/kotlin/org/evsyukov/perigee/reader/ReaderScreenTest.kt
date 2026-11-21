@@ -984,6 +984,19 @@ class ReaderScreenTest {
     }
 
     @Test
+    fun readingSettingsOpenTheOptionalReadingSetupOnTheCurrentBook() {
+        show()
+        waitForBook()
+        val position = checkNotNull(model().state.value.page).xpointer
+        openMenu()
+        rule.onNodeWithContentDescription(string(R.string.action_settings)).performClick()
+        rule.onNodeWithTag("appearance-profiles-open").performScrollTo().assertIsDisplayed()
+        rule.onNodeWithTag("reading-setup-open").performScrollTo().assertIsDisplayed().performClick()
+        rule.onNodeWithTag("reading-setup-sheet").assertIsDisplayed()
+        assertEquals(position, model().state.value.page?.xpointer)
+    }
+
+    @Test
     fun readingSettingsOfferNamedAppearanceProfiles() {
         show()
         waitForBook()
