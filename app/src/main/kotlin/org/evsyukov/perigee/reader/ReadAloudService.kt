@@ -36,7 +36,9 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.Flow
@@ -46,7 +48,6 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import org.evsyukov.perigee.MainActivity
@@ -339,12 +340,18 @@ class ReadAloudService : Service() {
                 cursor = span.range.start
                 current = span
                 publish(SpeechPhase.Playing)
+                // While this span is being spoken, the next one is found and its first sentence
+                // is synthesized: the spans follow one another with no silence between.
+                val upcoming = span.next?.let { async { run.load(it, limit) } }
+                val prefetch = upcoming?.let { ahead -> async { ahead.await()?.let { engine.prefetch(it.range.text) } } }
                 if (!speak(run, engine, span)) return@launch finish(SpeechPhase.Failed)
                 val next = span.next ?: return@launch finish(SpeechPhase.Ended, span.range.end)
                 cursor = next
                 current = null
-                span = run.load(next, limit) ?: return@launch finish(SpeechPhase.Failed)
+                span = upcoming?.await() ?: return@launch finish(SpeechPhase.Failed)
                 if (!run.moveTo(span.range.start)) return@launch finish(SpeechPhase.Failed)
+                // The fetched sentence is wanted by the very next speak; wait for it to arrive.
+                prefetch?.join()
             }
         }
     }

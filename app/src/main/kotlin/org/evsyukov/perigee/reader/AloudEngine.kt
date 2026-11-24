@@ -32,6 +32,14 @@ internal interface AloudEngine {
      */
     suspend fun speak(text: String, onRange: (Int, Int) -> Unit): Boolean
 
+    /**
+     * Synthesizes ahead the first sentence of [text], the span that follows the one being
+     * spoken, so the spans follow one another without silence. A best effort: the engine may
+     * say nothing, and [speak] uses what was fetched only when the text matches its own.
+     * Default: nothing.
+     */
+    suspend fun prefetch(text: String) {}
+
     fun stop()
     fun release()
 }

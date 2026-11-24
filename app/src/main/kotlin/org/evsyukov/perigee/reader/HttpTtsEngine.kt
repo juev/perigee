@@ -34,6 +34,8 @@ internal class HttpTtsEngine(private val context: Context, private val config: E
     private var player: MediaPlayer? = null
     private var current: CompletableDeferred<Boolean>? = null
     private var audioFile: File? = null
+    /** The audio a [prefetch] made for the following span's first sentence, keyed by that sentence. */
+    private var carried: Pair<String, ByteArray>? = null
     private val attributes = AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA)
         .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build()
 
@@ -71,7 +73,12 @@ internal class HttpTtsEngine(private val context: Context, private val config: E
         var ok = true
         for ((index, range) in sentences.withIndex()) {
             var bytes: ByteArray? = null
-            prefetched?.let { bytes = it.await(); prefetched = null }
+            // What [prefetch] synthesized while the last span was still playing, for its first sentence.
+            if (index == 0) {
+                carried?.takeIf { it.first == text.substring(range) }?.let { bytes = it.second }
+                carried = null
+            }
+            prefetched?.let { bytes = bytes ?: it.await(); prefetched = null }
             if (bytes == null) {
                 bytes = withContext(Dispatchers.IO) { session.synthesize(text.substring(range), rate) }
                 if (bytes == null) {
@@ -99,6 +106,16 @@ internal class HttpTtsEngine(private val context: Context, private val config: E
         }
         prefetched?.cancel()
         ok
+    }
+
+    override suspend fun prefetch(text: String) {
+        val session = client ?: return
+        val gen = generation.get()
+        val first = splitSentences(text, voiceLocale).firstOrNull() ?: return
+        val sentence = text.substring(first)
+        val bytes = withContext(Dispatchers.IO) { session.synthesize(sentence, rate) } ?: return
+        if (generation.get() != gen) return
+        carried = sentence to bytes
     }
 
     /** One sentence spoken aloud; a fetch that 404s has already had its one re-probe inside [ExternalTtsClient]. */
@@ -152,6 +169,7 @@ internal class HttpTtsEngine(private val context: Context, private val config: E
         stop()
         audioFile?.delete()
         audioFile = null
+        carried = null
         client = null
         voiceLocale = null
     }

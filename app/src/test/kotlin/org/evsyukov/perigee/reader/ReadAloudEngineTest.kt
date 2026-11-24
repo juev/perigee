@@ -44,6 +44,7 @@ class ReadAloudEngineTest {
     ) : AloudEngine {
         override val locale: Locale? = Locale.US
         val spoken = mutableListOf<String>()
+        val prefetched = mutableListOf<String>()
         val released = CompletableDeferred<Unit>()
         private var stopped = false
 
@@ -56,6 +57,10 @@ class ReadAloudEngineTest {
             spoken += text
             onRange(0, text.length.coerceAtMost(6))
             return true
+        }
+
+        override suspend fun prefetch(text: String) {
+            prefetched += text
         }
 
         override fun stop() {
@@ -123,6 +128,31 @@ class ReadAloudEngineTest {
         assertEquals(SpeechPhase.Failed, run.state.value.phase)
         assertEquals(SpeechNote.NotFound, run.state.value.note)
         assertTrue(engine.spoken.isEmpty())
+    }
+
+    @Test
+    fun theNextSpanIsSynthesizedWhileTheCurrentOneIsSpoken() {
+        val first = ReadAloudSpan(TextRange("from", "to", "First span text."), "from2")
+        val second = ReadAloudSpan(TextRange("from2", "to2", "Second span text."), null)
+        val run = SpeechRequest(
+            language = "en-US",
+            start = first.range.start,
+            load = { at, _ -> if (at == first.range.start) first else second.takeIf { at == second.range.start } },
+            previous = { null },
+            moveTo = { true },
+        )
+        val engine = FakeEngine()
+        runSession(run, engine)
+        assertEquals(
+            "both spans are spoken, in order",
+            listOf("First span text.", "Second span text."),
+            engine.spoken,
+        )
+        assertEquals(
+            "the following span was prefetched during the speech of this one",
+            listOf("Second span text."),
+            engine.prefetched,
+        )
     }
 
     @Test
