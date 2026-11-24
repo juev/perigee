@@ -24,6 +24,7 @@ import android.os.PowerManager
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
 import android.speech.tts.Voice
+import android.util.Log
 import androidx.core.content.ContextCompat
 import java.text.BreakIterator
 import java.util.Locale
@@ -45,9 +46,12 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import org.evsyukov.perigee.MainActivity
 import org.evsyukov.perigee.R
+import org.evsyukov.perigee.data.ReaderPreferences
 import org.evsyukov.perigee.engine.ReadAloudSpan
 
 internal enum class SpeechPhase { Starting, Playing, Paused, Ended, Failed, NoVoice }
@@ -58,6 +62,7 @@ internal data class SpeechState(
     val phase: SpeechPhase = SpeechPhase.Starting,
     val rate: Float = 1f,
     val chunk: SpeechChunk? = null,
+    val note: SpeechNote? = null,
 )
 
 /** An in-process session, created only by a visible reader. No book text in intents or notifications. */
@@ -69,6 +74,7 @@ internal class SpeechRequest(
     val moveTo: suspend (String) -> Boolean,
     val mapTiming: (suspend (ReadAloudSpan, Int, Int) -> SpeechChunk?)? = null,
     val timingEnabled: Flow<Boolean> = flowOf(true),
+    val externalTts: ExternalTtsConfig? = null,
 ) {
     val token: String = UUID.randomUUID().toString()
     val state = MutableStateFlow(SpeechState())
@@ -110,10 +116,8 @@ private class SpokenTiming(private val text: String, locale: Locale) {
 
 /** Owns synthesis, media controls and audio focus while an explicitly started session is alive. */
 class ReadAloudService : Service() {
-    private class PendingSpeech(val id: String, val timing: SpokenTiming?) {
-        val reply = CompletableDeferred<Boolean>()
-    }
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate + CoroutineExceptionHandler { _, _ ->
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate + CoroutineExceptionHandler { _, e ->
+        Log.w(TAG, "speech crashed", e)
         if (request != null) finish(SpeechPhase.Failed)
     })
     private val handler = Handler(Looper.getMainLooper())
@@ -129,11 +133,12 @@ class ReadAloudService : Service() {
     private var focusOwner: Any? = null
     private var media: MediaSession? = null
     private var request: SpeechRequest? = null
-    private var tts: TextToSpeech? = null
+    private var engine: AloudEngine? = null
     private var job: Job? = null
     private var cursor: String? = null
     private var current: ReadAloudSpan? = null
-    private var waiting: PendingSpeech? = null
+    // Bumped whenever speech is stopped early: a retired round's timing worker must not write a highlight.
+    private var speechRound = 0
     private var receiverRegistered = false
     private val noisy = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
@@ -262,7 +267,16 @@ class ReadAloudService : Service() {
                 interrupt()
                 play(command, paused = phase == SpeechPhase.Paused)
             }
-            SpeechCommand.Stop -> finish(SpeechPhase.Ended)
+            SpeechCommand.Stop -> {
+                // The reader stopped by hand: the next run probes the server anew. The write
+                // survives the scope's cancellation, or a quick destroy would lose it.
+                scope.launch {
+                    withContext(NonCancellable) {
+                        ReaderPreferences.get(applicationContext).update { it.copy(externalTtsDetected = "") }
+                    }
+                }
+                finish(SpeechPhase.Ended)
+            }
             SpeechCommand.Rate -> if (rate.isFinite() && rate in 0.5f..2f) {
                 publish(phase, rate)
                 if (phase != SpeechPhase.Paused) { interrupt(); play() }
@@ -299,12 +313,27 @@ class ReadAloudService : Service() {
             var span = run.load(destination, limit) ?: return@launch finish(SpeechPhase.Ended)
             current = span
             cursor = span.range.start
-            if (!run.moveTo(span.range.start)) return@launch finish(SpeechPhase.Failed)
+            if (!run.moveTo(span.range.start)) {
+                Log.w(TAG, "the reader refused the move to the speech position")
+                return@launch finish(SpeechPhase.Failed)
+            }
             if (paused) return@launch publish(SpeechPhase.Paused)
             publish(SpeechPhase.Starting)
-            val engine = getEngine(run.language) ?: return@launch finish(SpeechPhase.NoVoice)
-            if (!takeFocus()) return@launch finish(SpeechPhase.Failed)
-            if (engine.setSpeechRate(run.state.value.rate) != TextToSpeech.SUCCESS) return@launch finish(SpeechPhase.Failed)
+            val engine = getEngine(run) ?: return@launch finish(SpeechPhase.Failed).also { Log.w(TAG, "no engine was made for the session") }
+            Log.i(TAG, "speaking with ${engine.javaClass.simpleName} for ${run.language}")
+            if (!engine.prepare(run.language)) {
+                engine.failure?.let { return@launch finish(SpeechPhase.Failed, it) }
+                Log.w(TAG, "no installed offline voice for ${run.language}")
+                return@launch finish(SpeechPhase.NoVoice)
+            }
+            if (!takeFocus()) {
+                Log.w(TAG, "audio focus was not granted")
+                return@launch finish(SpeechPhase.Failed)
+            }
+            if (!engine.setRate(run.state.value.rate)) {
+                Log.w(TAG, "the engine refused the rate ${run.state.value.rate}")
+                return@launch finish(SpeechPhase.Failed)
+            }
             while (true) {
                 wake.acquire(UTTERANCE_TIMEOUT)
                 cursor = span.range.start
@@ -320,48 +349,21 @@ class ReadAloudService : Service() {
         }
     }
 
-    private suspend fun getEngine(language: String): TextToSpeech? {
-        tts?.let { return it }
-        val ready = CompletableDeferred<Int>()
-        val engine = TextToSpeech(applicationContext) { ready.complete(it) }
-        try {
-            if (withTimeoutOrNull(10_000) { ready.await() } != TextToSpeech.SUCCESS) return null
-            val voice = localVoice(engine.voices.orEmpty(), engine.defaultVoice, language) ?: return null
-            if (engine.setVoice(voice) != TextToSpeech.SUCCESS || engine.setAudioAttributes(attributes) != TextToSpeech.SUCCESS) return null
-            engine.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
-                override fun onStart(utteranceId: String?) = Unit
-                override fun onRangeStart(utteranceId: String?, start: Int, end: Int, frame: Int) {
-                    handler.post { waiting?.takeIf { it.id == utteranceId }?.timing?.offer(start, end) }
-                }
-                override fun onDone(utteranceId: String?) = result(utteranceId, true)
-                @Deprecated("Required by the Android TTS callback")
-                override fun onError(utteranceId: String?) = result(utteranceId, false)
-                override fun onError(utteranceId: String?, errorCode: Int) = result(utteranceId, false)
-                override fun onStop(utteranceId: String?, interrupted: Boolean) = result(utteranceId, false)
-            })
-            tts = engine
-            return engine
-        } finally {
-            if (tts !== engine) engine.shutdown()
-        }
+    private fun getEngine(run: SpeechRequest): AloudEngine? {
+        engine?.let { return it }
+        return engineFactory(applicationContext, run)?.also { engine = it }
     }
 
-    private fun result(id: String?, success: Boolean) {
-        handler.post { waiting?.takeIf { it.id == id }?.reply?.complete(success) }
-    }
-
-    private suspend fun speak(run: SpeechRequest, engine: TextToSpeech, span: ReadAloudSpan): Boolean = coroutineScope {
+    private suspend fun speak(run: SpeechRequest, engine: AloudEngine, span: ReadAloudSpan): Boolean = coroutineScope {
         val range = span.range
         if (range.text.isBlank()) return@coroutineScope true
+        val round = speechRound
         val map = run.mapTiming
-        val timing = map?.let { SpokenTiming(range.text, engine.voice?.locale ?: Locale.forLanguageTag(run.language)) }
-        val pending = PendingSpeech(UUID.randomUUID().toString(), timing)
+        val timing = map?.let { SpokenTiming(range.text, engine.locale ?: Locale.forLanguageTag(run.language)) }
         val whole = SpeechChunk(range.start, range.end)
+        run.state.value = run.state.value.copy(chunk = whole)
         var worker: Job? = null
-        waiting = pending
         try {
-            if (engine.speak(range.text, TextToSpeech.QUEUE_FLUSH, null, pending.id) != TextToSpeech.SUCCESS) return@coroutineScope false
-            run.state.value = run.state.value.copy(chunk = whole)
             if (timing != null && map != null) worker = launch {
                 combine(timing.sentence, run.timingEnabled) { offsets, enabled -> offsets.takeIf { enabled } }
                     .distinctUntilChanged().collectLatest { offsets ->
@@ -372,20 +374,19 @@ class ReadAloudService : Service() {
                         } catch (_: RuntimeException) {
                             null // An unavailable highlight must not stop speech.
                         }
-                        if (waiting === pending && request === run && !pending.reply.isCompleted &&
+                        if (speechRound == round && request === run &&
                             (offsets == null || offsets == timing.sentence.value)
                         ) {
                             run.state.value = run.state.value.copy(chunk = mapped ?: whole)
                         }
                     }
             }
-            withTimeoutOrNull(UTTERANCE_TIMEOUT) { pending.reply.await() } == true
+            withTimeoutOrNull(UTTERANCE_TIMEOUT) {
+                engine.speak(range.text) { start, end -> timing?.offer(start, end) }
+            } == true
         } finally {
             worker?.cancel()
-            if (waiting === pending) {
-                waiting = null
-                clearChunk(run)
-            }
+            if (speechRound == round) clearChunk(run)
         }
     }
 
@@ -411,9 +412,9 @@ class ReadAloudService : Service() {
     private fun interrupt(keepFocus: Boolean = false) {
         job?.cancel()
         job = null
-        waiting = null
+        speechRound++
         request?.let(::clearChunk)
-        tts?.stop()
+        engine?.stop()
         if (!keepFocus) {
             focusOwner = null
             focus?.let { audio.abandonAudioFocusRequest(it) }
@@ -427,8 +428,9 @@ class ReadAloudService : Service() {
         finish(phase)
     }
 
-    private fun finish(phase: SpeechPhase) {
-        request?.state?.value = SpeechState(phase)
+    private fun finish(phase: SpeechPhase, note: SpeechNote? = null) {
+        if (phase == SpeechPhase.Failed) Log.w(TAG, if (note == null) "speech failed" else "speech failed: $note")
+        request?.state?.value = SpeechState(phase, note = note)
         clearSession()
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
@@ -436,8 +438,8 @@ class ReadAloudService : Service() {
 
     private fun clearSession() {
         interrupt()
-        tts?.shutdown()
-        tts = null
+        engine?.release()
+        engine = null
         media?.release()
         media = null
         if (receiverRegistered) { unregisterReceiver(noisy); receiverRegistered = false }
@@ -466,6 +468,11 @@ class ReadAloudService : Service() {
         private val limit get() = minOf(2000, TextToSpeech.getMaxSpeechInputLength())
         // Main-thread only. A stopped or replaced request cannot be resurrected by a queued Intent.
         private var pending: SpeechRequest? = null
+
+        /** Which engine a session speaks with. A seam for tests; the default picks by the session's own config. */
+        internal var engineFactory: (Context, SpeechRequest) -> AloudEngine? = { context, run ->
+            if (run.externalTts != null) HttpTtsEngine(context, run.externalTts) else AndroidTtsEngine(context)
+        }
 
         fun start(context: Context, run: SpeechRequest) {
             pending = run

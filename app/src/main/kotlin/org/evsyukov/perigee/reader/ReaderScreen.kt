@@ -481,6 +481,7 @@ fun ReaderScreen(file: File, onClose: () -> Unit, viewModel: ReaderViewModel = v
                 viewModel.startReadingSetup()
                 panel = Panel.None
             },
+            onSpeechRestart = viewModel::restartSpeechWithCurrentSettings,
             onChange = viewModel::updatePrefs,
         ) { panel = Panel.None }
         Panel.AppearanceProfiles -> AppearanceProfilesSheet(

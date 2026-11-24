@@ -49,6 +49,7 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -56,7 +57,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
@@ -66,10 +69,13 @@ import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import kotlin.math.roundToInt
+import org.evsyukov.perigee.PlainHttpWarning
 import org.evsyukov.perigee.R
 import org.evsyukov.perigee.data.Alignment as TextAlignment
 import org.evsyukov.perigee.data.Bookmark
@@ -77,9 +83,17 @@ import org.evsyukov.perigee.data.ColorScheme
 import org.evsyukov.perigee.data.Hinting
 import org.evsyukov.perigee.data.PageTurn
 import org.evsyukov.perigee.data.Quote
+import org.evsyukov.perigee.data.ReadAloudEngine
 import org.evsyukov.perigee.data.ReaderPrefs
+import org.evsyukov.perigee.data.ReaderPreferences
 import org.evsyukov.perigee.data.TapScheme
 import org.evsyukov.perigee.engine.EngineSettings
+import org.evsyukov.perigee.isPlainHttp
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import org.json.JSONException
+import org.json.JSONObject
 
 // ---------------------------------------------------------------- settings
 
@@ -99,6 +113,8 @@ internal fun SettingsSheet(
     onStyles: () -> Unit,
     onAppearanceProfiles: () -> Unit,
     onReadingSetup: () -> Unit,
+    /** Stops and restarts an active Read aloud session, so engine and voice changes speak at once. */
+    onSpeechRestart: () -> Unit,
     onChange: ((ReaderPrefs) -> ReaderPrefs) -> Unit,
     onDismiss: () -> Unit,
 ) {
@@ -353,6 +369,7 @@ internal fun SettingsSheet(
                         onChange { it.copy(rulerDimOutside = on) }
                     }
                 }
+                ReadAloudSection(prefs, onChange, onSpeechRestart)
             }
         }
     }
@@ -360,6 +377,137 @@ internal fun SettingsSheet(
 
 /** The share of the screen height the settings take; the page shows above them. */
 internal const val SETTINGS_SHARE = 0.5f
+
+/** How Read aloud speaks: the device's own synthesis, or an OpenAI-format server found by probing. */
+@Composable
+private fun ReadAloudSection(
+    prefs: ReaderPrefs,
+    onChange: ((ReaderPrefs) -> ReaderPrefs) -> Unit,
+    onSpeechRestart: () -> Unit,
+) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    Choice(
+        R.string.speech_engine, prefs.readAloudEngine, ReadAloudEngine.entries, tag = "read-aloud-engine",
+        label = {
+            stringResource(if (it == ReadAloudEngine.Device) R.string.speech_engine_device else R.string.speech_engine_external)
+        },
+    ) { chosen ->
+        val was = prefs.readAloudEngine
+        onChange { it.copy(readAloudEngine = chosen) }
+        if (chosen != was) onSpeechRestart()
+    }
+    if (prefs.readAloudEngine != ReadAloudEngine.External) return
+    var address by rememberSaveable { mutableStateOf(prefs.externalTtsUrl) }
+    var key by remember { mutableStateOf(prefs.externalTtsKey) }
+    var warning by remember { mutableStateOf(false) }
+    fun commitAddress() {
+        if (address.trim() == prefs.externalTtsUrl) return
+        if (isPlainHttp(address)) warning = true else onChange { it.copy(externalTtsUrl = address.trim()) }
+    }
+    if (warning) {
+        PlainHttpWarning(
+            onSend = {
+                warning = false
+                onChange { it.copy(externalTtsUrl = address.trim()) }
+            },
+            onDismiss = { warning = false },
+        )
+    }
+    OutlinedTextField(
+        value = address,
+        onValueChange = { address = it },
+        singleLine = true,
+        label = { Text(stringResource(R.string.external_tts_url)) },
+        placeholder = { Text("https://…") },
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, imeAction = ImeAction.Done),
+        keyboardActions = KeyboardActions(onDone = { commitAddress() }),
+        modifier = Modifier.fillMaxWidth().testTag("external-tts-url").onFocusChanged { if (!it.hasFocus) commitAddress() },
+    )
+    OutlinedTextField(
+        value = key,
+        onValueChange = { key = it },
+        singleLine = true,
+        label = { Text(stringResource(R.string.external_tts_key)) },
+        visualTransformation = PasswordVisualTransformation(),
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = ImeAction.Done),
+        keyboardActions = KeyboardActions(onDone = { onChange { it.copy(externalTtsKey = key.trim()) } }),
+        modifier = Modifier.fillMaxWidth().testTag("external-tts-key").onFocusChanged { focus ->
+            if (!focus.hasFocus && key.trim() != prefs.externalTtsKey) onChange { it.copy(externalTtsKey = key.trim()) }
+        },
+    )
+    // The voices the server reported at detection time; empty while it has no list of its own.
+    val voices = externalVoices(prefs)
+    if (voices.isNotEmpty()) {
+        Choice(
+            R.string.speech_voice,
+            prefs.externalTtsVoice.takeIf { it in voices }.orEmpty(),
+            options = listOf("") + voices,
+            tag = "external-tts-voice",
+            label = { if (it.isBlank()) stringResource(R.string.speech_voice_auto) else it },
+        ) { picked ->
+            val was = prefs.externalTtsVoice
+            onChange { it.copy(externalTtsVoice = picked) }
+            if (picked != was) onSpeechRestart()
+        }
+    } else if (prefs.externalTtsUrl.isNotBlank()) {
+        // The server has not been probed yet: ask it for its voices without starting a session.
+        var refreshing by remember { mutableStateOf(false) }
+        var note by remember { mutableStateOf<SpeechNote?>(null) }
+        TextButton(
+            onClick = {
+                refreshing = true
+                note = null
+                scope.launch {
+                    val appPrefs = ReaderPreferences.get(context)
+                    note = withContext(Dispatchers.IO) {
+                        val session = ExternalTtsClient(
+                            url = prefs.externalTtsUrl.trim(),
+                            key = prefs.externalTtsKey.trim(),
+                            cached = Detected.fromJson(prefs.externalTtsDetected),
+                            chosenVoice = prefs.externalTtsVoice,
+                            store = { json -> appPrefs.update { it.copy(externalTtsDetected = json) } },
+                        )
+                        session.detect()
+                        session.failure
+                    }
+                    refreshing = false
+                }
+            },
+            enabled = !refreshing,
+            modifier = Modifier.testTag("external-tts-refresh"),
+        ) { Text(stringResource(R.string.external_tts_refresh)) }
+        note?.let {
+            Text(
+                stringResource(
+                    when (it) {
+                        SpeechNote.Unreachable -> R.string.speech_external_unreachable
+                        SpeechNote.Unauthorized -> R.string.speech_external_unauthorized
+                        SpeechNote.NotFound -> R.string.speech_external_not_found
+                        SpeechNote.Synthesis -> R.string.speech_external_synthesis
+                    },
+                ),
+                Modifier.testTag("external-tts-refresh-error"),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error,
+            )
+        }
+    }
+    Text(
+        stringResource(R.string.external_tts_hint),
+        Modifier.testTag("external-tts-hint"),
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+}
+
+/** The voice ids kept with the last successful detection, for the picker; an unreadable cache means none. */
+private fun externalVoices(prefs: ReaderPrefs): List<String> = try {
+    val list = JSONObject(prefs.externalTtsDetected).optJSONArray("voices") ?: return emptyList()
+    List(list.length()) { i -> list.optString(i, "") }.filter { it.isNotBlank() }
+} catch (_: JSONException) {
+    emptyList()
+}
 
 /** The next or previous value of a stepped range, staying inside it. */
 internal fun stepped(value: Int, direction: Int, range: IntProgression): Int =
