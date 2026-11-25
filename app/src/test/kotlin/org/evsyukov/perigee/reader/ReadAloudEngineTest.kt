@@ -6,8 +6,10 @@ import android.os.Looper
 import androidx.test.core.app.ApplicationProvider
 import java.util.Locale
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import org.evsyukov.perigee.data.ReaderPreferences
 import org.evsyukov.perigee.engine.ReadAloudSpan
 import org.evsyukov.perigee.engine.TextRange
@@ -26,6 +28,7 @@ import org.robolectric.Shadows.shadowOf
 @RunWith(RobolectricTestRunner::class)
 class ReadAloudEngineTest {
     private val defaultFactory = ReadAloudService.engineFactory
+    private val defaultCacheClear = ReadAloudService.clearExternalTtsDetected
     private val context: Application = ApplicationProvider.getApplicationContext()
 
     @Before
@@ -36,11 +39,13 @@ class ReadAloudEngineTest {
     @After
     fun restoreTheDefaultEngine() {
         ReadAloudService.engineFactory = defaultFactory
+        ReadAloudService.clearExternalTtsDetected = defaultCacheClear
     }
 
     private class FakeEngine(
         val prepareResult: Boolean = true,
         override var failure: SpeechNote? = null,
+        val beforePrepare: suspend () -> Unit = {},
     ) : AloudEngine {
         override val locale: Locale? = Locale.US
         val spoken = mutableListOf<String>()
@@ -48,7 +53,10 @@ class ReadAloudEngineTest {
         val released = CompletableDeferred<Unit>()
         private var stopped = false
 
-        override suspend fun prepare(language: String): Boolean = prepareResult
+        override suspend fun prepare(language: String): Boolean {
+            beforePrepare()
+            return prepareResult
+        }
 
         override fun setRate(rate: Float) = true
 
@@ -73,10 +81,13 @@ class ReadAloudEngineTest {
         }
     }
 
-    private fun request(span: ReadAloudSpan, external: ExternalTtsConfig? = null) = SpeechRequest(
+    private fun request(span: ReadAloudSpan, external: ExternalTtsConfig? = null, beforeLoad: () -> Unit = {}) = SpeechRequest(
         language = "en-US",
         start = span.range.start,
-        load = { at, _ -> span.takeIf { at == span.range.start } },
+        load = { at, _ ->
+            beforeLoad()
+            span.takeIf { at == span.range.start }
+        },
         previous = { null },
         moveTo = { true },
         mapTiming = { _, start, end -> SpeechChunk("s$start", "e$end") },
@@ -162,6 +173,13 @@ class ReadAloudEngineTest {
         val prefs = ReaderPreferences.get(context)
         val detected = """{"base":"http://tts.local","path":"/v1/audio/speech","model":"tts-1","voice":"alloy","kind":"raw","field":""}"""
         prefs.update { it.copy(externalTtsDetected = detected) }
+        val resetStarted = CompletableDeferred<Unit>()
+        val allowReset = CompletableDeferred<Unit>()
+        ReadAloudService.clearExternalTtsDetected = { context ->
+            resetStarted.complete(Unit)
+            allowReset.await()
+            defaultCacheClear(context)
+        }
 
         val service = Robolectric.buildService(ReadAloudService::class.java).create()
         try {
@@ -175,6 +193,31 @@ class ReadAloudEngineTest {
             shadowOf(Looper.getMainLooper()).idle()
         }
         assertEquals(SpeechPhase.Ended, run.state.value.phase)
-        assertEquals("the detection cache does not outlive a manual stop", "", prefs.prefs.first().externalTtsDetected)
+        resetStarted.await()
+
+        val observed = mutableListOf<String>()
+        val nextStarted = CompletableDeferred<Unit>()
+        val next = request(span, external = ExternalTtsConfig("http://tts.local", ""), beforeLoad = { nextStarted.complete(Unit) })
+        val engine = FakeEngine(beforePrepare = { observed += prefs.prefs.first().externalTtsDetected })
+        val nextService = Robolectric.buildService(ReadAloudService::class.java).create()
+        try {
+            ReadAloudService.engineFactory = { _, _ -> engine }
+            ReadAloudService.start(context, next)
+            nextService.get().onStartCommand(checkNotNull(shadowOf(context).nextStartedService), 0, 2)
+            nextStarted.await()
+            allowReset.complete(Unit)
+            withTimeout(5_000) {
+                while (observed.isEmpty()) {
+                    shadowOf(Looper.getMainLooper()).idle()
+                    delay(1)
+                }
+            }
+            assertEquals("an immediate restart must wait for the manual invalidation", listOf(""), observed)
+        } finally {
+            allowReset.complete(Unit)
+            ReadAloudService.stop(next)
+            nextService.destroy()
+            shadowOf(Looper.getMainLooper()).idle()
+        }
     }
 }

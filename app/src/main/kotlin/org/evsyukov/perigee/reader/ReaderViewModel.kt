@@ -401,7 +401,13 @@ class ReaderViewModel internal constructor(
         viewModelScope.launch { sync() }
     }
 
-    fun updatePrefs(change: (ReaderPrefs) -> ReaderPrefs) {
+    fun updatePrefs(change: (ReaderPrefs) -> ReaderPrefs) = updatePrefs(change, restartSpeech = false)
+
+    internal fun restartSpeechWithCurrentSettings(change: (ReaderPrefs) -> ReaderPrefs) = updatePrefs(change, restartSpeech = true)
+
+    private fun updatePrefs(change: (ReaderPrefs) -> ReaderPrefs, restartSpeech: Boolean) {
+        val restart = restartSpeech && speechRequest != null && _speech.value != null
+        if (restart) stopSpeech()
         viewModelScope.launch {
             preferences.update { old ->
                 change(old).also { new ->
@@ -412,6 +418,9 @@ class ReaderViewModel internal constructor(
                             "font=${Diagnostics.token(new.fontFace)} size=${new.fontSize}"
                     }
                 }
+            }
+            if (restart && speechRequest == null && _speech.value == null) {
+                startSpeech(prefs = preferences.prefs.first())
             }
         }
     }
@@ -752,14 +761,13 @@ class ReaderViewModel internal constructor(
         }
     }
 
-    internal fun startSpeech(fromSelection: Boolean = false) {
+    internal fun startSpeech(fromSelection: Boolean = false, prefs: ReaderPrefs = _prefs.value) {
         val open = reader ?: return
         val shown = state.value
         val book = shown.book ?: return
         if (shown.busy || turnsWaiting != 0) return
         val start = if (fromSelection) shown.selection?.range?.start ?: return else open.position
         stopSpeech()
-        val prefs = _prefs.value
         val external = prefs.readAloudEngine.takeIf { it == ReadAloudEngine.External }
             ?.takeIf { prefs.externalTtsUrl.isNotBlank() }
             ?.let { ExternalTtsConfig(prefs.externalTtsUrl.trim(), prefs.externalTtsKey.trim()) }
@@ -804,13 +812,6 @@ class ReaderViewModel internal constructor(
     internal fun speechCommand(command: SpeechCommand, rate: Float = 1f) {
         if (command == SpeechCommand.Stop) stopSpeech()
         else speechRequest?.dispatch?.invoke(command, rate)
-    }
-
-    /** A change of engine or voice speaks at once: an active session is started over from where it stands. */
-    internal fun restartSpeechWithCurrentSettings() {
-        if (speechRequest == null || _speech.value == null) return
-        stopSpeech()
-        startSpeech()
     }
 
     /** Reads geometry from the published page without moving the cursor or repainting the book. */
