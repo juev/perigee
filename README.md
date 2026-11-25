@@ -14,6 +14,7 @@ Works today:
 - Layout by the native engine: hyphenation by the dictionary of the book's language, justification, hanging punctuation, footnotes at the bottom of the page, two pages side by side in landscape.
 - Reading settings modelled on ReadEra: colour scheme, font, size, boldness, line spacing, alignment, paragraph spacing and indent, margins. They take the lower half of the screen, so the page above shows each change as it is made.
 - Table of contents, bookmarks, highlights with notes, search in the book, return from a jump.
+- Reading aloud: the device's text-to-speech follows the page, keeps going with the screen off, is driven from media controls and can highlight the spoken sentence. Or an external TTS server in OpenAI format: nothing is configured but its address and, optionally, an API key — the endpoint, model, voices and answer format are found by probing, one of the server's voices can be picked, and the speech follows the reading position the same way.
 
 - A library of the books in the folders you pick: shelves, authors, series, collections, search.
 - OPDS catalogues, 1.x and 2.0: browsing, search, downloading into the library with progress and a cancel; Project Gutenberg is suggested out of the box.

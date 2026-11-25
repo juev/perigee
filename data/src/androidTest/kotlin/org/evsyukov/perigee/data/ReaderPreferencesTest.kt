@@ -172,4 +172,32 @@ class ReaderPreferencesTest {
         jobs.removeAt(jobs.lastIndex).cancelAndJoin()
         assertEquals("and back, after another", kept, preferences(store(file)).prefs.first())
     }
+
+    @Test
+    fun theReadAloudEngineAndItsExternalServerSettingsOutliveARestart() = runBlocking<Unit> {
+        val defaults = preferences(store(fresh)).prefs.first()
+        assertEquals("a fresh install reads with the device's own speech", ReadAloudEngine.Device, defaults.readAloudEngine)
+        assertEquals("with no server address", "", defaults.externalTtsUrl)
+        assertEquals("no key", "", defaults.externalTtsKey)
+        assertEquals("no voice picked", "", defaults.externalTtsVoice)
+        assertEquals("and no detection cached", "", defaults.externalTtsDetected)
+
+        val detected = """{"base":"https://tts.local","path":"/v1/audio/speech","model":"tts-1","voice":"alloy","kind":"raw","field":"","voices":["alloy","nova"]}"""
+        preferences(store(file)).update {
+            it.copy(
+                readAloudEngine = ReadAloudEngine.External,
+                externalTtsUrl = "http://tts.local:8000",
+                externalTtsKey = "sk-test",
+                externalTtsVoice = "nova",
+                externalTtsDetected = detected,
+            )
+        }
+        jobs.removeAt(jobs.lastIndex).cancelAndJoin()
+        val restarted = preferences(store(file)).prefs.first()
+        assertEquals(ReadAloudEngine.External, restarted.readAloudEngine)
+        assertEquals("http://tts.local:8000", restarted.externalTtsUrl)
+        assertEquals("sk-test", restarted.externalTtsKey)
+        assertEquals("nova", restarted.externalTtsVoice)
+        assertEquals(detected, restarted.externalTtsDetected)
+    }
 }

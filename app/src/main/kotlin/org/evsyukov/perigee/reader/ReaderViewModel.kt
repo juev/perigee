@@ -40,6 +40,7 @@ import org.evsyukov.perigee.data.ColorScheme
 import org.evsyukov.perigee.data.Hinting
 import org.evsyukov.perigee.data.Library
 import org.evsyukov.perigee.data.Quote
+import org.evsyukov.perigee.data.ReadAloudEngine
 import org.evsyukov.perigee.data.ReaderPreferences
 import org.evsyukov.perigee.data.ReaderPrefs
 import org.evsyukov.perigee.data.RemotePosition
@@ -758,6 +759,10 @@ class ReaderViewModel internal constructor(
         if (shown.busy || turnsWaiting != 0) return
         val start = if (fromSelection) shown.selection?.range?.start ?: return else open.position
         stopSpeech()
+        val prefs = _prefs.value
+        val external = prefs.readAloudEngine.takeIf { it == ReadAloudEngine.External }
+            ?.takeIf { prefs.externalTtsUrl.isNotBlank() }
+            ?.let { ExternalTtsConfig(prefs.externalTtsUrl.trim(), prefs.externalTtsKey.trim()) }
         lateinit var run: SpeechRequest
         run = SpeechRequest(
             language = speechLanguage,
@@ -783,6 +788,7 @@ class ReaderViewModel internal constructor(
                 }
             },
             timingEnabled = _prefs.map { it.highlightSpokenText },
+            externalTts = external,
         )
         speechRequest = run
         _speech.value = run.state.value
@@ -798,6 +804,13 @@ class ReaderViewModel internal constructor(
     internal fun speechCommand(command: SpeechCommand, rate: Float = 1f) {
         if (command == SpeechCommand.Stop) stopSpeech()
         else speechRequest?.dispatch?.invoke(command, rate)
+    }
+
+    /** A change of engine or voice speaks at once: an active session is started over from where it stands. */
+    internal fun restartSpeechWithCurrentSettings() {
+        if (speechRequest == null || _speech.value == null) return
+        stopSpeech()
+        startSpeech()
     }
 
     /** Reads geometry from the published page without moving the cursor or repainting the book. */

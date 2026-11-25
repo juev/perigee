@@ -56,6 +56,9 @@ enum class Hinting {
     Off,
 }
 
+/** How Read aloud speaks: the device's system TTS or an OpenAI-format server found by probing. */
+enum class ReadAloudEngine { Device, External }
+
 /** How the reader likes books shown. One set for all books, as in ReadEra. Sizes are in dp. */
 data class ReaderPrefs(
     val pageTurn: PageTurn = PageTurn.Horizontal,
@@ -97,6 +100,15 @@ data class ReaderPrefs(
     val twoPagesInLandscape: Boolean = true,
     val volumeKeysTurnPages: Boolean = true,
     val highlightSpokenText: Boolean = false,
+    val readAloudEngine: ReadAloudEngine = ReadAloudEngine.Device,
+    /** Base address of an OpenAI-format speech server; the endpoint, model and response format are found by probing. */
+    val externalTtsUrl: String = "",
+    /** Sent as `Authorization: Bearer` when not blank. */
+    val externalTtsKey: String = "",
+    /** The voice picked from the server's list; empty lets the server's first one speak. */
+    val externalTtsVoice: String = "",
+    /** The last successful probe as JSON: base, path, model, voice, kind, field. Empty means not detected. */
+    val externalTtsDetected: String = "",
     val readingRuler: Boolean = false,
     /** Percent of available vertical travel (0 = top, 100 = bottom). */
     val rulerPosition: Int = 50,
@@ -397,6 +409,11 @@ class ReaderPreferences private constructor(private val store: DataStore<Prefere
             twoPagesInLandscape = p[TWO_PAGES] ?: d.twoPagesInLandscape,
             volumeKeysTurnPages = p[VOLUME_KEYS] ?: d.volumeKeysTurnPages,
             highlightSpokenText = p[HIGHLIGHT_SPOKEN_TEXT] ?: d.highlightSpokenText,
+            readAloudEngine = p[READ_ALOUD_ENGINE].enumOr(d.readAloudEngine),
+            externalTtsUrl = p[EXTERNAL_TTS_URL] ?: d.externalTtsUrl,
+            externalTtsKey = p[EXTERNAL_TTS_KEY] ?: d.externalTtsKey,
+            externalTtsVoice = p[EXTERNAL_TTS_VOICE] ?: d.externalTtsVoice,
+            externalTtsDetected = p[EXTERNAL_TTS_DETECTED] ?: d.externalTtsDetected,
             readingRuler = p[READING_RULER] ?: d.readingRuler,
             rulerPosition = (p[RULER_POSITION] ?: d.rulerPosition).coerceIn(ReaderPrefs.RULER_POSITIONS),
             rulerHeight = (p[RULER_HEIGHT] ?: d.rulerHeight).coerceIn(ReaderPrefs.RULER_HEIGHTS),
@@ -443,6 +460,11 @@ class ReaderPreferences private constructor(private val store: DataStore<Prefere
         p[TWO_PAGES] = v.twoPagesInLandscape
         p[VOLUME_KEYS] = v.volumeKeysTurnPages
         p[HIGHLIGHT_SPOKEN_TEXT] = v.highlightSpokenText
+        p[READ_ALOUD_ENGINE] = v.readAloudEngine.name
+        p[EXTERNAL_TTS_URL] = v.externalTtsUrl
+        p[EXTERNAL_TTS_KEY] = v.externalTtsKey
+        p[EXTERNAL_TTS_VOICE] = v.externalTtsVoice
+        p[EXTERNAL_TTS_DETECTED] = v.externalTtsDetected
         p[READING_RULER] = v.readingRuler
         p[RULER_POSITION] = v.rulerPosition.coerceIn(ReaderPrefs.RULER_POSITIONS)
         p[RULER_HEIGHT] = v.rulerHeight.coerceIn(ReaderPrefs.RULER_HEIGHTS)
@@ -495,6 +517,11 @@ class ReaderPreferences private constructor(private val store: DataStore<Prefere
         private val TWO_PAGES = booleanPreferencesKey("two_pages")
         private val VOLUME_KEYS = booleanPreferencesKey("volume_keys")
         private val HIGHLIGHT_SPOKEN_TEXT = booleanPreferencesKey("highlight_spoken_text")
+        private val READ_ALOUD_ENGINE = stringPreferencesKey("read_aloud_engine")
+        private val EXTERNAL_TTS_URL = stringPreferencesKey("external_tts_url")
+        private val EXTERNAL_TTS_KEY = stringPreferencesKey("external_tts_key")
+        private val EXTERNAL_TTS_VOICE = stringPreferencesKey("external_tts_voice")
+        private val EXTERNAL_TTS_DETECTED = stringPreferencesKey("external_tts_detected")
         private val READING_RULER = booleanPreferencesKey("reading_ruler")
         private val RULER_POSITION = intPreferencesKey("ruler_position")
         private val RULER_HEIGHT = intPreferencesKey("ruler_height")

@@ -195,9 +195,15 @@ private fun SpeechControls(
 ) {
     val phase = speech?.phase
     if (phase == null || phase == SpeechPhase.Ended || phase == SpeechPhase.NoVoice || phase == SpeechPhase.Failed) {
-        val error = when (phase) {
-            SpeechPhase.NoVoice -> R.string.speech_no_voice
-            SpeechPhase.Failed -> R.string.speech_failed
+        val error = when {
+            phase == SpeechPhase.NoVoice -> R.string.speech_no_voice
+            phase == SpeechPhase.Failed -> when (speech?.note) {
+                SpeechNote.Unreachable -> R.string.speech_external_unreachable
+                SpeechNote.Unauthorized -> R.string.speech_external_unauthorized
+                SpeechNote.NotFound -> R.string.speech_external_not_found
+                SpeechNote.Synthesis -> R.string.speech_external_synthesis
+                null -> R.string.speech_failed
+            }
             else -> null
         }
         if (error != null) Text(stringResource(error), Modifier.padding(horizontal = 12.dp), color = MaterialTheme.colorScheme.error)

@@ -1,0 +1,2 @@
+# The native engine applies these with `git apply`; CRLF in the working copy breaks it.
+*.patch eol=lf
