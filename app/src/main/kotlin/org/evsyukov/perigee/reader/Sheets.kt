@@ -113,8 +113,7 @@ internal fun SettingsSheet(
     onStyles: () -> Unit,
     onAppearanceProfiles: () -> Unit,
     onReadingSetup: () -> Unit,
-    /** Stops and restarts an active Read aloud session, so engine and voice changes speak at once. */
-    onSpeechRestart: () -> Unit,
+    onReadAloud: () -> Unit,
     onChange: ((ReaderPrefs) -> ReaderPrefs) -> Unit,
     onDismiss: () -> Unit,
 ) {
@@ -343,6 +342,9 @@ internal fun SettingsSheet(
                 TextButton(onClick = onReadingSetup, modifier = Modifier.testTag("reading-setup-open")) {
                     Text(stringResource(R.string.reading_setup_title))
                 }
+                TextButton(onClick = onReadAloud, modifier = Modifier.testTag("read-aloud-settings-open")) {
+                    Text(stringResource(R.string.read_aloud))
+                }
                 // The owner's CSS opens on a screen of its own: a sheet is no place to write in.
                 Column(Modifier.fillMaxWidth().clickable(onClick = onStyles).padding(vertical = 6.dp).testTag("styles-open")) {
                     Text(stringResource(R.string.setting_styles), style = MaterialTheme.typography.bodyLarge)
@@ -369,7 +371,6 @@ internal fun SettingsSheet(
                         onChange { it.copy(rulerDimOutside = on) }
                     }
                 }
-                ReadAloudSection(prefs, onChange, onSpeechRestart)
             }
         }
     }
@@ -378,12 +379,41 @@ internal fun SettingsSheet(
 /** The share of the screen height the settings take; the page shows above them. */
 internal const val SETTINGS_SHARE = 0.5f
 
+/** Speech settings apart from the much longer appearance and reading controls. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+internal fun ReadAloudSheet(
+    prefs: ReaderPrefs,
+    onSpeechChange: ((ReaderPrefs) -> ReaderPrefs) -> Unit,
+    onChange: ((ReaderPrefs) -> ReaderPrefs) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+    ) {
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+                .navigationBarsPadding()
+                .padding(horizontal = 20.dp)
+                .padding(bottom = 16.dp)
+                .testTag("read-aloud-settings-sheet"),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            Text(stringResource(R.string.read_aloud), style = MaterialTheme.typography.titleMedium)
+            ReadAloudSection(prefs, onChange, onSpeechChange)
+        }
+    }
+}
+
 /** How Read aloud speaks: the device's own synthesis, or an OpenAI-format server found by probing. */
 @Composable
 private fun ReadAloudSection(
     prefs: ReaderPrefs,
     onChange: ((ReaderPrefs) -> ReaderPrefs) -> Unit,
-    onSpeechRestart: () -> Unit,
+    onSpeechChange: ((ReaderPrefs) -> ReaderPrefs) -> Unit,
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -394,8 +424,7 @@ private fun ReadAloudSection(
         },
     ) { chosen ->
         val was = prefs.readAloudEngine
-        onChange { it.copy(readAloudEngine = chosen) }
-        if (chosen != was) onSpeechRestart()
+        if (chosen != was) onSpeechChange { it.copy(readAloudEngine = chosen) }
     }
     if (prefs.readAloudEngine != ReadAloudEngine.External) return
     var address by rememberSaveable { mutableStateOf(prefs.externalTtsUrl) }
@@ -447,8 +476,7 @@ private fun ReadAloudSection(
             label = { if (it.isBlank()) stringResource(R.string.speech_voice_auto) else it },
         ) { picked ->
             val was = prefs.externalTtsVoice
-            onChange { it.copy(externalTtsVoice = picked) }
-            if (picked != was) onSpeechRestart()
+            if (picked != was) onSpeechChange { it.copy(externalTtsVoice = picked) }
         }
     } else if (prefs.externalTtsUrl.isNotBlank()) {
         // The server has not been probed yet: ask it for its voices without starting a session.

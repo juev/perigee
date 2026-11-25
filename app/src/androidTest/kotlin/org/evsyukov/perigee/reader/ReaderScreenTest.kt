@@ -67,6 +67,7 @@ import org.evsyukov.perigee.data.Accounts
 import org.evsyukov.perigee.data.ColorScheme
 import org.evsyukov.perigee.data.Library
 import org.evsyukov.perigee.data.PageTurn
+import org.evsyukov.perigee.data.ReadAloudEngine
 import org.evsyukov.perigee.data.ReaderPreferences
 import org.evsyukov.perigee.data.ReaderPrefs
 import org.evsyukov.perigee.data.TapScheme
@@ -349,6 +350,88 @@ class ReaderScreenTest {
         } finally {
             rule.runOnIdle { local.close() }
         }
+    }
+
+    @Test
+    fun changingTheSpeechEngineDuringPlaybackUsesTheNewSelection() {
+        runBlocking {
+            preferences.update {
+                it.copy(
+                    readAloudEngine = ReadAloudEngine.External,
+                    externalTtsUrl = "https://tts.local",
+                    externalTtsKey = "sk-test",
+                )
+            }
+        }
+        val requests = mutableListOf<SpeechRequest>()
+        val local = ReaderViewModel(activity.application, Library.get(activity),
+            startSpeechService = { _, run ->
+                requests += run
+                run.state.value = SpeechState(SpeechPhase.Playing)
+            }, bookOpened = {})
+        try {
+            edgeToEdge()
+            rule.setContent { MaterialTheme { ReaderScreen(book, onClose = {}, viewModel = local) } }
+            rule.waitUntil(TIMEOUT) { local.state.value.page != null && !local.state.value.busy }
+            openMenu()
+            rule.onNodeWithTag("readAloud").performClick()
+            rule.waitUntil(TIMEOUT) { requests.size == 1 }
+            assertEquals("https://tts.local", requests.single().externalTts?.baseUrl)
+
+            rule.onNodeWithContentDescription(string(R.string.action_settings)).performClick()
+            rule.onNodeWithTag("read-aloud-settings-open").performScrollTo().performClick()
+            waitForTag("read-aloud-settings-sheet")
+            rule.onNodeWithTag("read-aloud-engine").performScrollTo().performClick()
+            rule.onNodeWithText(string(R.string.speech_engine_device)).performClick()
+            assertNull("the external source is cut off before the preference write finishes", runBlocking { requests[0].load(requests[0].start, 4000) })
+            rule.waitUntil(TIMEOUT) { requests.size == 2 }
+            assertNull("Device must take effect before the restart", requests[1].externalTts)
+
+            rule.waitUntil(TIMEOUT) { local.prefs.value.readAloudEngine == ReadAloudEngine.Device }
+            rule.onNodeWithTag("read-aloud-engine").performScrollTo().performClick()
+            rule.onNodeWithText(string(R.string.speech_engine_external)).performClick()
+            rule.waitUntil(TIMEOUT) { requests.size == 3 }
+            assertEquals("External must take effect before the restart", "https://tts.local", requests[2].externalTts?.baseUrl)
+        } finally {
+            rule.runOnIdle { local.close() }
+        }
+    }
+
+    @Test
+    fun readAloudSettingsHaveTheirOwnSheetAndKeepExternalFieldsConditional() {
+        val detected = """{"base":"https://tts.local","path":"/v1/audio/speech","model":"tts-1","voice":"alloy","kind":"raw","field":"","voices":["alloy","nova"]}"""
+        runBlocking { preferences.update { it.copy(externalTtsDetected = detected) } }
+        show()
+        waitForBook()
+        openMenu()
+        rule.onNodeWithContentDescription(string(R.string.action_settings)).performClick()
+        rule.onNodeWithTag("read-aloud-settings-open").performScrollTo().performClick()
+        waitForTag("read-aloud-settings-sheet")
+        rule.onNodeWithTag("read-aloud-engine").assertIsDisplayed()
+        rule.onAllNodesWithTag("external-tts-url").assertCountEquals(0)
+        rule.onAllNodesWithTag("external-tts-key").assertCountEquals(0)
+
+        rule.onNodeWithTag("read-aloud-engine").performClick()
+        rule.onNodeWithText(string(R.string.speech_engine_external)).performClick()
+        waitForTag("external-tts-url")
+        rule.onNodeWithTag("external-tts-url").performTextInput("https://tts.local")
+        rule.onNodeWithTag("external-tts-url").performImeAction()
+        rule.onNodeWithTag("external-tts-key").performTextInput("sk-test")
+        rule.onNodeWithTag("external-tts-key").performImeAction()
+        rule.onNodeWithTag("external-tts-voice").performClick()
+        rule.onNodeWithText("nova").performClick()
+        waitFor("every speech setting is stored") {
+            model().prefs.value.let {
+                it.readAloudEngine == ReadAloudEngine.External && it.externalTtsUrl == "https://tts.local" &&
+                    it.externalTtsKey == "sk-test" && it.externalTtsVoice == "nova"
+            }
+        }
+
+        rule.onNodeWithTag("read-aloud-engine").performClick()
+        rule.onNodeWithText(string(R.string.speech_engine_device)).performClick()
+        rule.waitUntil(TIMEOUT) { model().prefs.value.readAloudEngine == ReadAloudEngine.Device }
+        rule.onAllNodesWithTag("external-tts-url").assertCountEquals(0)
+        rule.onAllNodesWithTag("external-tts-key").assertCountEquals(0)
     }
 
     @Test

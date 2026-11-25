@@ -271,9 +271,9 @@ class ReadAloudService : Service() {
             SpeechCommand.Stop -> {
                 // The reader stopped by hand: the next run probes the server anew. The write
                 // survives the scope's cancellation, or a quick destroy would lose it.
-                scope.launch {
+                cacheReset = scope.launch {
                     withContext(NonCancellable) {
-                        ReaderPreferences.get(applicationContext).update { it.copy(externalTtsDetected = "") }
+                        clearExternalTtsDetected(applicationContext)
                     }
                 }
                 finish(SpeechPhase.Ended)
@@ -320,6 +320,7 @@ class ReadAloudService : Service() {
             }
             if (paused) return@launch publish(SpeechPhase.Paused)
             publish(SpeechPhase.Starting)
+            if (run.externalTts != null) cacheReset?.join()
             val engine = getEngine(run) ?: return@launch finish(SpeechPhase.Failed).also { Log.w(TAG, "no engine was made for the session") }
             Log.i(TAG, "speaking with ${engine.javaClass.simpleName} for ${run.language}")
             if (!engine.prepare(run.language)) {
@@ -475,10 +476,14 @@ class ReadAloudService : Service() {
         private val limit get() = minOf(2000, TextToSpeech.getMaxSpeechInputLength())
         // Main-thread only. A stopped or replaced request cannot be resurrected by a queued Intent.
         private var pending: SpeechRequest? = null
+        private var cacheReset: Job? = null
 
         /** Which engine a session speaks with. A seam for tests; the default picks by the session's own config. */
         internal var engineFactory: (Context, SpeechRequest) -> AloudEngine? = { context, run ->
             if (run.externalTts != null) HttpTtsEngine(context, run.externalTts) else AndroidTtsEngine(context)
+        }
+        internal var clearExternalTtsDetected: suspend (Context) -> Unit = { context ->
+            ReaderPreferences.get(context).update { it.copy(externalTtsDetected = "") }
         }
 
         fun start(context: Context, run: SpeechRequest) {
