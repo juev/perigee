@@ -1,0 +1,4 @@
+• Read aloud with Android voices or an external OpenAI-compatible TTS server. Perigee highlights the sentence as it reads.
+• Use TalkBack to read and navigate books.
+• Save appearance profiles, use a reading ruler, or try guided reading setup.
+• View your bookOrbit reading activity and achievements. Perigee keeps reading activity offline and syncs it when you reconnect.
