@@ -174,8 +174,9 @@ class AccountContractTest {
     @Test
     fun signingOutEndsTheSessionOnTheServer() = runBlocking<Unit> {
         val device = ContractDevice(context)
-        device.signIn()
+        assertEquals(DeviceChannel.Ready, device.signIn())
         val tokens = checkNotNull(device.accounts.tokens())
+        val credentials = server.jwt("GET", "/koreader/credentials").json().toString()
 
         device.orbit.signOut()
 
@@ -183,6 +184,10 @@ class AccountContractTest {
         assertEquals("the token is taken no more", 401, server.plain("GET", "/app-info", mapOf("authorization" to "Bearer ${tokens.access}")).code)
         assertEquals(401, server.plain("POST", "/auth/refresh", emptyMap(), JSONObject().put("refreshToken", tokens.refresh)).code)
         assertThrows(SignedOutException::class.java) { runBlocking { device.orbit.books("", 0) } }
+
+        assertEquals(DeviceChannel.Ready, device.signIn())
+        assertEquals(credentials, server.jwt("GET", "/koreader/credentials").json().toString())
+        assertEquals("the other reader keeps its original key", 200, server.koreader("GET", "/koreader/users/auth").code)
     }
 
     @Test

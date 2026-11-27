@@ -221,8 +221,8 @@ class BookOrbit(
     }
 
     private suspend fun signedIn(url: String, session: Session): DeviceChannel {
-        accounts.signIn(url, session.user, session.name.ifBlank { session.user }, session.tokens, session.version)
-        return deviceChannel()
+        val account = accounts.signIn(url, session.user, session.name.ifBlank { session.user }, session.tokens, session.version)
+        return settingUp.withLock { setUpDevice(account) }
     }
 
     /** Ends the session on the server, if it can be reached, and forgets the server either way. */
@@ -249,45 +249,75 @@ class BookOrbit(
      * Makes the devices' channel ready when that takes nothing from the reader:
      * a reader who has no user name there is given one. Says how things stand.
      */
-    suspend fun deviceChannel(): DeviceChannel = settingUp.withLock { setUpDevice() }
+    suspend fun deviceChannel(): DeviceChannel = settingUp.withLock {
+        setUpDevice(accounts.current() ?: throw SignedOutException())
+    }
 
-    private suspend fun setUpDevice(): DeviceChannel {
-        val account = accounts.current() ?: throw SignedOutException()
+    private suspend fun setUpDevice(account: Account): DeviceChannel {
+        still(account.deviceId)
         if (!supports(account.serverVersion)) return DeviceChannel.Unsupported
         val key = accounts.deviceKeyOf(account)
         if (key != null) {
-            return when (val state = probe(account, account.deviceUser, key)) {
-                DeviceChannel.PasswordNeeded -> state.also { accounts.saveDevice(account.deviceUser, "", ofDevice = account.deviceId) }
-                else -> state
-            }
+            val state = probe(account, account.deviceUser, key)
+            if (state != DeviceChannel.PasswordNeeded) return state
+            rememberDevice(account, account.deviceUser, "", state)
         }
-        val existing = jwt("GET", "/koreader/credentials")
+        val existing = jwt("GET", "/koreader/credentials", owner = account.deviceId)
         if (existing.code == 403) return DeviceChannel.NotAllowed
         if (!existing.ok) throw failure(existing)
         val credentials = existing.json()
-        val named = credentials?.optString("username").orEmpty()
+        val named = credentials?.textOf("username").orEmpty()
         if (named.isNotEmpty()) {
-            // The password was the reader's to choose, and the server does not give it back.
-            accounts.saveDevice(named, "", ofDevice = account.deviceId)
-            return if (credentials?.optBoolean("syncEnabled", true) == false) DeviceChannel.SwitchedOff else DeviceChannel.PasswordNeeded
+            return if (credentials?.optBoolean("syncEnabled", true) == false) {
+                rememberDevice(account, named, "", DeviceChannel.SwitchedOff)
+            } else {
+                connectExistingDevice(account, named)
+            }
         }
         val password = randomHex(16)
         // Names are the server's, not the reader's alone: the plain one may be taken.
         for (name in listOf(deviceName(account.user, ""), deviceName(account.user, "-" + randomHex(3)))) {
-            val created = jwt("POST", "/koreader/credentials", JSONObject().put("username", name).put("password", password))
+            val body = JSONObject().put("username", name).put("password", password)
+            val created = jwt("POST", "/koreader/credentials", body, owner = account.deviceId)
             when {
-                created.ok -> {
-                    accounts.saveDevice(name, md5(password), ofDevice = account.deviceId)
-                    return DeviceChannel.Ready
-                }
+                created.ok -> return rememberDevice(account, name, md5(password), DeviceChannel.Ready)
                 created.code == 403 -> return DeviceChannel.NotAllowed
                 created.code == 409 && "taken" in created.message -> continue
                 // Made meanwhile from elsewhere, as by the reader in the browser.
-                created.code == 409 -> return setUpDevice()
+                created.code == 409 -> return setUpDevice(account)
                 else -> throw failure(created)
             }
         }
         throw ServerResponseException(409, "no user name is free for the devices' channel")
+    }
+
+    private suspend fun connectExistingDevice(account: Account, user: String): DeviceChannel {
+        try {
+            val origin = URLEncoder.encode(account.url, "UTF-8")
+            val (address, token) = access(stale = null, owner = account.deviceId)
+            still(account.deviceId)
+            val key = io {
+                Http(address).open("GET", "/koreader/plugin-package?origin=$origin", bearer(token)) { connection ->
+                    // A refusal here can be specific to the optional package route.
+                    if (connection.responseCode in 200..299) {
+                        connection.inputStream.use { readProvisionedDeviceKey(it, user) }
+                    } else null
+                }
+            }
+            if (key != null) {
+                val state = probe(account, user, key)
+                return rememberDevice(account, user, if (state == DeviceChannel.Ready) key else "", state)
+            }
+        } catch (e: IOException) {
+            // The package needs the plugin source and a key the server can export. The manual path still works.
+            if (e is AccountChangedException || e is SignedOutException) throw e
+        }
+        return rememberDevice(account, user, "", DeviceChannel.PasswordNeeded)
+    }
+
+    private suspend fun rememberDevice(account: Account, user: String, key: String, state: DeviceChannel): DeviceChannel {
+        if (!accounts.saveDevice(user, key, ofDevice = account.deviceId)) throw AccountChangedException()
+        return state
     }
 
     /**
@@ -296,12 +326,11 @@ class BookOrbit(
      */
     suspend fun devicePassword(password: String): DeviceChannel = settingUp.withLock {
         val account = accounts.current() ?: throw SignedOutException()
-        if (account.deviceUser.isEmpty()) return setUpDevice()
+        if (account.deviceUser.isEmpty()) return setUpDevice(account)
         val key = md5(password)
         val state = probe(account, account.deviceUser, key)
         if (state == DeviceChannel.PasswordNeeded) throw WrongPasswordException()
-        accounts.saveDevice(account.deviceUser, key, ofDevice = account.deviceId)
-        state
+        rememberDevice(account, account.deviceUser, key, state)
     }
 
     /**
@@ -316,16 +345,18 @@ class BookOrbit(
     suspend fun newDevicePassword(password: String): DeviceChannel = settingUp.withLock {
         require(password.length >= MIN_DEVICE_PASSWORD) { "the server wants $MIN_DEVICE_PASSWORD characters at least" }
         val account = accounts.current() ?: throw SignedOutException()
-        if (account.deviceUser.isEmpty()) return setUpDevice()
-        val reply = jwt("PATCH", "/koreader/credentials", JSONObject().put("password", password))
+        if (account.deviceUser.isEmpty()) return setUpDevice(account)
+        val reply = jwt("PATCH", "/koreader/credentials", JSONObject().put("password", password), owner = account.deviceId)
         if (!reply.ok) throw failure(reply)
         val key = md5(password)
-        accounts.saveDevice(account.deviceUser, key, ofDevice = account.deviceId)
+        if (!accounts.saveDevice(account.deviceUser, key, ofDevice = account.deviceId)) throw AccountChangedException()
         probe(account, account.deviceUser, key)
     }
 
     private suspend fun probe(account: Account, user: String, key: String): DeviceChannel {
+        still(account.deviceId)
         val reply = io { Http(account.url).call("GET", "/koreader/users/auth", headers = deviceHeaders(user, key)) }
+        still(account.deviceId)
         return when (reply.code) {
             200 -> DeviceChannel.Ready
             401 -> if ("permission" in reply.message) DeviceChannel.NotAllowed else DeviceChannel.PasswordNeeded
@@ -1597,18 +1628,6 @@ class BookOrbit(
         private fun JSONArray?.words(): Set<String> {
             if (this == null) return emptySet()
             return (0 until length()).map { optString(it).trim().lowercase() }.filter { it.isNotEmpty() }.toSet()
-        }
-
-        /** Reads at most [limit] bytes: a cover is not worth more memory than that. */
-        private fun java.io.InputStream.readNBytesUpTo(limit: Int): ByteArray {
-            val bytes = java.io.ByteArrayOutputStream()
-            val buffer = ByteArray(16 * 1024)
-            while (bytes.size() < limit) {
-                val read = read(buffer, 0, minOf(buffer.size, limit - bytes.size()))
-                if (read < 0) break
-                bytes.write(buffer, 0, read)
-            }
-            return bytes.toByteArray()
         }
 
         /** The file name of a Content-Disposition header, without any folders it may name. */

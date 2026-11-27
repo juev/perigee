@@ -1,7 +1,9 @@
 package org.evsyukov.perigee.sync
 
+import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.IOException
+import java.io.InputStream
 import java.net.HttpURLConnection
 import java.net.URL
 import org.json.JSONException
@@ -26,6 +28,17 @@ internal class Reply(val code: Int, val body: String) {
     val message: String get() = runCatching { json()?.opt("message")?.toString() }.getOrNull().orEmpty()
     val errorCode: String get() = runCatching { json()?.optString("errorCode") }.getOrNull().orEmpty()
     val retryAfter: Int get() = runCatching { json()?.optInt("retryAfterSeconds") }.getOrNull() ?: 0
+}
+
+internal fun InputStream.readNBytesUpTo(limit: Int): ByteArray {
+    val bytes = ByteArrayOutputStream()
+    val buffer = ByteArray(16 * 1024)
+    while (bytes.size() < limit) {
+        val read = read(buffer, 0, minOf(buffer.size, limit - bytes.size()))
+        if (read < 0) break
+        bytes.write(buffer, 0, read)
+    }
+    return bytes.toByteArray()
 }
 
 /**

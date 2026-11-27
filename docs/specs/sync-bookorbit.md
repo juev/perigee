@@ -70,14 +70,14 @@ Plain HTTP is allowed, because a server at home is often reached by a local addr
 The server keeps one user name and password of this channel per reader, the same for all their devices. `x-auth-key` is the MD5 of the password.
 
 - **The reader has none.** The app makes one: the user name is the reader's own, with a random ending when that is taken; the password is random and is never shown. Only its key is stored, sealed.
-- **The reader has one already**, as someone who uses KOReader. The server does not give the password back, and replacing it would cut the reader's other devices off. The app asks for the password, checks it with `GET koreader/users/auth`, and stores the key.
-- **The key stops being taken**, as after the password was changed in the browser: the key is dropped and the password is asked for again.
-- **The reader does not know the password**: the app made it up and was installed anew since, or signed out — the key went with its data — or they forgot. They type a new one, six characters at least, and the app sets it (`PATCH koreader/credentials`). Their other reading devices then need the new one too, which the screen says.
+- **The reader has one already**, as someone who uses KOReader. The app reuses a saved key if the server accepts it. Otherwise it uses the active bookOrbit session to request a package from `GET koreader/plugin-package`. The server builds the package from the existing credentials. The app reads the username and key, checks them with `GET koreader/users/auth` on the configured server, and stores the key sealed. This works after signing in with a password or SSO, including after signing out or reinstalling.
+- **The key stops being taken**, as after the password was changed in the browser. The app drops the rejected key. The next channel setup can fetch and verify the current key through the session.
+- **A usable package is unavailable**, as on a server without the plugin source or with legacy credentials. The app shows the manual password form. The reader can also explicitly set a new KOReader password (`PATCH koreader/credentials`). Their other reading devices then need the new one too, which the screen says.
 - **The reader is not allowed** to sync devices (permission `koreader_sync`), or syncing is switched off in their KOReader settings on the server: the app says so; the server's books can still be seen and downloaded.
 
 A reader for whom the app made the password and who later wants KOReader on the same server sets a new password in the server's settings and gives it to both.
 
-After password or OIDC sign-in, the first server screen already shows whether reading can sync. When the channel needs a password, the screen says that reading has not synced yet and shows the password form. The screen also shows when sync is switched off, the account lacks permission, or the server version is unsupported. Browsing and downloading are available while the channel is unavailable.
+After password or OIDC sign-in, the first server screen already shows whether reading can sync. When the channel needs a password, the screen says that reading has not synced yet and shows the password form. The screen also shows when sync is switched off, the account lacks permission, or the server version is unsupported. Browsing and downloading are available while the channel is unavailable. Reconnecting uses the same server account and the reading position rules below.
 
 The app checks the channel one caller at a time. A screen check that started before the reader entered the device password cannot replace the result of that password submission.
 
