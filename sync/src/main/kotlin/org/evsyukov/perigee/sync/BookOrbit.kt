@@ -823,9 +823,8 @@ class BookOrbit(
      * reader got to, status, rating and review, and the pages read. Nothing is done
      * for a server of a version the app was not made for.
      *
-     * A place the reader got to elsewhere, later than here, is not gone to: it
-     * is kept as an offer for the reader to decide about, and until they do
-     * the place here is not sent over it.
+     * Offers a different first place from elsewhere and later changes from
+     * elsewhere. While the reader decides, the place here stays unsent.
      *
      * @throws IncompatibleServerException
      * @throws DeviceChannelException when the devices' channel is not ready
@@ -1090,7 +1089,7 @@ class BookOrbit(
 
     /**
      * Brings one book's place in step, as when it is opened: there may be a
-     * later one from elsewhere to offer. Says nothing of a book the server has not.
+     * place from elsewhere to offer. Says nothing of a book the server has not.
      */
     suspend fun syncPlace(bookId: String): SyncReport = syncing.withLock {
         val book = library.book(bookId)?.takeIf { it.serverFileId != null } ?: return SyncReport()
@@ -1099,13 +1098,14 @@ class BookOrbit(
 
     private suspend fun syncPlaceOf(book: Book): SyncReport {
         val account = accounts.current() ?: throw SignedOutException()
-        val remote = device("GET", "/koreader/syncs/progress/${book.id}").json()?.takeIf { it.has("timestamp") }
+        val remote = device("GET", "/koreader/syncs/progress/${book.id}", owner = account.deviceId).json()
+        still(account.deviceId)
+        val current = library.book(book.id)?.takeIf { it.serverFileId == book.serverFileId } ?: return SyncReport()
         if (remote != null && remote.optString("device_id") != account.deviceId) {
             val at = remote.optLong("timestamp")
-            // Later than anything the reader did here or was told of before.
-            if (at > book.remoteSeenAt && at * 1000 > book.movedAt) {
+            if (at > current.remoteSeenAt && (current.remoteSeenAt == 0L || at > current.movedAt / 1000)) {
                 val progress = remote.optDouble("percentage", 0.0).toFloat().coerceIn(0f, 1f)
-                if (abs(progress - book.progress) < SAME_PLACE) {
+                if (abs(progress - current.progress) < SAME_PLACE) {
                     library.remoteSeen(book.id, at)
                 } else {
                     library.offer(RemotePosition(book.id, remote.textOf("progress").ifEmpty { null }, progress, remote.textOf("device"), at))
@@ -1115,23 +1115,27 @@ class BookOrbit(
         }
         // The reader has not decided about a place from elsewhere: theirs here is not sent over it.
         if (library.pendingOffer(book.id) != null) return SyncReport()
-        val xpointer = book.xpointer
-        if (!book.placeUnsent || xpointer == null) return SyncReport()
+        // The reader may have just applied an offer or chosen to stay while the GET was in flight.
+        val latest = library.book(book.id)?.takeIf { it.serverFileId == book.serverFileId } ?: return SyncReport()
+        val xpointer = latest.xpointer
+        if (!latest.placeUnsent || xpointer == null) return SyncReport()
         // The server (3.4 on) drops a place said to be older than the newest it knows. A reader who was shown a
         // later place from elsewhere and stayed has decided for the one here: it is sent as the later of the two.
-        val at = maxOf(book.movedAt / 1000, book.remoteSeenAt + 1)
+        val at = maxOf(latest.movedAt / 1000, latest.remoteSeenAt + 1)
         val body = JSONObject()
-            .put("document", book.id).put("percentage", book.progress.toDouble().coerceIn(0.0, 1.0)).put("progress", xpointer)
+            .put("document", book.id).put("percentage", latest.progress.toDouble().coerceIn(0.0, 1.0)).put("progress", xpointer)
             .put("device", deviceName).put("device_id", account.deviceId).put("timestamp", at)
         try {
-            device("PUT", "/koreader/syncs/progress", body)
+            device("PUT", "/koreader/syncs/progress", body, owner = account.deviceId)
         } catch (e: ServerResponseException) {
             if (e.code != 404) throw e
             // The server has the file no more.
+            still(account.deviceId)
             library.notOnServer(listOf(book.id))
             return SyncReport()
         }
-        library.placeSent(book.id, book.movedAt)
+        still(account.deviceId)
+        library.placeSent(book.id, latest.movedAt)
         return SyncReport(placesSent = 1)
     }
 
@@ -1366,8 +1370,10 @@ class BookOrbit(
     }
 
     /** A request through the devices' channel. */
-    private suspend fun device(method: String, path: String, body: JSONObject? = null): Reply {
-        val account = accounts.current() ?: throw SignedOutException()
+    private suspend fun device(method: String, path: String, body: JSONObject? = null, owner: String? = null): Reply {
+        val current = accounts.current()
+        if (owner != null && current?.deviceId != owner) throw AccountChangedException()
+        val account = current ?: throw SignedOutException()
         if (!supports(account.serverVersion)) throw IncompatibleServerException(account.serverVersion)
         // The key of the account read, not of one signed in since: a key never goes to another reader's server.
         val key = accounts.deviceKeyOf(account) ?: throw DeviceChannelException(DeviceChannel.PasswordNeeded)

@@ -293,7 +293,7 @@ data class Account(
 data class Tokens(val access: String, val accessExpiresAt: Long, val refresh: String, val refreshExpiresAt: Long)
 
 /**
- * A place in a book the reader got to somewhere else, later than here, and
+ * A place in a book the reader got to somewhere else and
  * has not decided about yet: go there, or stay.
  */
 @Entity(

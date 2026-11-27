@@ -196,16 +196,18 @@ class ReaderViewModelTest {
     @Test
     fun readerWhoStaysIsNotAskedAgain() {
         val model = opened()
-        model.forward(1)
         val id = model.state.value.book!!.id
+        untilTrue("the opening position is saved") { runBlocking { library.book(id)?.xpointer != null } }
         model.offered(RemotePosition(id, null, 0.9f, "KOReader", at = 100))
 
         onMain { model.declineOffer() }
 
         model.until("the offer is gone") { it.offer == null }
-        assertEquals(1, model.shown())
+        assertEquals(0, model.shown())
         assertNull(runBlocking { library.pendingOffer(id) })
-        assertEquals("remembered as seen", 100L, runBlocking { library.book(id) }!!.remoteSeenAt)
+        val choice = runBlocking { library.book(id) }!!
+        assertEquals("remembered as seen", 100L, choice.remoteSeenAt)
+        assertTrue("staying makes the opening position an explicit choice", choice.placeUnsent)
     }
 
     @Test

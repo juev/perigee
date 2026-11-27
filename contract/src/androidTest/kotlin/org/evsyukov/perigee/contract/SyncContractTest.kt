@@ -66,12 +66,26 @@ class SyncContractTest {
         val (book, file) = onDevice("Contract Media Css")
         assertNotNull("the server has this file", book.serverFileId)
         EngineDocument.open(context, file, 720, 1280).use { doc ->
+            // The position contract uses this same book. Give the first sync a known earlier place to reconcile.
             nextSecond()
-            // Where the book opens is not a move; the first page turn is.
+            val earlier = JSONObject().put("document", book.id).put("percentage", doc.progress.toDouble())
+                .put("progress", doc.xpointer()).put("device", "Kindle").put("device_id", "contract-first-position")
+                .put("timestamp", System.currentTimeMillis() / 1000)
+            assertEquals(200, server.koreader("PUT", "/koreader/syncs/progress", earlier).code)
             device.library.savePosition(book.id, doc.xpointer(), doc.progress)
+            nextSecond()
             assertTrue(doc.goToPage(doc.pageCount / 4))
             val here = doc.xpointer()
             device.library.savePosition(book.id, here, doc.progress)
+
+            val first = device.orbit.sync()
+            assertEquals(1, first.offers)
+            assertEquals(0, first.placesSent)
+            val earlierOffer = checkNotNull(device.library.pendingOffer(book.id))
+            assertEquals("Kindle", earlierOffer.device)
+            assertTrue(earlierOffer.at < fresh(book).movedAt / 1000)
+            assertEquals("contract-first-position", latest(book).getString("device_id"))
+            device.library.settleOffer(earlierOffer, stay = true)
 
             val sent = device.orbit.sync()
             assertEquals(1, sent.placesSent)
@@ -118,7 +132,7 @@ class SyncContractTest {
             // The reader goes there; from then on it is their place here, and the server is told so.
             nextSecond()
             device.library.savePosition(book.id, doc.xpointer(), doc.progress)
-            device.library.settleOffer(book.id)
+            device.library.settleOffer(offer)
             assertEquals(1, device.orbit.sync().placesSent)
             assertEquals(device.accounts.current()!!.deviceId, latest(book).getString("device_id"))
             assertNull(device.library.pendingOffer(book.id))
@@ -143,11 +157,12 @@ class SyncContractTest {
             assertEquals(200, server.koreader("PUT", "/koreader/syncs/progress", other).code)
 
             assertEquals(1, device.orbit.sync().offers)
-            assertEquals("Kindle", device.library.pendingOffer(book.id)?.device)
+            val offer = checkNotNull(device.library.pendingOffer(book.id))
+            assertEquals("Kindle", offer.device)
             assertEquals("contract-other", latest(book).getString("device_id"))
 
             // The reader says no. The place here was never sent, and now it is theirs to keep.
-            device.library.settleOffer(book.id)
+            device.library.settleOffer(offer, stay = true)
             nextSecond()
             val round = device.orbit.sync()
             assertEquals(1, round.placesSent)

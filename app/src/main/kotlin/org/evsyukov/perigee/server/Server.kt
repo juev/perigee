@@ -40,9 +40,9 @@ internal object Server {
     }
 
     /**
-     * A book was opened: asks the server whether the reader got further in it
-     * somewhere else, and for the quotes and bookmarks made there. A later
-     * place waits in the library as an offer. Says
+     * A book was opened: asks the server for the reader's place, quotes and
+     * bookmarks from elsewhere. A first differing or later place waits in
+     * the library as an offer. Says
      * nothing when the server cannot be asked; the next round of syncing asks.
      */
     suspend fun bookOpened(context: Context, bookId: String) {

@@ -5,7 +5,10 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import java.io.File
 import java.io.IOException
+import kotlinx.coroutines.async
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import org.evsyukov.perigee.data.Accounts
 import org.evsyukov.perigee.data.Book
 import org.evsyukov.perigee.data.Library
@@ -125,7 +128,7 @@ class SyncRoundTest {
         assertEquals(0.6f, library.pendingOffer(book.id)?.progress)
 
         // The reader chose to stay: what they read here is what counts now.
-        library.settleOffer(book.id)
+        library.settleOffer(offer, stay = true)
         assertEquals(1, orbit.sync().placesSent)
         assertEquals("/body/p[11]", JSONObject(puts().single().body).getString("progress"))
         assertNull("the place decided about is not offered again", library.pendingOffer(book.id))
@@ -141,7 +144,7 @@ class SyncRoundTest {
         assertEquals(1, orbit.sync().offers)
 
         // The reader stays without reading on: the place here was reached before the other one.
-        library.settleOffer(book.id)
+        library.settleOffer(checkNotNull(library.pendingOffer(book.id)), stay = true)
         assertEquals(1, orbit.sync().placesSent)
 
         val sent = JSONObject(puts().single().body)
@@ -160,7 +163,7 @@ class SyncRoundTest {
         // As the screen does when the reader agrees.
         later()
         library.savePosition(book.id, "/body/p[60]", 0.6f)
-        library.settleOffer(book.id)
+        library.settleOffer(checkNotNull(library.pendingOffer(book.id)))
 
         assertEquals(1, orbit.sync().placesSent)
         assertEquals("/body/p[60]", JSONObject(puts().single().body).getString("progress"))
@@ -178,18 +181,141 @@ class SyncRoundTest {
         assertEquals("KOReader", library.pendingOffer(book.id)?.device)
     }
 
+    private suspend fun openedWhileSyncWasOff(name: String): Book {
+        server.deviceSwitchedOn = false
+        val contents = "<FictionBook>the text of $name ${System.nanoTime()}</FictionBook>".toByteArray()
+        server.downloads[70] = Answer(200, contents, "application/x-fictionbook+xml")
+        val file = orbit.download(RemoteFile(7, 70, "fb2", contents.size.toLong()), name, context.cacheDir)
+        val book = library.open(file, name, "")
+        server.files[book.id] = 7L to 70L
+        library.onServer(book.id, 7, 70)
+        library.savePosition(book.id, "/body/p[1]", 0f)
+        elsewhere(book, 0.6, "/body/p[60]", secondsFromNow = -3600)
+        val failure = runCatching { orbit.syncPlace(book.id) }.exceptionOrNull()
+        assertEquals(DeviceChannel.SwitchedOff, (failure as? DeviceChannelException)?.state)
+        assertNull(library.pendingOffer(book.id))
+        return book
+    }
+
+    @Test
+    fun firstSyncAfterDownloadingAndOpeningOffersTheExistingServerPlace() = runBlocking<Unit> {
+        val book = openedWhileSyncWasOff("opened-offline")
+        assertFalse(fresh(book).placeUnsent)
+
+        server.deviceSwitchedOn = true
+        assertEquals(1, orbit.sync().offers)
+        assertTrue(puts().isEmpty())
+        val offer = checkNotNull(library.pendingOffer(book.id))
+        assertEquals("/body/p[60]", offer.xpointer)
+
+        library.settleOffer(offer, stay = true)
+        assertEquals(1, orbit.sync().placesSent)
+        val sent = JSONObject(puts().single().body)
+        assertEquals("/body/p[1]", sent.getString("progress"))
+        assertTrue(sent.getLong("timestamp") > offer.at)
+    }
+
+    @Test
+    fun firstSyncAfterReadingWithSyncOffWaitsBeforeSendingThePlaceHere() = runBlocking<Unit> {
+        val book = openedWhileSyncWasOff("read-offline")
+        later()
+        library.savePosition(book.id, "/body/p[10]", 0.1f)
+        assertTrue(fresh(book).placeUnsent)
+
+        server.deviceSwitchedOn = true
+        val first = orbit.sync()
+        assertTrue("no progress PUT before the choice, got ${puts().map { it.body }}", puts().isEmpty())
+        assertEquals(1, first.offers)
+        val offer = checkNotNull(library.pendingOffer(book.id))
+        assertEquals("/body/p[60]", offer.xpointer)
+
+        later()
+        library.savePosition(book.id, "/body/p[20]", 0.2f)
+        assertEquals(0, orbit.sync().offers)
+        assertTrue(puts().isEmpty())
+        assertEquals(offer, library.pendingOffer(book.id))
+    }
+
     @Test
     fun olderPlaceFromElsewhereGivesWayToTheOneHere() = runBlocking<Unit> {
         val book = shared("newer-here.fb2")
+        elsewhere(book, 0.0, "/body/p[1]", secondsFromNow = -60)
+        assertEquals(0, orbit.sync().offers)
+        assertTrue(fresh(book).remoteSeenAt > 0)
         later()
         library.savePosition(book.id, "/body/p[10]", 0.1f)
-        elsewhere(book, 0.6, "/body/p[60]", secondsFromNow = -3600)
+        elsewhere(book, 0.6, "/body/p[60]", secondsFromNow = -30)
 
         val report = orbit.sync()
 
         assertEquals(0, report.offers)
         assertEquals(1, report.placesSent)
         assertNull(library.pendingOffer(book.id))
+
+        elsewhere(book, 0.8, "/body/p[80]", secondsFromNow = 30)
+        assertEquals(1, orbit.sync().offers)
+        assertEquals("/body/p[80]", library.pendingOffer(book.id)?.xpointer)
+        assertEquals(1, puts().size)
+    }
+
+    @Test
+    fun emptyAndOwnPositionsLeaveFirstReconciliationOpen() = runBlocking<Unit> {
+        val book = shared("first-remote-after-empty.fb2")
+        assertEquals(0, orbit.sync().offers)
+        assertTrue(puts().isEmpty())
+        later()
+        library.savePosition(book.id, "/body/p[10]", 0.1f)
+        assertEquals(1, orbit.sync().placesSent)
+        assertEquals(0, orbit.sync().offers)
+        assertEquals(0L, fresh(book).remoteSeenAt)
+
+        elsewhere(book, 0.6, "/body/p[60]", secondsFromNow = -3600)
+        assertEquals(1, orbit.sync().offers)
+        assertEquals(1, puts().size)
+    }
+
+    @Test
+    fun roundWaitingForProgressSendsTheAcceptedPlace() = runBlocking<Unit> {
+        val book = shared("accepted-while-syncing.fb2")
+        later()
+        library.savePosition(book.id, "/body/p[10]", 0.1f)
+        elsewhere(book, 0.6, "/body/p[60]", secondsFromNow = -30)
+        assertEquals(1, orbit.sync().offers)
+        val offer = checkNotNull(library.pendingOffer(book.id))
+        val path = "/koreader/syncs/progress/${book.id}"
+        val asked = server.asked(path).size
+        server.hold(path)
+        val round = async { orbit.syncPlace(book.id) }
+        try {
+            withTimeout(5_000) { while (server.asked(path).size == asked) delay(10) }
+            later()
+            library.savePosition(book.id, checkNotNull(offer.xpointer), offer.progress)
+            library.settleOffer(offer)
+        } finally {
+            server.release(path)
+        }
+
+        assertEquals(1, round.await().placesSent)
+        assertEquals(offer.xpointer, JSONObject(puts().single().body).getString("progress"))
+    }
+
+    @Test
+    fun progressResponseBelongsToTheAccountThatAskedForIt() = runBlocking<Unit> {
+        val book = shared("progress-before-replacement.fb2")
+        elsewhere(book, 0.6, "/body/p[60]", secondsFromNow = -30)
+        val path = "/koreader/syncs/progress/${book.id}"
+        server.hold(path)
+        val round = async { runCatching { orbit.syncPlace(book.id) } }
+        try {
+            withTimeout(5_000) { while (server.asked(path).isEmpty()) delay(10) }
+            orbit.signIn(server.url, "reader", "right-password")
+        } finally {
+            server.release(path)
+        }
+
+        assertTrue(round.await().exceptionOrNull() is AccountChangedException)
+        assertNull(library.pendingOffer(book.id))
+        assertTrue(puts().isEmpty())
     }
 
     @Test
@@ -199,10 +325,11 @@ class SyncRoundTest {
         library.savePosition(book.id, "/body/p[10]", 0.5f)
         library.placeSent(book.id, fresh(book).movedAt)
         // The server names a place its own way; where it is in the book tells that it is the same one.
-        elsewhere(book, 0.5002, "/body/div/p[10]", secondsFromNow = 30)
+        elsewhere(book, 0.5002, "/body/div/p[10]", secondsFromNow = -30)
 
         assertEquals(0, orbit.sync().offers)
         assertNull(library.pendingOffer(book.id))
+        assertTrue(fresh(book).remoteSeenAt > 0)
     }
 
     @Test

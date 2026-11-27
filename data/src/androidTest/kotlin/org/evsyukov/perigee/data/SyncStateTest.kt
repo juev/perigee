@@ -161,7 +161,7 @@ class SyncStateTest {
         assertEquals("KOReader", library.pendingOffer(id)?.device)
         assertEquals(600L, book(id).remoteSeenAt)
 
-        library.settleOffer(id)
+        library.settleOffer(checkNotNull(library.pendingOffer(id)))
         assertNull(library.offerOf(id).first())
         assertEquals("what was decided about is remembered, not to be offered again", 600L, book(id).remoteSeenAt)
 

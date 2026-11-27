@@ -307,20 +307,24 @@ class ReaderViewModel internal constructor(
      * The reader goes to the place they got to elsewhere. It is a jump like
      * any other: Back returns to where they were.
      */
-    fun acceptOffer() = navigate { open ->
-        val offer = _state.value.offer ?: return@navigate
-        val shown = _state.value.page ?: return@navigate
-        // A place that cannot be found in this copy of the book is gone to by how far into the book it is.
-        val page = offer.xpointer?.let { open.goTo(it) } ?: open.goToPage((offer.progress * (shown.pageCount - 1)).roundToInt())
-        if (page.index != shown.index) jumpedFrom(shown.xpointer)
-        show(page)
-        library.settleOffer(offer.bookId)
+    fun acceptOffer() {
+        val offer = _state.value.offer ?: return
+        navigate { open ->
+            val shown = _state.value.page ?: return@navigate
+            if (library.pendingOffer(offer.bookId) != offer) return@navigate
+            val from = open.position
+            // A place that cannot be found in this copy of the book is gone to by how far into the book it is.
+            val page = offer.xpointer?.let { open.goTo(it) } ?: open.goToPage((offer.progress * (shown.pageCount - 1)).roundToInt())
+            if (open.position != from) jumpedFrom(from)
+            show(page)
+            library.settleOffer(offer)
+        }
     }
 
     /** The reader stays where they are; the place from elsewhere is not offered again. */
     fun declineOffer() {
         val offer = _state.value.offer ?: return
-        viewModelScope.launch { library.settleOffer(offer.bookId) }
+        viewModelScope.launch { layout.withLock { library.settleOffer(offer, stay = true) } }
     }
 
     /** The app is put away: the page is looked at no more, and what was read is to be sent. */

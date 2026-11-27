@@ -428,6 +428,9 @@ internal interface ReadingDao {
     )
     suspend fun savePosition(id: String, xpointer: String, progress: Float, at: Long)
 
+    @Query("UPDATE books SET movedAt = MAX(:at, movedAt + 1, pushedAt + 1) WHERE id = :id AND xpointer IS NOT NULL")
+    suspend fun keepPosition(id: String, at: Long)
+
     @Query("UPDATE books SET jumps = :jumps WHERE id = :id")
     suspend fun saveJumps(id: String, jumps: String)
 
