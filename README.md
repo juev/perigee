@@ -6,7 +6,7 @@ Perigee is a working name.
 
 ## Status
 
-The app is released on GitHub; 0.1.0 is the first release that is not a release candidate. Releases install with [Obtainium](https://github.com/ImranR98/Obtainium) or by hand; see [Installing](#installing).
+Perigee is available on Google Play and in GitHub releases. Version 0.1.0 was the first stable release. See [Installing](#installing) for Obtainium and manual installation.
 
 Works today:
 
@@ -22,7 +22,7 @@ Works today:
 
 - Syncing with bookOrbit: the place you got to, both ways, with a later place read elsewhere offered rather than jumped to; highlights with notes and bookmarks, both ways; status and rating; time spent reading for the server's statistics.
 
-Not there yet: listings in the stores, F-Droid and Google Play. A spike has shown that exact positions and highlights can be exchanged with bookOrbit for EPUB; see [docs/spikes/position-contract.md](docs/spikes/position-contract.md).
+The F-Droid listing is pending. A spike has shown that exact positions and highlights can be exchanged with bookOrbit for EPUB; see [docs/spikes/position-contract.md](docs/spikes/position-contract.md).
 
 The engine reads EPUB, FB2, FB3, MOBI (not KF8/AZW3), TXT, RTF, DOC, DOCX, ODT, HTML and CHM. The tests cover EPUB and FB2; the other formats have not been checked in Perigee.
 
@@ -32,7 +32,9 @@ Android 11 or later.
 
 ## Installing
 
-The app is installed from the APK attached to the project's [GitHub releases](https://github.com/juev/perigee/releases). From 0.1.0 a release has one APK, `perigee-<version>.apk`, for the phones of the last few years (`arm64-v8a`) and older 32-bit ones (`armeabi-v7a`). It does not run on x86 devices and emulators. Releases up to 0.1.0-rc11 had one APK for each of these and `x86_64`.
+Install Perigee from [Google Play](https://play.google.com/store/apps/details?id=org.evsyukov.perigee).
+
+You can also install the APK from the project's [GitHub releases](https://github.com/juev/perigee/releases). From 0.1.0 a release has one APK, `perigee-<version>.apk`, for the phones of the last few years (`arm64-v8a`) and older 32-bit ones (`armeabi-v7a`). It does not run on x86 devices and emulators. Releases up to 0.1.0-rc11 had one APK for each of these and `x86_64`.
 
 The app is on its way to F-Droid (#166). F-Droid will build the same APK from source and ship it with the same signature, so the app moves between F-Droid, Obtainium and a hand install without being removed.
 
