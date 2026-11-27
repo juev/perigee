@@ -77,7 +77,9 @@ The server keeps one user name and password of this channel per reader, the same
 
 A reader for whom the app made the password and who later wants KOReader on the same server sets a new password in the server's settings and gives it to both.
 
-The channel is looked at by one caller at a time: signing in and the screen opening together would otherwise each make a user name, or drop the key the other stored.
+After password or OIDC sign-in, the first server screen already shows whether reading can sync. When the channel needs a password, the screen says that reading has not synced yet and shows the password form. The screen also shows when sync is switched off, the account lacks permission, or the server version is unsupported. Browsing and downloading are available while the channel is unavailable.
+
+The app checks the channel one caller at a time. A screen check that started before the reader entered the device password cannot replace the result of that password submission.
 
 The app names itself with a `deviceId` made when the reader signs in (`perigee-<uuid>`), `deviceModel: Perigee` and its own version as `pluginVersion`. It never calls `koreader/plugin/sweeps`: with a version below 1.4.0 that switches off self-update of the reader's real KOReader plugin (`docs/spikes/position-contract.md`).
 

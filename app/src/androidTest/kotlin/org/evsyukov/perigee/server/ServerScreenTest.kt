@@ -273,6 +273,31 @@ class ServerScreenTest {
         assertEquals(book.path, opened?.path)
     }
 
+    @Test
+    fun devicePasswordIsAskedAtSignInAndDownloadsStillWork() {
+        val deviceUser = "kindle-of-mine"
+        server.deviceUser = deviceUser
+        server.deviceKey = FakeOrbit.md5("chosen in the browser")
+        serverHas(book(7, "Listed Title", 70))
+        server.downloads[70] = Answer(200, bookFile.readBytes(), "application/x-fictionbook+xml", mapOf("Content-Disposition" to "attachment; filename=\"listed.fb2\""))
+        server.hold("/books/query")
+        try {
+            show()
+            signIn()
+            waitForText(string(R.string.server_channel_password_needed, deviceUser))
+            rule.onNodeWithTag("server-channel-password").assertIsDisplayed()
+        } finally {
+            server.release("/books/query")
+        }
+
+        catalogue()
+        waitForText("Listed Title")
+        rule.onNodeWithText(string(R.string.catalog_download, "FB2")).performClick()
+        waitForText(string(R.string.catalog_downloaded))
+        assertEquals("Title In The File", runBlocking { library.books().first().single().title })
+        assertTrue(server.asked("/koreader/users/auth").isEmpty())
+    }
+
     private val onPage = hasAnyAncestor(hasTestTag("server-book-page"))
     private val onShelf = hasAnyAncestor(hasTestTag("server-books"))
 

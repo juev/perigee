@@ -169,6 +169,26 @@ class ServerViewModelTest {
     }
 
     @Test
+    fun providerSignInAsksForTheDevicePasswordBeforeTheCatalogueAnswers() {
+        server.deviceUser = "kindle-of-mine"
+        server.oidcProviders = JSONArray().put(provider("authelia", "Authelia"))
+        server.hold("/books/query")
+        try {
+            until("the account is looked up") { it.loaded }
+            model.signInThroughProvider(server.url)
+            val page = providerPage()
+            redirects.value = "bookorbit://oauth2-callback?code=c&state=${stateOf(page)}"
+
+            val signedIn = until("the reader is signed in") { it.account != null && !it.signingIn }
+            assertEquals(DeviceChannel.PasswordNeeded, signedIn.channel)
+            assertEquals("kindle-of-mine", signedIn.account?.deviceUser)
+            assertTrue(signedIn.books.isEmpty())
+        } finally {
+            server.release("/books/query")
+        }
+    }
+
+    @Test
     fun severalProvidersAreOfferedToChooseFrom() {
         server.oidcProviders = JSONArray().put(provider("authelia", "Authelia")).put(provider("google", "Google"))
         until("the account is looked up") { it.loaded }
@@ -298,13 +318,16 @@ class ServerViewModelTest {
         server.deviceUser = "kindle-of-mine"
         server.deviceKey = FakeOrbit.md5("chosen in the browser")
         serverHas(book(7, "Listed Title", 70))
-        signIn()
-
-        // The question, the list and the account each come their own way: all three are waited for.
-        until("the password is asked for, with the list shown") { state ->
-            state.channel == DeviceChannel.PasswordNeeded && state.account?.deviceUser == "kindle-of-mine" &&
-                state.books.any { it.title == "Listed Title" }
+        server.hold("/books/query")
+        try {
+            val signedIn = signIn()
+            assertEquals(DeviceChannel.PasswordNeeded, signedIn.channel)
+            assertEquals("kindle-of-mine", signedIn.account?.deviceUser)
+            assertTrue(signedIn.books.isEmpty())
+        } finally {
+            server.release("/books/query")
         }
+        listed("Listed Title")
 
         model.devicePassword("a guess")
         until("the password is turned down") { it.channelPasswordWrong && !it.channelBusy }
@@ -312,6 +335,34 @@ class ServerViewModelTest {
         model.devicePassword("chosen in the browser")
         until("the channel is ready") { it.channel == DeviceChannel.Ready }
         assertEquals(server.deviceKey, runBlocking { accounts.deviceKey() })
+    }
+
+    @Test
+    fun delayedOpenCheckDoesNotReplaceThePasswordResult() {
+        server.deviceUser = "kindle-of-mine"
+        server.deviceKey = FakeOrbit.md5("chosen in the browser")
+        serverHas(book(7, "Listed Title", 70))
+        server.slow = { path ->
+            // The sign-in version check answers. The next one, from open(), waits.
+            if (path == "/app-info") server.hold(path)
+            0
+        }
+        try {
+            assertEquals(DeviceChannel.PasswordNeeded, signIn().channel)
+            until("open is checking the version") { server.asked("/app-info").size == 2 }
+            listed("Listed Title")
+            model.devicePassword("chosen in the browser")
+            until("the password made the channel ready") { it.channel == DeviceChannel.Ready && !it.channelBusy }
+
+            // If applied, this older check's answer would replace Ready.
+            server.slow = { 0 }
+            server.version = "v4.0.0"
+            server.release("/app-info")
+            val state = until("the delayed version has been received") { it.account?.serverVersion == "v4.0.0" }
+            assertEquals(DeviceChannel.Ready, state.channel)
+        } finally {
+            server.release("/app-info")
+        }
     }
 
     /**
@@ -336,16 +387,22 @@ class ServerViewModelTest {
     fun serverOfAnUnknownVersionIsReadButNotSyncedWith() {
         server.version = "v4.0.0"
         serverHas(book(7, "Listed Title", 70))
-        signIn()
-        assertEquals(DeviceChannel.Unsupported, listed("Listed Title").channel)
+        assertEquals(DeviceChannel.Unsupported, signIn().channel)
+        listed("Listed Title")
         assertTrue("its devices' channel is left alone", server.seen.none { "/koreader/" in it.path })
     }
 
     @Test
     fun readerNotAllowedToSyncIsToldSo() {
         server.deviceAllowed = false
-        signIn()
-        until("the reader is told") { it.channel == DeviceChannel.NotAllowed }
+        assertEquals(DeviceChannel.NotAllowed, signIn().channel)
+    }
+
+    @Test
+    fun readerWithSyncSwitchedOffIsToldSoAtSignIn() {
+        server.deviceUser = "kindle-of-mine"
+        server.deviceSwitchedOn = false
+        assertEquals(DeviceChannel.SwitchedOff, signIn().channel)
     }
 
     @Test

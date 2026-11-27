@@ -1151,7 +1151,7 @@ class FakeOrbit : AutoCloseable {
             path == "/uploads" || path.startsWith("/uploads/") -> uploads(request, path, body)
             path == "/koreader/credentials" && !deviceAllowed -> error(403, "Missing permission: koreader_sync")
             path == "/koreader/credentials" && request.method == "GET" ->
-                Answer(200, deviceUser?.let { JSONObject().put("username", it).put("syncEnabled", true).toString() }.orEmpty())
+                Answer(200, deviceUser?.let { JSONObject().put("username", it).put("syncEnabled", deviceSwitchedOn).toString() }.orEmpty())
             path == "/koreader/credentials" && request.method == "PATCH" -> when {
                 deviceUser == null -> error(404, "KOReader credentials not found")
                 else -> {
