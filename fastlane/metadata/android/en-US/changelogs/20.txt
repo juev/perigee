@@ -1,0 +1,3 @@
+• See your bookOrbit sync status as soon as you sign in.
+• Connect sync without re-entering your KOReader password when a sync package is available.
+• Choose which reading position to keep when positions first conflict.
