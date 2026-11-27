@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -59,6 +60,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import java.io.File
 import java.time.LocalTime
+import kotlin.math.roundToInt
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
@@ -76,6 +78,7 @@ import org.evsyukov.perigee.library.ImmersiveNoticeSeen
 import org.evsyukov.perigee.server.Server
 import org.evsyukov.perigee.sync.BookOrbit
 import org.evsyukov.perigee.sync.FakeOrbit
+import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
@@ -1588,6 +1591,71 @@ class ReaderScreenTest {
 
         waitForPage(5)
         rule.waitUntil(TIMEOUT) { rule.onAllNodesWithTag("offer").fetchSemanticsNodes().isEmpty() }
+    }
+
+    @Test
+    fun backAfterRestartReturnsFromTheFirstServerXpointer() = returnsFromTheFirstServerPlace(hasXpointer = true)
+
+    @Test
+    fun backAfterRestartReturnsFromTheFirstServerPercentage() = returnsFromTheFirstServerPlace(hasXpointer = false)
+
+    private fun returnsFromTheFirstServerPlace(hasXpointer: Boolean) {
+        val library = Library.inMemory(activity)
+        val accounts = Accounts.of(library)
+        val orbit = BookOrbit(accounts, library, "0.0.1")
+        FakeOrbit().use { server ->
+            val id = runBlocking {
+                orbit.signIn(server.url, "reader", "right-password")
+                val known = library.open(book, title, "")
+                server.files[known.id] = 7L to 70L
+                library.onServer(known.id, 7, 70)
+                known.id
+            }
+            server.deviceSwitchedOn = false
+
+            fun newModel() = ReaderViewModel(activity.application, library) { Server.bookOpened(accounts, orbit, it) }
+            var active by mutableStateOf(newModel())
+            made = active
+            edgeToEdge()
+            rule.setContent { MaterialTheme { key(active) { ReaderScreen(book, onClose = {}, viewModel = active) } } }
+            waitForBook()
+            turnForward(2)
+            val here = model().state.value.page!!.xpointer
+            waitFor("the local position is saved") { runBlocking { library.book(id)?.xpointer == here } }
+
+            val reader = model().state.value
+            val pageCount = reader.page!!.pageCount
+            val chapter = reader.toc[2]
+            val share = if (hasXpointer) chapter.page.toDouble() / (pageCount - 1) else 0.65
+            val there = if (hasXpointer) chapter.page else (share * (pageCount - 1)).roundToInt()
+            val remoteAt = System.currentTimeMillis() / 1000 - 3600
+            server.places[id] = JSONObject().put("document", id).put("percentage", share)
+                .put("progress", if (hasXpointer) chapter.xpointer else JSONObject.NULL)
+                .put("device", "web").put("device_id", "bookorbit-web").put("timestamp", remoteAt)
+            server.deviceSwitchedOn = true
+            assertEquals(1, runBlocking { orbit.syncPlace(id).offers })
+
+            waitForTag("offer")
+            rule.onNodeWithText(string(R.string.offer_go)).performClick()
+            waitFor("the offered position is applied") { shownPage() == there && model().state.value.offer == null }
+            assertEquals(listOf(here), runBlocking { library.book(id)?.jumpedFrom })
+            assertEquals(1, runBlocking { orbit.syncPlace(id).placesSent })
+            assertTrue(server.places.getValue(id).getString("progress") != here)
+
+            rule.runOnUiThread { active.close() }
+            waitFor("the old reader is closed") { shownPage() == null }
+            rule.runOnUiThread { active = newModel().also { made = it } }
+            waitForBook()
+            waitForPage(there)
+            openMenu()
+            rule.onNodeWithContentDescription(string(R.string.action_go_back)).performClick()
+            waitForPage(2)
+            waitFor("the return is saved for sync") { runBlocking { library.book(id)?.xpointer == here } }
+
+            assertEquals(1, runBlocking { orbit.syncPlace(id).placesSent })
+            assertEquals(here, server.places.getValue(id).getString("progress"))
+            assertTrue(server.places.getValue(id).getLong("timestamp") > remoteAt)
+        }
     }
 
     @Test

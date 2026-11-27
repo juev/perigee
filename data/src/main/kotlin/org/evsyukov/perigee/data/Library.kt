@@ -298,7 +298,7 @@ class Library internal constructor(internal val database: ReadingDatabase, priva
     suspend fun reviewFromServer(seen: Book, review: String?): Boolean =
         dao.reviewFromServer(seen.id, review?.let(::reviewOf), seen.reviewChangedAt) > 0
 
-    /** The reader got further in a book somewhere else; they are to be asked whether to go there. */
+    /** The reader is to be asked whether to go to a place from somewhere else. */
     suspend fun offer(position: RemotePosition) = database.withTransaction {
         dao.insert(position)
         dao.remoteSeen(position.bookId, position.at)
@@ -312,8 +312,12 @@ class Library internal constructor(internal val database: ReadingDatabase, priva
 
     suspend fun pendingOffer(bookId: String): RemotePosition? = dao.remotePositionNow(bookId)
 
-    /** The reader decided, one way or the other; the same place is not offered again. */
-    suspend fun settleOffer(bookId: String) = dao.deleteRemotePosition(bookId)
+    /** The reader decided about this offer. Choosing to stay makes the position here theirs to send. */
+    suspend fun settleOffer(offer: RemotePosition, stay: Boolean = false) = database.withTransaction {
+        if (dao.remotePositionNow(offer.bookId) != offer) return@withTransaction
+        if (stay) dao.keepPosition(offer.bookId, now())
+        dao.deleteRemotePosition(offer.bookId)
+    }
 
     /** The reader spent [seconds] on a page, from [startedAt] in seconds since 1970. */
     suspend fun addPageRead(bookId: String, page: Int, totalPages: Int, startedAt: Long, seconds: Int) =
