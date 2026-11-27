@@ -12,7 +12,9 @@ import java.util.Base64
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import org.evsyukov.perigee.data.Accounts
 import org.evsyukov.perigee.data.FileHash
 import org.evsyukov.perigee.data.Library
@@ -52,6 +54,14 @@ class BookOrbitTest {
     private suspend fun book(name: String): String {
         val file = File(context.cacheDir, name).apply { writeText("the text of $name") }
         return library.keep(file, LocalBook(FileHash.partialMd5(file), "epub", name, emptyList(), "", "", "", false)).id
+    }
+
+    private fun packageRequests() = server.seen.filter { it.path.substringBefore('?') == "/api/v1/koreader/plugin-package" }
+
+    private fun existingDeviceChannel(password: String = "chosen in the browser") {
+        server.deviceUser = "kindle-of-mine"
+        server.deviceKey = FakeOrbit.md5(password)
+        server.pluginPackageAvailable = true
     }
 
     @Test
@@ -294,6 +304,136 @@ class BookOrbitTest {
         assertEquals(DeviceChannel.Ready, orbit.devicePassword("chosen in the browser"))
         assertEquals(DeviceChannel.Ready, orbit.deviceChannel())
         assertTrue(orbit.match(listOf("0".repeat(32))).isEmpty())
+    }
+
+    @Test
+    fun passwordSignInImportsAnExistingDeviceKeyFromTheSessionPackage() = runBlocking<Unit> {
+        existingDeviceChannel()
+
+        assertEquals(DeviceChannel.Ready, signIn())
+
+        assertEquals("the established device username is preserved", "kindle-of-mine", accounts.current()?.deviceUser)
+        assertEquals(server.deviceKey, accounts.deviceKey())
+        assertEquals("the preconfigured package supplied the key", 1, packageRequests().size)
+        assertEquals("the package request uses the signed-in session", "Bearer ${accounts.tokens()!!.access}", packageRequests().single().headers["authorization"])
+        assertTrue("the server password was not changed", server.asked("/koreader/credentials").none { it.method == "PATCH" })
+    }
+
+    @Test
+    fun importedDeviceKeyIsReusedWhenTheChannelIsCheckedAgain() = runBlocking<Unit> {
+        existingDeviceChannel()
+        assertEquals(DeviceChannel.Ready, signIn())
+
+        assertEquals(DeviceChannel.Ready, orbit.deviceChannel())
+
+        assertEquals("the saved key validates against bookOrbit", server.deviceKey, accounts.deviceKey())
+        assertEquals("a valid saved key avoids downloading another package", 1, packageRequests().size)
+    }
+
+    @Test
+    fun signingOutAndBackInFetchesTheCurrentDeviceKey() = runBlocking<Unit> {
+        existingDeviceChannel()
+        assertEquals(DeviceChannel.Ready, signIn())
+        orbit.signOut()
+        server.deviceKey = FakeOrbit.md5("rotated in bookOrbit")
+
+        assertEquals(DeviceChannel.Ready, signIn())
+
+        assertEquals("the current server key is saved", server.deviceKey, accounts.deviceKey())
+        assertEquals("one package per explicit sign-in", 2, packageRequests().size)
+        assertTrue("fetching the package does not rotate the key", server.asked("/koreader/credentials").none { it.method == "PATCH" })
+    }
+
+    @Test
+    fun providerSignInImportsAnExistingDeviceKeyFromTheSessionPackage() = runBlocking<Unit> {
+        withProviders()
+        server.deviceUser = "sso-reader"
+        server.deviceKey = FakeOrbit.md5("chosen in the browser")
+        server.pluginPackageAvailable = true
+        val state = queryOf(orbit.startSignIn(server.url, provider)).getValue("state")
+
+        assertEquals(DeviceChannel.Ready, orbit.finishSignIn("bookorbit://oauth2-callback?code=c&state=$state"))
+
+        assertEquals("the device key is imported after OIDC", server.deviceKey, accounts.deviceKey())
+        assertEquals(1, packageRequests().size)
+    }
+
+    @Test
+    fun missingOrMalformedSessionPackageKeepsManualPasswordEntryAvailable() = runBlocking<Unit> {
+        server.deviceUser = "kindle-of-mine"
+        server.deviceKey = FakeOrbit.md5("chosen in the browser")
+
+        assertEquals(DeviceChannel.PasswordNeeded, signIn())
+        assertNull("the channel key can still be entered manually", accounts.deviceKey())
+
+        orbit.signOut()
+        server.pluginPackageAvailable = true
+        server.pluginPackageMalformed = true
+
+        assertEquals(DeviceChannel.PasswordNeeded, signIn())
+        assertNull("malformed data does not replace the manual path", accounts.deviceKey())
+        assertEquals(DeviceChannel.Ready, orbit.devicePassword("chosen in the browser"))
+    }
+
+    @Test
+    fun packageWithAKeyThatDoesNotAuthenticateKeepsManualPasswordEntryAvailable() = runBlocking<Unit> {
+        existingDeviceChannel()
+        server.pluginPackageKey = FakeOrbit.md5("stale package key")
+
+        assertEquals(DeviceChannel.PasswordNeeded, signIn())
+
+        assertNull(accounts.deviceKey())
+        assertEquals("the real KOReader password still connects", DeviceChannel.Ready, orbit.devicePassword("chosen in the browser"))
+    }
+
+    @Test
+    fun refusalOfTheOptionalPackageDoesNotEndTheBookOrbitSession() = runBlocking<Unit> {
+        existingDeviceChannel()
+        server.pluginPackageRefusal = 401
+
+        assertEquals(DeviceChannel.PasswordNeeded, signIn())
+        assertTrue(orbit.books("", 0).books.isEmpty())
+        assertEquals(DeviceChannel.Ready, orbit.devicePassword("chosen in the browser"))
+    }
+
+    @Test
+    fun packageResponseFromAnAccountThatWasReplacedIsNotProbed() = runBlocking<Unit> {
+        existingDeviceChannel()
+        server.hold("/koreader/plugin-package")
+        val first = async { runCatching { orbit.signIn(server.url, "reader", "right-password") } }
+        withTimeout(5_000) {
+            while (packageRequests().isEmpty()) delay(10)
+        }
+
+        FakeOrbit().use { replacement ->
+            val second = async { orbit.signIn(replacement.url, "reader", "right-password") }
+            withTimeout(5_000) {
+                while (accounts.current()?.url != replacement.url) delay(10)
+            }
+            server.release("/koreader/plugin-package")
+
+            assertTrue(first.await().exceptionOrNull() is AccountChangedException)
+            assertEquals(DeviceChannel.Ready, second.await())
+            assertTrue("the old key was not probed after sign-in changed", server.asked("/koreader/users/auth").isEmpty())
+            assertEquals(replacement.deviceKey, accounts.deviceKey())
+            assertNotEquals(server.deviceKey, accounts.deviceKey())
+        }
+    }
+
+    @Test
+    fun disabledOrForbiddenDeviceChannelsDoNotRequestASessionPackage() = runBlocking<Unit> {
+        existingDeviceChannel()
+        server.deviceSwitchedOn = false
+
+        assertEquals(DeviceChannel.SwitchedOff, signIn())
+        assertTrue(packageRequests().isEmpty())
+
+        orbit.signOut()
+        server.deviceSwitchedOn = true
+        server.deviceAllowed = false
+
+        assertEquals(DeviceChannel.NotAllowed, signIn())
+        assertTrue(packageRequests().isEmpty())
     }
 
     @Test

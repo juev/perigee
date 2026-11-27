@@ -38,8 +38,7 @@ internal class ContractDevice(context: Context) {
         fun signedIn(context: Context): ContractDevice = shared ?: ContractDevice(context).also { device ->
             runBlocking {
                 // The contract reader has a user name in the devices' channel already, as one who uses KOReader would.
-                assertEquals(DeviceChannel.PasswordNeeded, device.signIn())
-                assertEquals(DeviceChannel.Ready, device.orbit.devicePassword(BookOrbitServer.KO_PASSWORD))
+                assertEquals(DeviceChannel.Ready, device.signIn())
             }
             shared = device
         }
