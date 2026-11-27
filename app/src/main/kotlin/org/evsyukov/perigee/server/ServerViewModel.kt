@@ -18,6 +18,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import org.evsyukov.perigee.data.Account
 import org.evsyukov.perigee.data.Accounts
@@ -322,27 +324,20 @@ class ServerViewModel(
         if (at == epoch) sessionEnded()
     }
 
+    private val signingIn = Mutex()
+    private var channelRevision = 0
+    private var checkingChannel: Job? = null
+
     init {
         viewModelScope.launch {
-            var signedInTo: Any? = Unit
-            accounts.account().collect { account ->
-                // Renewed tokens and a channel set up change the account too; only another server or reader starts anew.
-                val identity = account?.deviceId
-                if (identity == signedInTo) {
-                    _state.update { it.copy(account = account) }
-                    return@collect
+            accounts.account().collect {
+                // Sign-in saves the account before it knows the device channel. Read it after both are known.
+                signingIn.withLock {
+                    val account = accounts.current()
+                    val over = account != null && _state.value.account?.deviceId != account.deviceId &&
+                        accounts.tokensOf(account)?.refresh.isNullOrEmpty()
+                    showAccount(account, over)
                 }
-                signedInTo = identity
-                startAnew()
-                val over = account != null && accounts.tokens()?.refresh.isNullOrEmpty()
-                _state.update {
-                    ServerState(
-                        loaded = true, account = account, sessionOver = over, signingIn = it.signingIn,
-                        signInFailure = it.signInFailure, onDevice = it.onDevice, unsent = it.unsent, unsentOnDevice = it.unsentOnDevice,
-                        onDeviceByBook = it.onDeviceByBook,
-                    )
-                }
-                if (account != null && !over) open()
             }
         }
         viewModelScope.launch {
@@ -361,6 +356,29 @@ class ServerViewModel(
                 }
             }
         }
+    }
+
+    private fun showAccount(account: Account?, over: Boolean, channel: DeviceChannel? = null) {
+        val previous = _state.value
+        if (previous.loaded && previous.account?.deviceId == account?.deviceId) {
+            _state.update { it.copy(account = account) }
+            return
+        }
+        startAnew()
+        _state.update {
+            ServerState(
+                loaded = true, account = account, sessionOver = over, signingIn = channel == null && it.signingIn,
+                signInFailure = it.signInFailure, channel = channel, onDevice = it.onDevice, unsent = it.unsent,
+                unsentOnDevice = it.unsentOnDevice, onDeviceByBook = it.onDeviceByBook,
+            )
+        }
+        if (account != null && !over) open()
+    }
+
+    private suspend fun completeSignIn(signIn: suspend () -> DeviceChannel) = signingIn.withLock {
+        val channel = signIn()
+        val account = accounts.current() ?: throw SignedOutException()
+        showAccount(account, over = false, channel = channel)
     }
 
     /** Another server or reader: nothing asked of the one before is taken, and nothing kept of it is shown. */
@@ -389,15 +407,13 @@ class ServerViewModel(
         if (_state.value.signingIn) return
         _state.update { it.copy(signingIn = true, signInFailure = null) }
         viewModelScope.launch {
-            val failure = try {
-                orbit.signIn(address, user.trim(), password)
-                null
+            try {
+                completeSignIn { orbit.signIn(address, user.trim(), password) }
             } catch (e: IllegalArgumentException) {
-                ServerFailure.BadAddress
+                _state.update { it.copy(signingIn = false, signInFailure = ServerFailure.BadAddress) }
             } catch (e: IOException) {
-                failureOf(e)
+                signInFailed(e)
             }
-            _state.update { it.copy(signingIn = false, signInFailure = failure) }
         }
     }
 
@@ -454,8 +470,7 @@ class ServerViewModel(
         _state.update { it.copy(signingIn = true, signInFailure = null) }
         viewModelScope.launch {
             try {
-                orbit.finishSignIn(redirect)
-                _state.update { it.copy(signingIn = false) }
+                completeSignIn { orbit.finishSignIn(redirect) }
             } catch (e: SignInCancelledException) {
                 _state.update { it.copy(signingIn = false) }
             } catch (e: IOException) {
@@ -476,17 +491,22 @@ class ServerViewModel(
     /** The reader gave the password of the user name their reading devices sync under. */
     fun devicePassword(password: String) {
         if (_state.value.channelBusy) return
+        val revision = ++channelRevision
+        val at = epoch
         _state.update { it.copy(channelBusy = true, channelPasswordWrong = false) }
-        viewModelScope.launch {
+        tracked {
             try {
                 val channel = orbit.devicePassword(password)
+                if (at != epoch) return@tracked
                 _state.update { it.copy(channelBusy = false, channel = channel) }
-                if (channel == DeviceChannel.Ready) matchLibrary()
+                if (channel == DeviceChannel.Ready) matchLibrary(at, revision)
             } catch (e: WrongPasswordException) {
-                _state.update { it.copy(channelBusy = false, channelPasswordWrong = true) }
+                if (at == epoch) _state.update { it.copy(channelBusy = false, channelPasswordWrong = true) }
             } catch (e: IOException) {
-                _state.update { it.copy(channelBusy = false) }
-                failed(e)
+                if (at == epoch) {
+                    _state.update { it.copy(channelBusy = false) }
+                    failed(e)
+                }
             }
         }
     }
@@ -494,17 +514,22 @@ class ServerViewModel(
     /** The reader does not know that password and sets a new one, which their other devices will need too. */
     fun newDevicePassword(password: String) {
         if (_state.value.channelBusy) return
+        val revision = ++channelRevision
+        val at = epoch
         _state.update { it.copy(channelBusy = true, channelPasswordWrong = false) }
-        viewModelScope.launch {
+        tracked {
             try {
                 val channel = orbit.newDevicePassword(password)
+                if (at != epoch) return@tracked
                 _state.update { it.copy(channelBusy = false, channel = channel) }
-                if (channel == DeviceChannel.Ready) matchLibrary()
+                if (channel == DeviceChannel.Ready) matchLibrary(at, revision)
             } catch (e: IllegalArgumentException) {
-                _state.update { it.copy(channelBusy = false, channelPasswordWrong = true) }
+                if (at == epoch) _state.update { it.copy(channelBusy = false, channelPasswordWrong = true) }
             } catch (e: IOException) {
-                _state.update { it.copy(channelBusy = false) }
-                failed(e)
+                if (at == epoch) {
+                    _state.update { it.copy(channelBusy = false) }
+                    failed(e)
+                }
             }
         }
     }
@@ -623,26 +648,32 @@ class ServerViewModel(
         _state.update { it.copy(books = emptyList(), more = false) }
         loadShelves()
         if (_state.value.collections.loaded) loadCollections()
-        fetch {
-            if (!orbit.checkServer()) {
-                _state.update { it.copy(channel = DeviceChannel.Unsupported) }
-            } else {
-                val channel = orbit.deviceChannel()
+        val at = epoch
+        val revision = channelRevision
+        checkingChannel?.cancel()
+        checkingChannel = tracked {
+            try {
+                val supported = orbit.checkServer()
+                if (at != epoch || revision != channelRevision) return@tracked
+                val channel = if (supported) orbit.deviceChannel() else DeviceChannel.Unsupported
+                if (at != epoch || revision != channelRevision) return@tracked
                 _state.update { it.copy(channel = channel) }
-                if (channel == DeviceChannel.Ready) matchLibrary()
+                if (channel == DeviceChannel.Ready) matchLibrary(at, revision)
+            } catch (e: IOException) {
+                if (at == epoch && revision == channelRevision) failed(e)
             }
-            show()
         }
+        fetch { show() }
     }
 
     /** Which books of the library the server has. A channel that stopped working says so in its own place. */
-    private suspend fun matchLibrary() {
+    private suspend fun matchLibrary(at: Int, revision: Int) {
         try {
             orbit.matchLibrary(all = true)
         } catch (e: DeviceChannelException) {
-            _state.update { it.copy(channel = e.state) }
+            if (at == epoch && revision == channelRevision) _state.update { it.copy(channel = e.state) }
         } catch (e: IncompatibleServerException) {
-            _state.update { it.copy(channel = DeviceChannel.Unsupported) }
+            if (at == epoch && revision == channelRevision) _state.update { it.copy(channel = DeviceChannel.Unsupported) }
         }
     }
 

@@ -308,7 +308,7 @@
         <item quantity="other">%1$d pages</item>
     </plurals>
     <string name="server_book_isbn" translatable="false">ISBN %1$s</string>
-    <string name="server_channel_password_needed">Reading is synced under the KOReader user name you have on the server, %1$s. Enter its password, as set in the server\'s KOReader settings.</string>
+    <string name="server_channel_password_needed">Reading is not synced yet. Enter the password for your KOReader user name %1$s, as set in the server\'s KOReader settings.</string>
     <string name="server_channel_password">KOReader sync password</string>
     <string name="server_channel_password_wrong">The server does not accept this password.</string>
     <string name="server_channel_connect">Connect</string>

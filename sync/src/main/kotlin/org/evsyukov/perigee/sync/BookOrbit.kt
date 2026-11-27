@@ -264,11 +264,12 @@ class BookOrbit(
         val existing = jwt("GET", "/koreader/credentials")
         if (existing.code == 403) return DeviceChannel.NotAllowed
         if (!existing.ok) throw failure(existing)
-        val named = existing.json()?.optString("username").orEmpty()
+        val credentials = existing.json()
+        val named = credentials?.optString("username").orEmpty()
         if (named.isNotEmpty()) {
             // The password was the reader's to choose, and the server does not give it back.
             accounts.saveDevice(named, "", ofDevice = account.deviceId)
-            return DeviceChannel.PasswordNeeded
+            return if (credentials?.optBoolean("syncEnabled", true) == false) DeviceChannel.SwitchedOff else DeviceChannel.PasswordNeeded
         }
         val password = randomHex(16)
         // Names are the server's, not the reader's alone: the plain one may be taken.
